@@ -6,9 +6,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     """Application configuration loaded from environment variables.
 
-    Local development defaults to SQLite so the project can run before
-    Docker/PostgreSQL is installed. Later milestones can switch DATABASE_URL
-    to PostgreSQL + pgvector without changing application code.
+    PostgreSQL is the default database for this project. The connection string
+    can still be overridden through ``DATABASE_URL`` without changing
+    application code.
     """
 
     app_name: str = "Docker Support Agent"
@@ -16,7 +16,9 @@ class Settings(BaseSettings):
     app_host: str = "127.0.0.1"
     app_port: int = 8000
 
-    database_url: str = "sqlite:///./docker_agent.db"
+    database_url: str = (
+        "postgresql+psycopg://postgres:postgres@localhost:5432/docker_agent"
+    )
 
     model_provider: str = ""
     model_name: str = ""
