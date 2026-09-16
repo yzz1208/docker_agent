@@ -3,7 +3,6 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
-from typing import Any
 
 from docker_agent.docs.audit import audit_chunks
 
@@ -11,8 +10,8 @@ from docker_agent.docs.audit import audit_chunks
 DEFAULT_INPUT = Path("data/processed/chunks.jsonl")
 
 
-def load_jsonl(path: Path) -> list[dict[str, Any]]:
-    rows: list[dict[str, Any]] = []
+def load_jsonl(path: Path) -> list[dict[str, object]]:
+    rows: list[dict[str, object]] = []
     with path.open("r", encoding="utf-8") as handle:
         for line_number, line in enumerate(handle, start=1):
             if not line.strip():
@@ -22,7 +21,7 @@ def load_jsonl(path: Path) -> list[dict[str, Any]]:
             except json.JSONDecodeError as exc:
                 raise ValueError(f"Invalid JSON at {path}:{line_number}: {exc}") from exc
             if not isinstance(row, dict):
-                raise ValueError(f"Expected a JSON object at {path}:{line_number}")
+                raise TypeError(f"Expected a JSON object at {path}:{line_number}")
             rows.append(row)
     return rows
 
