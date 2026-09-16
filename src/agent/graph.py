@@ -61,8 +61,8 @@ async def classify_intent(state: AgentState) -> AgentState:
     from src.llm.client import get_llm_client, ChatMessage
     from src.schemas import IntentResult
     
-    # 获取 LLM 客户端（使用 Mock 模式，因为 API Key 无效）
-    llm_client = get_llm_client(use_mock=True)
+    # 获取 LLM 客户端（使用真实的小米 MiMo 模型）
+    llm_client = get_llm_client(use_mock=False)
     
     # 准备消息
     messages = [
@@ -357,8 +357,8 @@ async def synthesize_answer(state: AgentState) -> AgentState:
     
     print("[synthesize_answer] 合成回答")
     
-    # 获取 LLM 客户端（使用 Mock 模式，因为 API Key 无效）
-    llm_client = get_llm_client(use_mock=True)
+    # 获取 LLM 客户端（使用真实的小米 MiMo 模型）
+    llm_client = get_llm_client(use_mock=False)
     
     # 准备上下文信息
     context_parts = []

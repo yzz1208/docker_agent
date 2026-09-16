@@ -15,6 +15,10 @@ import os
 from typing import List, Dict, Optional, Any
 import httpx
 from pydantic import BaseModel
+from dotenv import load_dotenv
+
+# 加载环境变量
+load_dotenv()
 
 
 class ChatMessage(BaseModel):
