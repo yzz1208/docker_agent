@@ -3,7 +3,6 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-
 REPO_URL = "https://github.com/docker/docs.git"
 TARGET = Path("data/raw/docker-docs")
 
