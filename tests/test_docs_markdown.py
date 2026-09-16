@@ -112,3 +112,17 @@ def test_long_sections_are_split() -> None:
 
     assert len(chunks) > 1
     assert all(chunk.strip() for chunk in chunks)
+
+
+def test_chunk_overlap_does_not_copy_code_fence_markers() -> None:
+    intro = " ".join(f"intro{i}" for i in range(60))
+    code_lines = "\n".join(f"log line {i}" for i in range(30))
+    tail = " ".join(f"tail{i}" for i in range(60))
+    content = f"{intro}\n\n```console\n{code_lines}\n```\n\n{tail}"
+
+    chunks = split_section_content(content, max_words=130, overlap_words=20)
+
+    assert len(chunks) >= 2
+    for chunk in chunks:
+        fence_lines = [line for line in chunk.splitlines() if line.lstrip().startswith("```")]
+        assert len(fence_lines) % 2 == 0
