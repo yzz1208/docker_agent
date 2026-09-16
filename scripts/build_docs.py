@@ -2,7 +2,6 @@ from pathlib import Path
 
 from docker_agent.docs.pipeline import build_dataset
 
-
 SELECTED_ROOT = Path("data/selected/docker-docs")
 OUTPUT_DIR = Path("data/processed")
 
