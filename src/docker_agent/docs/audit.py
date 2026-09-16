@@ -9,6 +9,7 @@ from statistics import mean
 from typing import Any
 
 _FENCE_RE = re.compile(r"^\s*(`{3,}|~{3,})(.*)$")
+_SHORTCODE_TOKEN_RE = re.compile(r"\{\{[%<].*?[>%]\}\}")
 
 
 @dataclass(slots=True)
@@ -131,7 +132,7 @@ def audit_chunks(
             report.unbalanced_code_fences += 1
             _add_example(report, chunk_id, "unbalanced fenced code block", content, max_examples)
 
-        if "{{<" in content or "{{%" in content or ">}}" in content or "%}}" in content:
+        if _contains_shortcode_outside_fences(content):
             report.shortcode_remnants += 1
             _add_example(report, chunk_id, "shortcode remnant", content, max_examples)
 
@@ -205,12 +206,37 @@ def _code_fences_balanced(content: str) -> bool:
             open_marker = marker
             continue
 
-        closes_current_fence = (
-            marker[0] == open_marker[0]
-            and len(marker) >= len(open_marker)
-            and not rest.strip()
-        )
-        if closes_current_fence:
+        if _is_closing_fence(marker, rest, open_marker):
             open_marker = None
 
     return open_marker is None
+
+
+def _contains_shortcode_outside_fences(content: str) -> bool:
+    """Return True only for Docker/Hugo shortcodes that leaked into prose."""
+
+    open_marker: str | None = None
+
+    for line in content.splitlines():
+        match = _FENCE_RE.match(line)
+        if match is not None:
+            marker = match.group(1)
+            rest = match.group(2)
+            if open_marker is None:
+                open_marker = marker
+            elif _is_closing_fence(marker, rest, open_marker):
+                open_marker = None
+            continue
+
+        if open_marker is None and _SHORTCODE_TOKEN_RE.search(line):
+            return True
+
+    return False
+
+
+def _is_closing_fence(marker: str, rest: str, open_marker: str) -> bool:
+    return (
+        marker[0] == open_marker[0]
+        and len(marker) >= len(open_marker)
+        and not rest.strip()
+    )
