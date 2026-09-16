@@ -6,7 +6,6 @@ from pathlib import Path
 
 from docker_agent.docs.audit import audit_chunks
 
-
 DEFAULT_INPUT = Path("data/processed/chunks.jsonl")
 
 
