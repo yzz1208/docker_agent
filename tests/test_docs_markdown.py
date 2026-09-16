@@ -78,10 +78,12 @@ Continue here.
 
     sections = split_sections(body, fallback_title="Root")
 
-    assert len(sections) == 3
-    assert sections[1].section_path == ["Root", "Example"]
-    assert "# not a Markdown heading" in sections[1].content
-    assert sections[2].section_path == ["Root", "Next"]
+    # The H1 has no body text of its own, so split_sections intentionally emits
+    # only sections that contain content: Example and Next.
+    assert len(sections) == 2
+    assert sections[0].section_path == ["Root", "Example"]
+    assert "# not a Markdown heading" in sections[0].content
+    assert sections[1].section_path == ["Root", "Next"]
 
 
 def test_low_value_filter_targets_navigation_but_keeps_commands() -> None:
