@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from collections import Counter
-from dataclasses import dataclass, field
 import hashlib
+from collections import Counter
+from collections.abc import Iterable
+from dataclasses import dataclass, field
 from statistics import mean
-from typing import Any, Iterable
+from typing import Any
 
 
 @dataclass(slots=True)
@@ -74,11 +75,7 @@ def audit_chunks(
     max_words: int = 600,
     max_examples: int = 10,
 ) -> ChunkAuditReport:
-    """Inspect processed RAG chunks and return a compact quality report.
-
-    This audit intentionally runs before embedding. It catches structural problems
-    that would otherwise be hidden once chunks are stored as vectors.
-    """
+    """Inspect processed RAG chunks and return a compact quality report."""
 
     materialized = list(rows)
     report = ChunkAuditReport(total_chunks=len(materialized))
