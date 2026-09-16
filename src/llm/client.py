@@ -189,12 +189,90 @@ class MockLLMClient:
                 break
         
         # 生成模拟响应
-        if "daemon" in user_message.lower():
-            return "Docker daemon 正在运行。如果您遇到连接问题，请检查 DOCKER_HOST 环境变量。"
-        elif "container" in user_message.lower():
-            return "容器状态正常。建议检查容器日志以获取更多信息。"
+        if "daemon" in user_message.lower() or "docker" in user_message.lower():
+            return """根据 Docker 官方文档，Docker daemon 无法连接的常见原因包括：
+
+1. **Docker daemon 未运行**
+   - 检查命令：`systemctl status docker`
+   - 启动命令：`sudo systemctl start docker`
+
+2. **DOCKER_HOST 环境变量配置错误**
+   - 检查命令：`echo $DOCKER_HOST`
+   - 应该为空或指向正确的 Docker socket
+
+3. **权限问题**
+   - 将用户添加到 docker 组：`sudo usermod -aG docker $USER`
+   - 或使用 sudo 运行 Docker 命令
+
+4. **Docker socket 问题**
+   - 检查 socket 文件：`ls -la /var/run/docker.sock`
+   - 重启 Docker 服务
+
+参考来源：Docker Docs - Troubleshooting the Docker daemon"""
+        
+        elif "container" in user_message.lower() or "容器" in user_message:
+            return """容器相关问题的排查步骤：
+
+1. **检查容器状态**
+   - `docker ps -a` 查看所有容器
+   - `docker inspect <container_name>` 查看详细信息
+
+2. **查看容器日志**
+   - `docker logs <container_name>` 查看日志
+   - `docker logs --tail 100 <container_name>` 查看最后100行
+
+3. **常见问题**
+   - Exit code 137: OOM（内存不足）
+   - Exit code 1: 应用错误
+   - Exit code 139: 段错误
+
+4. **资源限制**
+   - 检查内存限制：`docker inspect --format='{{.HostConfig.Memory}}' <container>`
+   - 检查 CPU 限制
+
+参考来源：Docker Docs - Container troubleshooting"""
+        
+        elif "install" in user_message.lower() or "安装" in user_message:
+            return """Docker 安装指南：
+
+1. **Ubuntu/Debian**
+   ```bash
+   sudo apt-get update
+   sudo apt-get install docker.io
+   sudo systemctl start docker
+   sudo systemctl enable docker
+   ```
+
+2. **CentOS/RHEL**
+   ```bash
+   sudo yum install docker
+   sudo systemctl start docker
+   sudo systemctl enable docker
+   ```
+
+3. **验证安装**
+   ```bash
+   docker --version
+   docker run hello-world
+   ```
+
+参考来源：Docker Docs - Install Docker Engine"""
+        
         else:
-            return f"收到您的问题：{user_message}。我将为您查找相关信息。"
+            return f"""感谢您的提问！
+
+我收到了您的问题："{user_message}"
+
+作为 Docker 技术支持 Agent，我可以帮助您解决：
+- Docker 安装和配置问题
+- 容器管理和故障排查
+- Docker daemon 连接问题
+- 镜像和存储问题
+- 网络配置问题
+
+请提供更多详细信息，以便我为您提供更准确的帮助。
+
+参考来源：Docker 官方文档"""
     
     async def structured_output(self, schema: Dict, messages: List[ChatMessage]) -> Dict:
         """
@@ -216,10 +294,30 @@ class MockLLMClient:
         # 根据 schema 返回模拟数据
         if "intent" in schema.get("properties", {}):
             # 意图分类
-            if "daemon" in user_message.lower() or "docker" in user_message.lower():
-                return {"intent": "troubleshoot", "confidence": 0.9, "missing_information": []}
+            if any(keyword in user_message.lower() for keyword in ["daemon", "docker", "connect", "安装"]):
+                return {
+                    "intent": "troubleshoot",
+                    "confidence": 0.9,
+                    "missing_information": []
+                }
+            elif any(keyword in user_message.lower() for keyword in ["容器", "container", "exit", "oom"]):
+                return {
+                    "intent": "container_diagnosis",
+                    "confidence": 0.85,
+                    "missing_information": []
+                }
+            elif any(keyword in user_message.lower() for keyword in ["工单", "ticket", "支持"]):
+                return {
+                    "intent": "support_ticket",
+                    "confidence": 0.9,
+                    "missing_information": []
+                }
             else:
-                return {"intent": "general_qa", "confidence": 0.7, "missing_information": []}
+                return {
+                    "intent": "general_qa",
+                    "confidence": 0.7,
+                    "missing_information": []
+                }
         
         return {}
     

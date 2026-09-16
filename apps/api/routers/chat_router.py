@@ -98,14 +98,20 @@ async def chat(request: ChatRequest, db: Session = Depends(get_db)):
     db.add(user_message)
     db.commit()
     
-    # TODO: 调用 Agent 处理消息
-    # 这里应该调用 LangGraph Agent
-    # agent_response = await agent.process(request.message, conversation.id)
-    
-    # 模拟 Agent 响应
-    agent_response = f"收到消息: {request.message}"
-    sources = ["Docker Docs: Troubleshooting the Docker daemon"]
-    tool_calls = []
+    # 调用 Agent 处理消息
+    try:
+        from src.agent.graph import run_agent
+        agent_result = await run_agent(request.message)
+        
+        agent_response = agent_result.get("response", "抱歉，我无法处理您的请求。")
+        sources = agent_result.get("sources", [])
+        tool_calls = agent_result.get("tool_calls", [])
+    except Exception as e:
+        # 如果 Agent 调用失败，使用模拟响应
+        print(f"Agent 调用失败: {e}")
+        agent_response = f"收到消息: {request.message}"
+        sources = ["Docker Docs: Troubleshooting the Docker daemon"]
+        tool_calls = []
     
     # 保存 Agent 回复
     assistant_message = Message(

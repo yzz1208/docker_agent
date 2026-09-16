@@ -45,7 +45,7 @@ def understand_query(state: AgentState) -> AgentState:
     return state
 
 
-def classify_intent(state: AgentState) -> AgentState:
+async def classify_intent(state: AgentState) -> AgentState:
     """
     分类用户意图
     
@@ -58,29 +58,46 @@ def classify_intent(state: AgentState) -> AgentState:
     返回:
         更新后的状态，包含意图分类结果
     """
-    # TODO: 实现意图分类逻辑
-    # 1. 调用 LLM 进行分类
-    # 2. 使用结构化输出获取意图和置信度
-    # 3. 识别缺失信息
+    from src.llm.client import get_llm_client, ChatMessage
+    from src.schemas import IntentResult
     
-    query = state["user_query"].lower()
+    # 获取 LLM 客户端（使用 Mock 模式）
+    llm_client = get_llm_client(use_mock=True)
     
-    # 简单的规则匹配（后续改为 LLM 分类）
-    if any(keyword in query for keyword in ["daemon", "docker", "connect", "安装"]):
-        intent = IntentType.TROUBLESHOOT
-        confidence = 0.8
-    elif any(keyword in query for keyword in ["容器", "container", "exit", "oom"]):
-        intent = IntentType.CONTAINER_DIAGNOSIS
-        confidence = 0.8
-    elif any(keyword in query for keyword in ["工单", "ticket", "支持"]):
-        intent = IntentType.SUPPORT_TICKET
-        confidence = 0.9
-    elif any(keyword in query for keyword in ["什么", "如何", "怎么", "how", "what"]):
-        intent = IntentType.GENERAL_QA
-        confidence = 0.7
-    else:
-        intent = IntentType.UNKNOWN
-        confidence = 0.5
+    # 准备消息
+    messages = [
+        ChatMessage(
+            role="system",
+            content="""你是 Docker 技术支持 Agent 的意图分类器。
+请根据用户查询判断意图类型：
+
+1. general_qa - 一般知识问答
+2. installation - 安装相关问题
+3. troubleshoot - 故障排查
+4. container_diagnosis - 容器诊断
+5. support_ticket - 创建支持工单
+
+返回 JSON 格式：
+{
+    "intent": "意图类型",
+    "confidence": 0.0-1.0,
+    "missing_information": []
+}"""
+        ),
+        ChatMessage(
+            role="user",
+            content=state["user_query"]
+        )
+    ]
+    
+    # 调用 LLM 进行分类
+    schema = IntentResult.model_json_schema()
+    result = await llm_client.structured_output(schema, messages)
+    
+    # 解析结果
+    intent = result.get("intent", IntentType.UNKNOWN)
+    confidence = result.get("confidence", 0.5)
+    missing_information = result.get("missing_information", [])
     
     print(f"[classify_intent] 意图: {intent}, 置信度: {confidence}")
     
@@ -88,7 +105,7 @@ def classify_intent(state: AgentState) -> AgentState:
         **state,
         "intent": intent,
         "confidence": confidence,
-        "missing_information": [] if confidence > 0.7 else ["请提供更多信息"]
+        "missing_information": missing_information if confidence < 0.7 else []
     }
 
 
@@ -251,7 +268,7 @@ def execute_tool(state: AgentState) -> AgentState:
     }
 
 
-def synthesize_answer(state: AgentState) -> AgentState:
+async def synthesize_answer(state: AgentState) -> AgentState:
     """
     合成最终回答
     
@@ -263,17 +280,68 @@ def synthesize_answer(state: AgentState) -> AgentState:
     返回:
         更新后的状态，包含最终回答
     """
-    # TODO: 实现回答合成逻辑
-    # 1. 整合检索到的文档
-    # 2. 整合工具执行结果
-    # 3. 生成诊断信息
-    # 4. 生成最终回答
+    from src.llm.client import get_llm_client, ChatMessage
     
     print("[synthesize_answer] 合成回答")
     
-    # 模拟回答生成
-    diagnosis = "Docker daemon 运行正常"
-    final_answer = "根据检查，Docker daemon 正在运行并且可以访问。如果您遇到连接问题，请检查 DOCKER_HOST 环境变量是否正确设置。"
+    # 获取 LLM 客户端
+    llm_client = get_llm_client(use_mock=True)
+    
+    # 准备上下文信息
+    context_parts = []
+    
+    # 添加检索到的文档
+    if state.get("retrieved_docs"):
+        context_parts.append("相关文档：")
+        for doc in state["retrieved_docs"][:3]:  # 只取前3个
+            context_parts.append(f"- {doc.get('title', '未知')}: {doc.get('content', '')[:200]}...")
+    
+    # 添加工具执行结果
+    if state.get("tool_results"):
+        context_parts.append("\n工具检查结果：")
+        for result in state["tool_results"]:
+            if result.get("success"):
+                context_parts.append(f"- {result['tool']}: {result.get('result', {})}")
+            else:
+                context_parts.append(f"- {result['tool']}: 失败 - {result.get('error', '未知错误')}")
+    
+    context = "\n".join(context_parts) if context_parts else "暂无额外信息"
+    
+    # 准备消息
+    messages = [
+        ChatMessage(
+            role="system",
+            content="""你是 Docker 技术支持 Agent。
+根据用户的问题和提供的信息，生成专业、有帮助的回答。
+
+要求：
+1. 基于事实回答，不要编造信息
+2. 提供具体的排查步骤
+3. 引用官方文档来源
+4. 如果信息不足，说明需要什么信息
+
+回答格式：
+- 先给出结论
+- 然后提供详细步骤
+- 最后引用来源"""
+        ),
+        ChatMessage(
+            role="user",
+            content=f"""用户问题：{state['user_query']}
+
+{context}
+
+请根据以上信息生成回答。"""
+        )
+    ]
+    
+    # 调用 LLM 生成回答
+    final_answer = await llm_client.generate(messages)
+    
+    # 生成诊断信息
+    diagnosis = None
+    if state.get("tool_results"):
+        diagnosis = "基于工具检查结果的诊断"
     
     return {
         **state,
