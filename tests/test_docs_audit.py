@@ -53,6 +53,22 @@ def test_audit_chunks_reports_distribution_and_quality_flags() -> None:
     assert report.max_words <= 10
 
 
+def test_audit_understands_longer_outer_code_fences() -> None:
+    rows = [
+        {
+            "chunk_id": "nested-fence",
+            "document_id": "d1",
+            "content": "````markdown\n```bash\ndocker info\n```\n````",
+            "source_url": "https://docs.docker.com/example/",
+            "section_path": ["Example"],
+        }
+    ]
+
+    report = audit_chunks(rows)
+
+    assert report.unbalanced_code_fences == 0
+
+
 def test_audit_empty_dataset() -> None:
     report = audit_chunks([])
 
