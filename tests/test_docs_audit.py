@@ -69,6 +69,22 @@ def test_audit_understands_longer_outer_code_fences() -> None:
     assert report.unbalanced_code_fences == 0
 
 
+def test_audit_ignores_literal_shortcodes_inside_code_fences() -> None:
+    rows = [
+        {
+            "chunk_id": "literal-shortcode",
+            "document_id": "d1",
+            "content": "```text\n{{< literal-example >}}\n```",
+            "source_url": "https://docs.docker.com/example/",
+            "section_path": ["Example"],
+        }
+    ]
+
+    report = audit_chunks(rows)
+
+    assert report.shortcode_remnants == 0
+
+
 def test_audit_empty_dataset() -> None:
     report = audit_chunks([])
 
