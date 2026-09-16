@@ -37,7 +37,27 @@ def run_retrieval_eval():
     db = SessionLocal()
     repo = DocumentRepository(db)
     embedding_model = get_embedding_model(use_mock=True)
-    retriever = Retriever(repo, embedding_model)
+    retriever = Retriever(embedding_model)
+    
+    # 从数据库加载文档
+    print("从数据库加载文档...")
+    from src.db.models import DocumentChunk
+    chunks = db.query(DocumentChunk).all()
+    documents = []
+    for chunk in chunks:
+        documents.append({
+            "chunk_id": chunk.chunk_id,
+            "document_id": chunk.document_id,
+            "title": chunk.title,
+            "section_path": chunk.section_path,
+            "content": chunk.content,
+            "source_url": chunk.source_url,
+            "file_path": chunk.file_path,
+            "token_count": chunk.token_count,
+            "embedding": chunk.embedding
+        })
+    retriever.load_documents(documents)
+    print(f"加载了 {len(documents)} 个文档")
     
     # 运行评估
     results = evaluate_retrieval(retriever, test_cases)
