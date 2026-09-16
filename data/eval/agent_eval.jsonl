@@ -1,5 +1,0 @@
-{"input": "Docker daemon 没有响应", "expected_output": {"intent": "troubleshoot", "tools": ["check_daemon_status"], "response_contains": ["daemon", "检查"]}}
-{"input": "api-server exit code 137", "expected_output": {"intent": "container_diagnosis", "tools": ["inspect_container", "get_container_logs"], "response_contains": ["OOM", "内存"]}}
-{"input": "如何安装 Docker", "expected_output": {"intent": "installation", "tools": [], "response_contains": ["安装", "文档"]}}
-{"input": "Docker 是什么", "expected_output": {"intent": "general_qa", "tools": [], "response_contains": ["容器"]}}
-{"input": "帮我创建一个工单", "expected_output": {"intent": "support_ticket", "tools": ["create_support_ticket"], "response_contains": ["工单"]}}

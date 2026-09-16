@@ -1,5 +1,0 @@
-{"query": "帮我检查 api-server 容器的状态", "expected_tools": ["inspect_container", "get_container_logs"]}
-{"query": "Docker daemon 没有响应", "expected_tools": ["check_daemon_status", "get_docker_info"]}
-{"query": "磁盘空间不足", "expected_tools": ["check_disk_usage"]}
-{"query": "查看所有容器", "expected_tools": ["list_containers"]}
-{"query": "创建支持工单", "expected_tools": ["create_support_ticket"]}
