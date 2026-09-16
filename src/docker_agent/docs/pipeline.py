@@ -8,6 +8,7 @@ from pathlib import Path
 from docker_agent.docs.markdown import (
     clean_markdown,
     first_h1,
+    is_low_value_chunk,
     parse_front_matter,
     source_url_from_path,
     split_section_content,
@@ -63,6 +64,7 @@ def build_dataset(
 
     documents: list[Document] = []
     chunks: list[Chunk] = []
+    seen_chunk_contents: set[str] = set()
 
     markdown_files = sorted(selected_root.rglob("*.md"))
     if not markdown_files:
@@ -99,6 +101,14 @@ def build_dataset(
                 max_words=max_words,
                 overlap_words=overlap_words,
             ):
+                if is_low_value_chunk(piece):
+                    continue
+
+                content_digest = _normalized_content_digest(piece)
+                if content_digest in seen_chunk_contents:
+                    continue
+                seen_chunk_contents.add(content_digest)
+
                 chunk_index += 1
                 chunks.append(
                     Chunk(
@@ -123,6 +133,11 @@ def build_dataset(
 def _stable_id(kind: str, value: str) -> str:
     digest = hashlib.sha1(value.encode("utf-8")).hexdigest()[:16]
     return f"docker_{kind}_{digest}"
+
+
+def _normalized_content_digest(content: str) -> str:
+    normalized = " ".join(content.split())
+    return hashlib.sha1(normalized.encode("utf-8")).hexdigest()
 
 
 def _write_jsonl(path: Path, rows: list[dict[str, object]]) -> None:
