@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
+from sqlalchemy.exc import SQLAlchemyError
 
 from docker_agent.config import get_settings
 from docker_agent.db import check_database
@@ -26,7 +27,7 @@ def database_health() -> JSONResponse:
 
     try:
         healthy = check_database()
-    except Exception as exc:  # Keep diagnostics simple during bootstrap.
+    except SQLAlchemyError as exc:
         return JSONResponse(
             status_code=503,
             content={"status": "error", "database": "unreachable", "detail": str(exc)},
