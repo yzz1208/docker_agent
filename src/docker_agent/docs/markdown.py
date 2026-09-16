@@ -7,7 +7,6 @@ from typing import Any
 
 import yaml
 
-
 _HEADING_RE = re.compile(r"^(#{1,6})\s+(.+?)\s*$")
 _STANDALONE_SHORTCODE_RE = re.compile(r"^\s*\{\{[%<].*[>%]\}\}\s*$")
 _FENCE_RE = re.compile(r"^\s*(```|~~~)")
@@ -272,7 +271,7 @@ def _markdown_blocks(content: str) -> list[str]:
 
 def _is_fenced_block(block: str) -> bool:
     stripped = block.lstrip()
-    return stripped.startswith("```") or stripped.startswith("~~~")
+    return stripped.startswith(("```", "~~~"))
 
 
 def _word_count(text: str) -> int:
