@@ -66,10 +66,15 @@ def run_tool_eval():
     
     print(f"加载了 {len(test_cases)} 个测试用例")
     
-    # TODO: 实现工具评估
-    print("工具评估功能待实现")
+    # 运行工具选择评估
+    from eval.tools import evaluate_tool_selection
+    selection_results = evaluate_tool_selection(test_cases)
     
-    return {"total_cases": len(test_cases), "passed": 0}
+    print("\n工具选择评估结果:")
+    print(f"- 正确选择: {selection_results['correct_selections']}/{selection_results['total_cases']}")
+    print(f"- 准确率: {selection_results['accuracy']:.2%}")
+    
+    return selection_results
 
 
 def run_agent_eval():
@@ -87,10 +92,17 @@ def run_agent_eval():
     
     print(f"加载了 {len(test_cases)} 个测试用例")
     
-    # TODO: 实现 Agent 评估
-    print("Agent 评估功能待实现")
+    # 运行 Agent 评估
+    from eval.agent import evaluate_agent
+    agent_results = evaluate_agent(test_cases)
     
-    return {"total_cases": len(test_cases), "passed": 0}
+    print("\nAgent 评估结果:")
+    print(f"- 意图分类准确率: {agent_results['intent_accuracy']:.2%}")
+    print(f"- 工具选择准确率: {agent_results['tools_accuracy']:.2%}")
+    print(f"- 回答生成准确率: {agent_results['response_accuracy']:.2%}")
+    print(f"- 整体准确率: {agent_results['overall_accuracy']:.2%}")
+    
+    return agent_results
 
 
 if __name__ == "__main__":
