@@ -1,0 +1,412 @@
+"""
+Agent 工作流图定义
+
+这个模块定义了 LangGraph Agent 的工作流图。
+使用 LangGraph 的 StateGraph 来构建 Agent 的执行流程。
+
+工作流程：
+1. 理解查询 (understand_query)
+2. 分类意图 (classify_intent)
+3. 根据意图路由到不同分支
+4. 检索文档 (retrieve_docs)
+5. 决策工具 (decide_tool)
+6. 执行工具 (execute_tool)
+7. 合成回答 (synthesize_answer)
+"""
+
+from typing import Literal
+from langgraph.graph import StateGraph, END
+from langgraph.prebuilt import ToolNode
+
+from .state import AgentState, IntentType
+
+
+def understand_query(state: AgentState) -> AgentState:
+    """
+    理解用户查询
+    
+    这个节点负责理解用户查询的含义。
+    在实际实现中，这里应该调用 LLM 来理解查询。
+    
+    参数:
+        state: 当前状态
+    
+    返回:
+        更新后的状态
+    """
+    # TODO: 实现查询理解逻辑
+    # 1. 提取关键信息
+    # 2. 识别实体（容器名、错误代码等）
+    # 3. 理解上下文
+    
+    print(f"[understand_query] 处理查询: {state['user_query']}")
+    
+    # 暂时直接返回，后续实现 LLM 调用
+    return state
+
+
+def classify_intent(state: AgentState) -> AgentState:
+    """
+    分类用户意图
+    
+    这个节点负责将用户查询分类到不同的意图类型。
+    使用 LLM 的结构化输出功能。
+    
+    参数:
+        state: 当前状态
+    
+    返回:
+        更新后的状态，包含意图分类结果
+    """
+    # TODO: 实现意图分类逻辑
+    # 1. 调用 LLM 进行分类
+    # 2. 使用结构化输出获取意图和置信度
+    # 3. 识别缺失信息
+    
+    query = state["user_query"].lower()
+    
+    # 简单的规则匹配（后续改为 LLM 分类）
+    if any(keyword in query for keyword in ["daemon", "docker", "connect", "安装"]):
+        intent = IntentType.TROUBLESHOOT
+        confidence = 0.8
+    elif any(keyword in query for keyword in ["容器", "container", "exit", "oom"]):
+        intent = IntentType.CONTAINER_DIAGNOSIS
+        confidence = 0.8
+    elif any(keyword in query for keyword in ["工单", "ticket", "支持"]):
+        intent = IntentType.SUPPORT_TICKET
+        confidence = 0.9
+    elif any(keyword in query for keyword in ["什么", "如何", "怎么", "how", "what"]):
+        intent = IntentType.GENERAL_QA
+        confidence = 0.7
+    else:
+        intent = IntentType.UNKNOWN
+        confidence = 0.5
+    
+    print(f"[classify_intent] 意图: {intent}, 置信度: {confidence}")
+    
+    return {
+        **state,
+        "intent": intent,
+        "confidence": confidence,
+        "missing_information": [] if confidence > 0.7 else ["请提供更多信息"]
+    }
+
+
+def route_by_intent(state: AgentState) -> Literal["retrieve_docs", "check_information", "decide_tool", "clarify_user"]:
+    """
+    根据意图路由
+    
+    这个函数根据意图类型决定下一步执行哪个节点。
+    
+    参数:
+        state: 当前状态
+    
+    返回:
+        下一个节点的名称
+    """
+    intent = state.get("intent")
+    
+    if intent == IntentType.GENERAL_QA:
+        return "retrieve_docs"
+    elif intent in [IntentType.TROUBLESHOOT, IntentType.CONTAINER_DIAGNOSIS]:
+        return "check_information"
+    elif intent == IntentType.SUPPORT_TICKET:
+        return "decide_tool"
+    else:
+        return "clarify_user"
+
+
+def check_information(state: AgentState) -> AgentState:
+    """
+    检查信息完整性
+    
+    这个节点检查是否有足够的信息来进行诊断。
+    
+    参数:
+        state: 当前状态
+    
+    返回:
+        更新后的状态
+    """
+    # TODO: 实现信息检查逻辑
+    # 1. 检查环境信息
+    # 2. 检查错误信息
+    # 3. 确定是否需要更多信息
+    
+    print("[check_information] 检查信息完整性")
+    
+    # 模拟检查结果
+    has_sufficient_info = len(state.get("missing_information", [])) == 0
+    
+    return {
+        **state,
+        "missing_information": [] if has_sufficient_info else ["请提供 Docker 版本和操作系统信息"]
+    }
+
+
+def retrieve_docs(state: AgentState) -> AgentState:
+    """
+    检索相关文档
+    
+    这个节点从知识库中检索与用户查询相关的文档。
+    
+    参数:
+        state: 当前状态
+    
+    返回:
+        更新后的状态，包含检索到的文档
+    """
+    # TODO: 实现文档检索逻辑
+    # 1. 生成查询向量
+    # 2. 执行向量检索
+    # 3. 执行关键词检索
+    # 4. 合并和重排序结果
+    
+    print("[retrieve_docs] 检索相关文档")
+    
+    # 模拟检索结果
+    retrieved_docs = [
+        {
+            "chunk_id": "docker_engine_daemon_troubleshoot__unable_connect__001",
+            "title": "Troubleshooting the Docker daemon",
+            "content": "Cannot connect to the Docker daemon...",
+            "similarity": 0.95
+        }
+    ]
+    
+    return {
+        **state,
+        "retrieved_docs": retrieved_docs
+    }
+
+
+def decide_tool(state: AgentState) -> AgentState:
+    """
+    决策使用哪个工具
+    
+    这个节点根据用户查询和上下文决定使用哪个工具。
+    
+    参数:
+        state: 当前状态
+    
+    返回:
+        更新后的状态，包含工具调用决策
+    """
+    # TODO: 实现工具决策逻辑
+    # 1. 分析用户查询
+    # 2. 检查可用工具
+    # 3. 选择最合适的工具
+    
+    print("[decide_tool] 决策工具调用")
+    
+    # 模拟工具决策
+    tool_calls = [
+        {
+            "tool": "check_daemon_status",
+            "args": {}
+        }
+    ]
+    
+    return {
+        **state,
+        "tool_calls": tool_calls
+    }
+
+
+def execute_tool(state: AgentState) -> AgentState:
+    """
+    执行工具调用
+    
+    这个节点执行决策的工具调用。
+    
+    参数:
+        state: 当前状态
+    
+    返回:
+        更新后的状态，包含工具执行结果
+    """
+    # TODO: 实现工具执行逻辑
+    # 1. 解析工具调用
+    # 2. 执行工具
+    # 3. 处理结果或错误
+    
+    print("[execute_tool] 执行工具调用")
+    
+    # 模拟工具执行结果
+    tool_results = [
+        {
+            "tool": "check_daemon_status",
+            "success": True,
+            "result": {
+                "status": "running",
+                "reachable": True,
+                "message": "Docker daemon is reachable"
+            }
+        }
+    ]
+    
+    return {
+        **state,
+        "tool_results": tool_results
+    }
+
+
+def synthesize_answer(state: AgentState) -> AgentState:
+    """
+    合成最终回答
+    
+    这个节点根据所有收集到的信息生成最终回答。
+    
+    参数:
+        state: 当前状态
+    
+    返回:
+        更新后的状态，包含最终回答
+    """
+    # TODO: 实现回答合成逻辑
+    # 1. 整合检索到的文档
+    # 2. 整合工具执行结果
+    # 3. 生成诊断信息
+    # 4. 生成最终回答
+    
+    print("[synthesize_answer] 合成回答")
+    
+    # 模拟回答生成
+    diagnosis = "Docker daemon 运行正常"
+    final_answer = "根据检查，Docker daemon 正在运行并且可以访问。如果您遇到连接问题，请检查 DOCKER_HOST 环境变量是否正确设置。"
+    
+    return {
+        **state,
+        "diagnosis": diagnosis,
+        "final_answer": final_answer,
+        "messages": [{"role": "assistant", "content": final_answer}]
+    }
+
+
+def clarify_user(state: AgentState) -> AgentState:
+    """
+    向用户请求澄清
+    
+    当意图不明确或信息不足时，向用户请求更多信息。
+    
+    参数:
+        state: 当前状态
+    
+    返回:
+        更新后的状态
+    """
+    print("[clarify_user] 请求用户澄清")
+    
+    missing_info = state.get("missing_information", [])
+    if missing_info:
+        clarification = f"我需要更多信息来帮助您：{', '.join(missing_info)}"
+    else:
+        clarification = "抱歉，我不太理解您的问题。请问您是想了解 Docker 的哪方面内容？"
+    
+    return {
+        **state,
+        "final_answer": clarification,
+        "messages": [{"role": "assistant", "content": clarification}]
+    }
+
+
+def should_continue(state: AgentState) -> Literal["continue", "end"]:
+    """
+    判断是否继续执行
+    
+    这个函数决定是否需要继续执行工具调用。
+    
+    参数:
+        state: 当前状态
+    
+    返回:
+        "continue" 或 "end"
+    """
+    # 检查是否有未完成的工具调用
+    tool_calls = state.get("tool_calls", [])
+    tool_results = state.get("tool_results", [])
+    
+    if len(tool_calls) > len(tool_results):
+        return "continue"
+    
+    # 检查重试次数
+    retry_count = state.get("retry_count", 0)
+    if retry_count >= 2:
+        return "end"
+    
+    return "end"
+
+
+# 创建状态图
+workflow = StateGraph(AgentState)
+
+# 添加节点
+workflow.add_node("understand_query", understand_query)
+workflow.add_node("classify_intent", classify_intent)
+workflow.add_node("check_information", check_information)
+workflow.add_node("retrieve_docs", retrieve_docs)
+workflow.add_node("decide_tool", decide_tool)
+workflow.add_node("execute_tool", execute_tool)
+workflow.add_node("synthesize_answer", synthesize_answer)
+workflow.add_node("clarify_user", clarify_user)
+
+# 设置入口点
+workflow.set_entry_point("understand_query")
+
+# 添加边
+workflow.add_edge("understand_query", "classify_intent")
+workflow.add_conditional_edges(
+    "classify_intent",
+    route_by_intent,
+    {
+        "retrieve_docs": "retrieve_docs",
+        "check_information": "check_information",
+        "decide_tool": "decide_tool",
+        "clarify_user": "clarify_user"
+    }
+)
+workflow.add_edge("check_information", "decide_tool")
+workflow.add_edge("retrieve_docs", "synthesize_answer")
+workflow.add_edge("decide_tool", "execute_tool")
+workflow.add_conditional_edges(
+    "execute_tool",
+    should_continue,
+    {
+        "continue": "decide_tool",
+        "end": "synthesize_answer"
+    }
+)
+workflow.add_edge("synthesize_answer", END)
+workflow.add_edge("clarify_user", END)
+
+# 编译图
+agent_graph = workflow.compile()
+
+
+async def run_agent(user_query: str) -> dict:
+    """
+    运行 Agent
+    
+    这是 Agent 的主入口函数。
+    
+    参数:
+        user_query: 用户查询
+    
+    返回:
+        Agent 的响应，包含回答、来源和工具调用
+    """
+    from .state import create_initial_state
+    
+    # 创建初始状态
+    initial_state = create_initial_state(user_query)
+    
+    # 运行图
+    final_state = await agent_graph.ainvoke(initial_state)
+    
+    return {
+        "response": final_state.get("final_answer", ""),
+        "sources": [doc.get("title", "") for doc in final_state.get("retrieved_docs", [])],
+        "tool_calls": [call.get("tool", "") for call in final_state.get("tool_calls", [])],
+        "diagnosis": final_state.get("diagnosis"),
+        "intent": final_state.get("intent")
+    }
