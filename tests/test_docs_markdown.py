@@ -6,7 +6,6 @@ from docker_agent.docs.markdown import (
     split_sections,
 )
 
-
 SAMPLE = """---
 title: Troubleshooting Docker
 ---
