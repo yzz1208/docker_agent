@@ -2,7 +2,6 @@ from pathlib import Path
 
 from docker_agent.docs.pipeline import DEFAULT_INCLUDE_PREFIXES, select_markdown_files
 
-
 RAW_REPO = Path("data/raw/docker-docs")
 SELECTED_ROOT = Path("data/selected/docker-docs")
 
