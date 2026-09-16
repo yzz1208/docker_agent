@@ -163,8 +163,8 @@ def split_section_content(
 ) -> list[str]:
     """Split a long section into paragraph/code-block groups.
 
-    Fenced code blocks are kept atomic. Text chunks receive a small word overlap so
-    adjacent retrieval units do not lose context at their boundary.
+    Fenced code blocks are kept atomic. Chunk overlap is copied only from prose so
+    Markdown fence markers cannot be detached from their matching code block.
     """
 
     if _word_count(content) <= max_words:
@@ -182,7 +182,7 @@ def split_section_content(
             chunk = "\n\n".join(current).strip()
             chunks.append(chunk)
 
-            overlap = " ".join(chunk.split()[-overlap_words:]) if overlap_words else ""
+            overlap = _safe_overlap_text(chunk, overlap_words)
             current = [overlap] if overlap else []
             current_words = _word_count(overlap)
 
@@ -291,6 +291,32 @@ def _markdown_blocks(content: str) -> list[str]:
 
     flush()
     return blocks
+
+
+def _safe_overlap_text(chunk: str, overlap_words: int) -> str:
+    """Return prose-only overlap without fenced code content or fence markers."""
+
+    if overlap_words <= 0:
+        return ""
+
+    prose_lines: list[str] = []
+    open_fence: str | None = None
+
+    for line in chunk.splitlines():
+        fence = _fence_parts(line)
+        if fence is not None:
+            marker, rest = fence
+            if open_fence is None:
+                open_fence = marker
+            elif _is_closing_fence(marker, rest, open_fence):
+                open_fence = None
+            continue
+
+        if open_fence is None:
+            prose_lines.append(line)
+
+    words = " ".join(prose_lines).split()
+    return " ".join(words[-overlap_words:])
 
 
 def _fence_parts(line: str) -> tuple[str, str] | None:
