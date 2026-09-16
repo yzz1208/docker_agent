@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-import hashlib
 from collections import Counter
 from dataclasses import dataclass, field
+import hashlib
 from statistics import mean
 from typing import Any, Iterable
 
