@@ -15,7 +15,6 @@ from docker_agent.docs.markdown import (
 )
 from docker_agent.docs.models import Chunk, Document
 
-
 DEFAULT_INCLUDE_PREFIXES = (
     "content/get-started",
     "content/manuals/engine",
