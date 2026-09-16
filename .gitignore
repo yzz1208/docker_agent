@@ -4,9 +4,6 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 .env
-*.db
-*.sqlite
-*.sqlite3
 .idea/
 .vscode/
 .DS_Store
