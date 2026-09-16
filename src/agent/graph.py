@@ -101,6 +101,7 @@ async def classify_intent(state: AgentState) -> AgentState:
     
     # 标准化意图类型
     intent_mapping = {
+        # 英文意图
         "troubleshooting": IntentType.TROUBLESHOOT,
         "troubleshoot": IntentType.TROUBLESHOOT,
         "container_diagnosis": IntentType.CONTAINER_DIAGNOSIS,
@@ -110,8 +111,27 @@ async def classify_intent(state: AgentState) -> AgentState:
         "installation": IntentType.INSTALLATION,
         "support_ticket": IntentType.SUPPORT_TICKET,
         "support ticket": IntentType.SUPPORT_TICKET,
+        # 中文意图
+        "故障排查": IntentType.TROUBLESHOOT,
+        "故障诊断": IntentType.TROUBLESHOOT,
+        "技术支持": IntentType.TROUBLESHOOT,
+        "容器诊断": IntentType.CONTAINER_DIAGNOSIS,
+        "一般问答": IntentType.GENERAL_QA,
+        "知识问答": IntentType.GENERAL_QA,
+        "安装": IntentType.INSTALLATION,
+        "工单": IntentType.SUPPORT_TICKET,
     }
     intent = intent_mapping.get(intent.lower(), intent)
+    
+    # 如果还是未知，尝试从查询内容推断
+    if intent == IntentType.UNKNOWN:
+        query = state["user_query"].lower()
+        if any(keyword in query for keyword in ["daemon", "docker", "connect", "连接"]):
+            intent = IntentType.TROUBLESHOOT
+            confidence = 0.8
+        elif any(keyword in query for keyword in ["容器", "container", "exit"]):
+            intent = IntentType.CONTAINER_DIAGNOSIS
+            confidence = 0.8
     
     print(f"[classify_intent] 意图: {intent}, 置信度: {confidence}")
     
