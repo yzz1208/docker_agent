@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import hashlib
+import re
 from collections import Counter
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from statistics import mean
 from typing import Any
+
+_FENCE_RE = re.compile(r"^\s*(`{3,}|~{3,})(.*)$")
 
 
 @dataclass(slots=True)
@@ -159,8 +162,21 @@ def _add_example(
     if len(report.examples) >= max_examples:
         return
 
+    category = _reason_category(reason)
+    category_count = sum(_reason_category(item.reason) == category for item in report.examples)
+    if category_count >= 2:
+        return
+
     preview = " ".join(content.split())[:240]
     report.examples.append(AuditExample(chunk_id=chunk_id, reason=reason, preview=preview))
+
+
+def _reason_category(reason: str) -> str:
+    if reason.startswith("tiny chunk"):
+        return "tiny chunk"
+    if reason.startswith("oversized chunk"):
+        return "oversized chunk"
+    return reason
 
 
 def _percentile(values: list[int], percentile: float) -> int:
@@ -176,20 +192,25 @@ def _code_fences_balanced(content: str) -> bool:
     """Return whether Markdown fenced code blocks open and close correctly."""
 
     open_marker: str | None = None
-    for line in content.splitlines():
-        stripped = line.lstrip()
-        marker = None
-        if stripped.startswith("```"):
-            marker = "```"
-        elif stripped.startswith("~~~"):
-            marker = "~~~"
 
-        if marker is None:
+    for line in content.splitlines():
+        match = _FENCE_RE.match(line)
+        if match is None:
             continue
+
+        marker = match.group(1)
+        rest = match.group(2)
 
         if open_marker is None:
             open_marker = marker
-        elif open_marker == marker:
+            continue
+
+        closes_current_fence = (
+            marker[0] == open_marker[0]
+            and len(marker) >= len(open_marker)
+            and not rest.strip()
+        )
+        if closes_current_fence:
             open_marker = None
 
     return open_marker is None
