@@ -16,7 +16,13 @@ from typing import Optional, List
 from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, JSON, Float, Boolean
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
-from pgvector.sqlalchemy import Vector
+
+# 尝试导入 pgvector，如果失败则使用 JSON 存储向量
+try:
+    from pgvector.sqlalchemy import Vector
+    HAS_PGVECTOR = True
+except ImportError:
+    HAS_PGVECTOR = False
 
 # 创建基础模型类
 Base = declarative_base()
@@ -52,7 +58,11 @@ class DocumentChunk(Base):
     source_url = Column(Text)
     file_path = Column(Text)
     token_count = Column(Integer, nullable=False)
-    embedding = Column(Vector(1024))  # BAAI/bge-m3 输出 1024 维向量
+    # 如果 pgvector 可用，使用 Vector 类型；否则使用 JSON 存储
+    if HAS_PGVECTOR:
+        embedding = Column(Vector(1024))  # BAAI/bge-m3 输出 1024 维向量
+    else:
+        embedding = Column(JSON)  # 使用 JSON 存储向量
     
     def __repr__(self):
         return f"<DocumentChunk(chunk_id='{self.chunk_id}', title='{self.title[:30]}...')>"
