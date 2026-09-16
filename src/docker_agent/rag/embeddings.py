@@ -1,13 +1,16 @@
 from collections.abc import Sequence
 from typing import Any
 
-from sentence_transformers import SentenceTransformer
-
 from docker_agent.config import get_settings
 
 
 class BgeM3Embedder:
-    """Lazy SentenceTransformers wrapper for BAAI/bge-m3 dense embeddings."""
+    """Lazy SentenceTransformers wrapper for BAAI/bge-m3 dense embeddings.
+
+    Importing ``sentence_transformers`` also imports PyTorch. Keeping that import
+    inside ``model`` means lightweight commands and unit tests that inject a fake
+    model do not require the native PyTorch DLLs to load during module import.
+    """
 
     def __init__(
         self,
@@ -30,6 +33,10 @@ class BgeM3Embedder:
     @property
     def model(self) -> Any:
         if self._model is None:
+            # SentenceTransformers imports torch, which loads native DLLs on
+            # Windows. Delay that work until an embedding is actually requested.
+            from sentence_transformers import SentenceTransformer
+
             kwargs: dict[str, Any] = {}
             if self.device:
                 kwargs["device"] = self.device
