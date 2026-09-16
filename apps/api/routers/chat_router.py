@@ -107,7 +107,7 @@ async def chat(request: ChatRequest, db: Session = Depends(get_db)):
         agent_response = agent_result.get("response", "抱歉，我无法处理您的请求。")
         sources = agent_result.get("sources", [])
         tool_calls = agent_result.get("tool_calls", [])
-        print(f"[API] Agent 响应成功")
+        print(f"[API] Agent 响应成功: {agent_response[:100]}...")
     except Exception as e:
         # 如果 Agent 调用失败，使用模拟响应
         import traceback
