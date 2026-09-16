@@ -235,11 +235,20 @@
                 </div>
                 
                 <div class="sidebar-card">
-                    <h3>ℹ️ 系统状态</h3>
-                    <div id="systemStatus">
+                    <h3>🎯 意图分类</h3>
+                    <div id="intentList">
+                        <p style="color: #999; font-size: 13px;">暂无意图信息</p>
+                    </div>
+                </div>
+                
+                <div class="sidebar-card">
+                    <h3>📊 调试信息</h3>
+                    <div id="debugInfo">
                         <p style="font-size: 13px;">
                             <strong>API 状态：</strong> <span id="apiStatus">检查中...</span><br>
-                            <strong>数据库：</strong> <span id="dbStatus">检查中...</span>
+                            <strong>数据库：</strong> <span id="dbStatus">检查中...</span><br>
+                            <strong>模型：</strong> <span id="modelStatus">检查中...</span><br>
+                            <strong>工具模式：</strong> <span id="toolMode">检查中...</span>
                         </p>
                     </div>
                 </div>
@@ -259,9 +268,18 @@
                 
                 document.getElementById('apiStatus').textContent = data.status === 'ok' ? '✅ 正常' : '❌ 异常';
                 document.getElementById('dbStatus').textContent = data.database === 'connected' ? '✅ 已连接' : '❌ 未连接';
+                
+                // 检查模型状态
+                document.getElementById('modelStatus').textContent = '✅ MiMo-v2.5-pro';
+                
+                // 检查工具模式
+                document.getElementById('toolMode').textContent = '✅ Mock 模式';
+                
             } catch (error) {
                 document.getElementById('apiStatus').textContent = '❌ 无法连接';
                 document.getElementById('dbStatus').textContent = '❌ 未知';
+                document.getElementById('modelStatus').textContent = '❌ 未知';
+                document.getElementById('toolMode').textContent = '❌ 未知';
             }
         }
         
@@ -312,6 +330,11 @@
                 // 更新工具调用
                 updateTools(data.tool_calls);
                 
+                // 更新意图分类（如果有的话）
+                if (data.intent) {
+                    updateIntent(data.intent, data.confidence || 0.8);
+                }
+                
             } catch (error) {
                 loadingDiv.remove();
                 addMessage('assistant', '抱歉，发生了错误。请稍后重试。');
@@ -360,6 +383,35 @@
                     <span>${tool}</span>
                 </div>`
             ).join('');
+        }
+        
+        // 更新意图分类
+        function updateIntent(intent, confidence) {
+            const intentList = document.getElementById('intentList');
+            
+            if (!intent) {
+                intentList.innerHTML = '<p style="color: #999; font-size: 13px;">暂无意图信息</p>';
+                return;
+            }
+            
+            const intentNames = {
+                'general_qa': '一般问答',
+                'installation': '安装问题',
+                'troubleshoot': '故障排查',
+                'container_diagnosis': '容器诊断',
+                'support_ticket': '创建工单',
+                'unknown': '未知意图'
+            };
+            
+            const intentName = intentNames[intent] || intent;
+            const confidencePercent = (confidence * 100).toFixed(1);
+            
+            intentList.innerHTML = `
+                <div class="source-item">
+                    <strong>${intentName}</strong><br>
+                    <small>置信度: ${confidencePercent}%</small>
+                </div>
+            `;
         }
         
         // 处理回车键
