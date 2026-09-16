@@ -1,5 +1,6 @@
 from docker_agent.docs.markdown import (
     clean_markdown,
+    is_low_value_chunk,
     parse_front_matter,
     source_url_from_path,
     split_section_content,
@@ -42,6 +43,56 @@ def test_front_matter_and_heading_split() -> None:
     assert "shell comment" in sections[1].content
     assert "{{< tip >}}" not in cleaned
     assert "Keep the exact error message." in cleaned
+
+
+def test_inline_shortcodes_are_removed_outside_code_fences() -> None:
+    body = """Use {{< badge >}}Docker{{< /badge >}} here.
+
+```text
+{{< literal-example >}}
+```
+"""
+
+    cleaned = clean_markdown(body)
+
+    assert "Use Docker here." in cleaned
+    assert "{{< literal-example >}}" in cleaned
+
+
+def test_longer_outer_fence_keeps_inner_triple_fence_and_headings_literal() -> None:
+    body = """# Root
+
+## Example
+
+````markdown
+```bash
+# not a Markdown heading
+docker info
+```
+````
+
+## Next
+
+Continue here.
+"""
+
+    sections = split_sections(body, fallback_title="Root")
+
+    assert len(sections) == 3
+    assert sections[1].section_path == ["Root", "Example"]
+    assert "# not a Markdown heading" in sections[1].content
+    assert sections[2].section_path == ["Root", "Next"]
+
+
+def test_low_value_filter_targets_navigation_but_keeps_commands() -> None:
+    link_list = (
+        "* [Multi-stage builds](/build/building/multi-stage/) "
+        "* [Base images](/build/building/base-images/)"
+    )
+
+    assert is_low_value_chunk(link_list)
+    assert is_low_value_chunk("Now that you understand volumes, continue to networking.")
+    assert not is_low_value_chunk("docker info")
 
 
 def test_source_url_mapping() -> None:
