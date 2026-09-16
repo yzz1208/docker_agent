@@ -101,14 +101,18 @@ async def chat(request: ChatRequest, db: Session = Depends(get_db)):
     # 调用 Agent 处理消息
     try:
         from src.agent.graph import run_agent
+        print(f"[API] 调用 Agent 处理消息: {request.message}")
         agent_result = await run_agent(request.message)
         
         agent_response = agent_result.get("response", "抱歉，我无法处理您的请求。")
         sources = agent_result.get("sources", [])
         tool_calls = agent_result.get("tool_calls", [])
+        print(f"[API] Agent 响应成功")
     except Exception as e:
         # 如果 Agent 调用失败，使用模拟响应
-        print(f"Agent 调用失败: {e}")
+        import traceback
+        print(f"[API] Agent 调用失败: {e}")
+        traceback.print_exc()
         agent_response = f"收到消息: {request.message}"
         sources = ["Docker Docs: Troubleshooting the Docker daemon"]
         tool_calls = []

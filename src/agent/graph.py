@@ -99,6 +99,20 @@ async def classify_intent(state: AgentState) -> AgentState:
     confidence = result.get("confidence", 0.5)
     missing_information = result.get("missing_information", [])
     
+    # 标准化意图类型
+    intent_mapping = {
+        "troubleshooting": IntentType.TROUBLESHOOT,
+        "troubleshoot": IntentType.TROUBLESHOOT,
+        "container_diagnosis": IntentType.CONTAINER_DIAGNOSIS,
+        "container diagnosis": IntentType.CONTAINER_DIAGNOSIS,
+        "general_qa": IntentType.GENERAL_QA,
+        "general qa": IntentType.GENERAL_QA,
+        "installation": IntentType.INSTALLATION,
+        "support_ticket": IntentType.SUPPORT_TICKET,
+        "support ticket": IntentType.SUPPORT_TICKET,
+    }
+    intent = intent_mapping.get(intent.lower(), intent)
+    
     print(f"[classify_intent] 意图: {intent}, 置信度: {confidence}")
     
     return {
