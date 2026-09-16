@@ -15,6 +15,7 @@
 - [x] YAML Front Matter 解析
 - [x] Markdown 清洗与 Heading 分段
 - [x] 生成 `documents.jsonl` / `chunks.jsonl`
+- [x] Chunk 数据质量审计
 - [ ] Embedding + pgvector 索引
 - [ ] Hybrid Retrieval + Rerank
 - [ ] Tool Calling
@@ -149,6 +150,42 @@ Get-Content data/processed/chunks.jsonl -TotalCount 3
 - `source_url` 是否指向对应 `docs.docker.com` 页面；
 - 代码块有没有被误当成 Markdown Heading。
 
+### 5. 运行 Chunk 数据质量审计
+
+在进入 Embedding 前先运行：
+
+```powershell
+uv run python scripts/audit_chunks.py
+```
+
+脚本会输出一份 JSON 报告，包括：
+
+- Chunk 总数与 Document 数量；
+- word count 的 min / P50 / P90 / P95 / max / average；
+- 过短 Chunk；
+- 超长 Chunk；
+- 空 Chunk；
+- 缺少 `source_url`；
+- 缺少 `section_path`；
+- fenced code block 没有闭合；
+- Docker Docs shortcode 残留；
+- 完全重复的 Chunk 内容。
+
+默认质量阈值：
+
+```text
+min_words = 20
+max_words = 600
+```
+
+这两个值目前只是审计阈值，不会删除数据。后续会结合真实报告决定是否调整 Chunk 策略。
+
+如果要自定义：
+
+```powershell
+uv run python scripts/audit_chunks.py --min-words 30 --max-words 550 --examples 20
+```
+
 ## 数据处理设计
 
 ### Front Matter
@@ -201,6 +238,29 @@ overlap_words = 60
 
 这里暂时使用 word count，而不是某个 Embedding 模型的 tokenizer。进入 Embedding 阶段后，会根据最终选定的模型重新评估 chunk token 分布。
 
+### 为什么要先审计 Chunk
+
+Embedding 会把文本转换成向量；向量本身并不能直接告诉我们原始文本是否已经切坏。
+
+因此先检查：
+
+```text
+Markdown
+→ Document
+→ Chunk
+→ Audit
+```
+
+确认结构正常后，再进入：
+
+```text
+Chunk
+→ Embedding
+→ pgvector
+```
+
+这样后续检索效果不好时，可以区分“数据问题”和“向量检索问题”。
+
 ## 数据结构
 
 Document 示例：
@@ -239,14 +299,15 @@ uv run pytest -v
 uv run ruff check .
 ```
 
-当前 Markdown 测试覆盖：
+当前测试覆盖：
 
 - YAML Front Matter；
 - Heading hierarchy；
 - 代码块内部 `#` 不被误识别；
 - shortcode wrapper 清理；
 - Docker Docs URL 映射；
-- 长 section 二次切分。
+- 长 section 二次切分；
+- Chunk 审计统计与异常标记。
 
 ## 项目结构
 
@@ -258,17 +319,20 @@ docker_agent/
 ├── scripts/
 │   ├── download_docs.py
 │   ├── select_docs.py
-│   └── build_docs.py
+│   ├── build_docs.py
+│   └── audit_chunks.py
 ├── src/docker_agent/
 │   ├── config.py
 │   ├── db.py
 │   ├── main.py
 │   └── docs/
+│       ├── audit.py
 │       ├── models.py
 │       ├── markdown.py
 │       └── pipeline.py
 ├── tests/
 │   ├── test_health.py
+│   ├── test_docs_audit.py
 │   └── test_docs_markdown.py
 ├── compose.yaml
 └── pyproject.toml
@@ -283,6 +347,7 @@ Milestone 1 的目标是先验证：
 → 清洗
 → 结构化 Document
 → Chunk
+→ Audit
 ```
 
 因此先输出 JSONL，方便人工检查和重复构建。
