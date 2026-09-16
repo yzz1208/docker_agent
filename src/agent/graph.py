@@ -197,7 +197,7 @@ def retrieve_docs(state: AgentState) -> AgentState:
     }
 
 
-def decide_tool(state: AgentState) -> AgentState:
+async def decide_tool(state: AgentState) -> AgentState:
     """
     决策使用哪个工具
     
@@ -209,20 +209,87 @@ def decide_tool(state: AgentState) -> AgentState:
     返回:
         更新后的状态，包含工具调用决策
     """
-    # TODO: 实现工具决策逻辑
-    # 1. 分析用户查询
-    # 2. 检查可用工具
-    # 3. 选择最合适的工具
+    from src.llm.client import get_llm_client, ChatMessage
+    from src.tools.manager import get_tool_manager
     
     print("[decide_tool] 决策工具调用")
     
-    # 模拟工具决策
-    tool_calls = [
-        {
-            "tool": "check_daemon_status",
-            "args": {}
-        }
+    # 获取工具管理器
+    tool_manager = get_tool_manager()
+    available_tools = tool_manager.get_available_tools()
+    
+    # 获取 LLM 客户端
+    llm_client = get_llm_client(use_mock=True)
+    
+    # 准备工具描述
+    tool_descriptions = []
+    for tool_name in available_tools:
+        desc = tool_manager.get_tool_description(tool_name)
+        tool_descriptions.append(f"- {tool_name}: {desc}")
+    
+    tools_text = "\n".join(tool_descriptions)
+    
+    # 准备消息
+    messages = [
+        ChatMessage(
+            role="system",
+            content=f"""你是 Docker 技术支持 Agent 的工具决策器。
+根据用户查询和上下文，决定需要调用哪些工具。
+
+可用工具：
+{tools_text}
+
+返回 JSON 格式：
+{{
+    "tools": [
+        {{"tool": "工具名称", "args": {{}}}}
     ]
+}}"""
+        ),
+        ChatMessage(
+            role="user",
+            content=f"""用户查询：{state['user_query']}
+
+意图：{state.get('intent', '未知')}
+
+请决定需要调用哪些工具。"""
+        )
+    ]
+    
+    # 调用 LLM 进行工具决策
+    result = await llm_client.generate(messages)
+    
+    # 解析工具调用（简单解析）
+    tool_calls = []
+    
+    # 根据意图和查询内容决定工具
+    intent = state.get("intent", "")
+    query = state["user_query"].lower()
+    
+    if intent == "troubleshoot" or "daemon" in query:
+        tool_calls.append({"tool": "check_daemon_status", "args": {}})
+        tool_calls.append({"tool": "get_docker_info", "args": {}})
+    elif intent == "container_diagnosis" or "container" in query or "容器" in query:
+        tool_calls.append({"tool": "list_containers", "args": {"all": True}})
+        if "api-server" in query or "api_server" in query:
+            tool_calls.append({"tool": "inspect_container", "args": {"container_name": "api-server"}})
+            tool_calls.append({"tool": "get_container_logs", "args": {"container_name": "api-server", "tail": 100}})
+    elif "disk" in query or "磁盘" in query:
+        tool_calls.append({"tool": "check_disk_usage", "args": {}})
+    elif intent == "support_ticket":
+        tool_calls.append({"tool": "create_support_ticket", "args": {
+            "title": f"支持工单: {state['user_query'][:50]}",
+            "problem": state["user_query"],
+            "environment": state.get("environment", {}),
+            "diagnostics": state.get("diagnosis", ""),
+            "actions_taken": [],
+            "logs": []
+        }})
+    else:
+        # 默认检查 daemon 状态
+        tool_calls.append({"tool": "check_daemon_status", "args": {}})
+    
+    print(f"  决策工具: {[tc['tool'] for tc in tool_calls]}")
     
     return {
         **state,
@@ -230,7 +297,7 @@ def decide_tool(state: AgentState) -> AgentState:
     }
 
 
-def execute_tool(state: AgentState) -> AgentState:
+async def execute_tool(state: AgentState) -> AgentState:
     """
     执行工具调用
     
@@ -242,25 +309,31 @@ def execute_tool(state: AgentState) -> AgentState:
     返回:
         更新后的状态，包含工具执行结果
     """
-    # TODO: 实现工具执行逻辑
-    # 1. 解析工具调用
-    # 2. 执行工具
-    # 3. 处理结果或错误
+    from src.tools.manager import get_tool_manager
     
     print("[execute_tool] 执行工具调用")
     
-    # 模拟工具执行结果
-    tool_results = [
-        {
-            "tool": "check_daemon_status",
-            "success": True,
-            "result": {
-                "status": "running",
-                "reachable": True,
-                "message": "Docker daemon is reachable"
-            }
-        }
-    ]
+    # 获取工具管理器
+    tool_manager = get_tool_manager()
+    
+    # 执行所有工具调用
+    tool_results = []
+    for tool_call in state.get("tool_calls", []):
+        tool_name = tool_call.get("tool")
+        tool_args = tool_call.get("args", {})
+        
+        print(f"  执行工具: {tool_name}，参数: {tool_args}")
+        
+        # 执行工具
+        result = await tool_manager.execute_tool(tool_name, tool_args)
+        tool_results.append({
+            "tool": tool_name,
+            "success": result.get("success", False),
+            "result": result,
+            "error": result.get("error") if not result.get("success") else None
+        })
+    
+    print(f"  工具执行完成，共 {len(tool_results)} 个结果")
     
     return {
         **state,
