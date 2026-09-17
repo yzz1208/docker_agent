@@ -317,13 +317,19 @@ def reciprocal_rank_fusion(
     *,
     top_k: int = 5,
     rrf_k: int = 60,
+    dense_weight: float = 1.0,
+    keyword_weight: float = 1.0,
 ) -> list[HybridSearchResult]:
-    """Fuse dense and lexical rankings with Reciprocal Rank Fusion (RRF)."""
+    """Fuse dense and lexical rankings with weighted Reciprocal Rank Fusion."""
 
     if top_k <= 0:
         raise ValueError("top_k must be positive")
     if rrf_k < 0:
         raise ValueError("rrf_k must be non-negative")
+    if dense_weight < 0 or keyword_weight < 0:
+        raise ValueError("RRF weights must be non-negative")
+    if dense_weight == 0 and keyword_weight == 0:
+        raise ValueError("At least one RRF weight must be positive")
 
     combined: dict[str, HybridSearchResult] = {}
 
@@ -336,7 +342,7 @@ def reciprocal_rank_fusion(
             content=result.content,
             source_url=result.source_url,
             file_path=result.file_path,
-            rrf_score=1.0 / (rrf_k + rank),
+            rrf_score=dense_weight / (rrf_k + rank),
             dense_rank=rank,
             keyword_rank=None,
             dense_distance=result.distance,
@@ -344,7 +350,7 @@ def reciprocal_rank_fusion(
         )
 
     for rank, result in enumerate(keyword_results, start=1):
-        contribution = 1.0 / (rrf_k + rank)
+        contribution = keyword_weight / (rrf_k + rank)
         existing = combined.get(result.chunk_id)
         if existing is None:
             combined[result.chunk_id] = HybridSearchResult(
@@ -385,8 +391,10 @@ def search_hybrid_chunks(
     top_k: int = 5,
     candidate_k: int = 20,
     rrf_k: int = 60,
+    dense_weight: float = 1.0,
+    keyword_weight: float = 1.0,
 ) -> list[HybridSearchResult]:
-    """Combine dense pgvector retrieval and PostgreSQL FTS with RRF."""
+    """Combine dense pgvector retrieval and PostgreSQL FTS with weighted RRF."""
 
     if candidate_k < top_k:
         raise ValueError("candidate_k must be greater than or equal to top_k")
@@ -398,4 +406,6 @@ def search_hybrid_chunks(
         keyword_results,
         top_k=top_k,
         rrf_k=rrf_k,
+        dense_weight=dense_weight,
+        keyword_weight=keyword_weight,
     )
