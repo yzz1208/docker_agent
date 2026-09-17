@@ -1,11 +1,18 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol
 
 from docker_agent.config import get_settings
-from docker_agent.rag.store import HybridSearchResult
+from docker_agent.rag.store import (
+    HybridSearchResult,
+    KeywordSearchResult,
+    SearchResult,
+    reciprocal_rank_fusion,
+)
 from docker_agent.rag.text import build_embedding_text
+
+RerankPoolStrategy = Literal["rrf", "union", "dense"]
 
 
 class PairScorer(Protocol):
@@ -112,6 +119,55 @@ def build_rerank_passage(candidate: HybridSearchResult) -> str:
         section_path=candidate.section_path,
         content=candidate.content,
     )
+
+
+def build_rerank_pool(
+    dense_results: list[SearchResult],
+    keyword_results: list[KeywordSearchResult],
+    *,
+    strategy: RerankPoolStrategy = "rrf",
+    candidate_k: int = 20,
+    rrf_k: int = 60,
+    dense_weight: float = 1.0,
+    keyword_weight: float = 1.0,
+) -> list[HybridSearchResult]:
+    """Build the candidate pool passed to the cross-encoder reranker.
+
+    ``rrf`` keeps only the best ``candidate_k`` items after weighted RRF.
+    ``union`` preserves the previous behavior and can keep up to 2 * candidate_k
+    items from the dense/keyword union. ``dense`` reranks dense candidates only.
+    """
+
+    if candidate_k <= 0:
+        raise ValueError("candidate_k must be positive")
+    if strategy == "dense":
+        return reciprocal_rank_fusion(
+            dense_results,
+            [],
+            top_k=candidate_k,
+            rrf_k=rrf_k,
+            dense_weight=dense_weight,
+            keyword_weight=keyword_weight,
+        )
+    if strategy == "rrf":
+        return reciprocal_rank_fusion(
+            dense_results,
+            keyword_results,
+            top_k=candidate_k,
+            rrf_k=rrf_k,
+            dense_weight=dense_weight,
+            keyword_weight=keyword_weight,
+        )
+    if strategy == "union":
+        return reciprocal_rank_fusion(
+            dense_results,
+            keyword_results,
+            top_k=candidate_k * 2,
+            rrf_k=rrf_k,
+            dense_weight=dense_weight,
+            keyword_weight=keyword_weight,
+        )
+    raise ValueError(f"Unsupported rerank pool strategy: {strategy}")
 
 
 def rerank_candidates(
