@@ -2,7 +2,9 @@ import pytest
 
 from docker_agent.rag.evaluation import (
     RetrievalCase,
+    evaluate_candidate_coverage,
     evaluate_case,
+    summarize_candidate_coverage,
     summarize_metrics,
     validate_case_labels,
 )
@@ -60,6 +62,46 @@ def test_evaluate_case_tracks_section_rank_separately() -> None:
     assert metrics.section_first_relevant_rank == 3
     assert metrics.section_hit_at == {1: False, 3: True, 5: True}
     assert metrics.section_reciprocal_rank == pytest.approx(1 / 3)
+
+
+def test_candidate_coverage_tracks_dense_keyword_and_union() -> None:
+    case = RetrievalCase(
+        case_id="candidate-case",
+        query="query",
+        relevant_file_paths=frozenset({"a.md", "b.md"}),
+    )
+    dense = [_result("x.md"), _result("a.md")]
+    keyword = [_result("y.md"), _result("b.md")]
+
+    metrics = evaluate_candidate_coverage(case, dense, keyword, k_values=(1, 2))
+
+    assert metrics.dense_hit_at == {1: False, 2: True}
+    assert metrics.keyword_hit_at == {1: False, 2: True}
+    assert metrics.union_hit_at == {1: False, 2: True}
+    assert metrics.union_recall_at == {1: 0.0, 2: 1.0}
+
+
+def test_summarize_candidate_coverage_averages_cases() -> None:
+    first = evaluate_candidate_coverage(
+        RetrievalCase("first", "q1", frozenset({"a.md"})),
+        [_result("a.md")],
+        [],
+        k_values=(1,),
+    )
+    second = evaluate_candidate_coverage(
+        RetrievalCase("second", "q2", frozenset({"b.md"})),
+        [_result("x.md")],
+        [_result("b.md")],
+        k_values=(1,),
+    )
+
+    summary = summarize_candidate_coverage([first, second], k_values=(1,))
+
+    assert summary.cases == 2
+    assert summary.dense_hit_at[1] == 0.5
+    assert summary.keyword_hit_at[1] == 0.5
+    assert summary.union_hit_at[1] == 1.0
+    assert summary.union_recall_at[1] == 1.0
 
 
 def test_summarize_metrics_averages_document_and_section_cases() -> None:
@@ -126,6 +168,7 @@ def test_validate_case_labels_reports_stale_labels() -> None:
 
 def test_empty_summary_is_zeroed() -> None:
     summary = summarize_metrics([])
+    candidate_summary = summarize_candidate_coverage([])
 
     assert summary.cases == 0
     assert summary.hit_at == {1: 0.0, 3: 0.0, 5: 0.0}
@@ -134,3 +177,5 @@ def test_empty_summary_is_zeroed() -> None:
     assert summary.section_cases == 0
     assert summary.section_hit_at == {1: 0.0, 3: 0.0, 5: 0.0}
     assert summary.section_mrr == 0.0
+    assert candidate_summary.cases == 0
+    assert candidate_summary.union_hit_at == {10: 0.0, 20: 0.0}
