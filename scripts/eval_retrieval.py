@@ -131,10 +131,7 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def _release_embedding_model(embedder: BgeM3Embedder) -> None:
-    """Release the embedding model before loading the reranker on small GPUs."""
-
-    del embedder
+def _release_cuda_cache() -> None:
     gc.collect()
     try:
         import torch
@@ -181,7 +178,8 @@ def main() -> None:
             show_progress_bar=False,
         )
         if args.mode == "rerank":
-            _release_embedding_model(embedder)
+            del embedder
+            _release_cuda_cache()
 
     reranker = BgeReranker() if args.mode == "rerank" else None
     engine = create_db_engine()
