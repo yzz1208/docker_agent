@@ -1,6 +1,6 @@
 # Milestone 2：BGE-M3 + PostgreSQL/pgvector 向量检索
 
-这一阶段把 Milestone 1 生成的 `chunks.jsonl` 转成向量并写入 PostgreSQL/pgvector，最终能够使用自然语言查询 Docker 官方文档 Top-K。
+这一阶段把 Milestone 1 生成的 `chunks.jsonl` 转成向量并写入 PostgreSQL/pgvector，最终能够使用自然语言查询 Docker 官方文档 Top-K，并建立可重复的检索评测基线。
 
 ## 1. 数据流
 
@@ -32,7 +32,7 @@ Docker 技术问题经常与标题、命令名和章节名强相关，因此保�
 
 ## 3. 为什么先用 exact search
 
-当前只有约 2,500 个 chunks，pgvector 精确 cosine search 已经足够快，而且便于后续做 Retrieval Eval。HNSW / IVFFlat 等近似索引等数据规模扩大后再加入，避免一开始引入额外变量。
+当前只有约 2,500 个 chunks，pgvector 精确 cosine search 已经足够快，而且便于做 Retrieval Eval。HNSW / IVFFlat 等近似索引等数据规模扩大后再加入，避免一开始引入额外变量。
 
 ## 4. 本地准备
 
@@ -46,15 +46,11 @@ uv sync --all-groups
 
 ```env
 EMBEDDING_CACHE_DIR=F:/models/huggingface
-```
-
-设备可显式配置：
-
-```env
 EMBEDDING_DEVICE=cuda
+EMBEDDING_BATCH_SIZE=4
 ```
 
-如果 CUDA/PyTorch 环境暂时不可用，留空即可让 SentenceTransformers 选择可用设备。
+如果 CUDA/PyTorch 环境暂时不可用，可留空 `EMBEDDING_DEVICE` 让 SentenceTransformers 自动选择设备。
 
 ## 5. 初始化向量表
 
@@ -62,21 +58,10 @@ EMBEDDING_DEVICE=cuda
 
 ```powershell
 docker compose up -d postgres
-```
-
-然后：
-
-```powershell
 uv run python scripts/init_vector_store.py
 ```
 
-预期：
-
-```text
-Vector store is ready: pgvector extension + document_chunks table
-```
-
-可以检查：
+检查表：
 
 ```powershell
 docker compose exec postgres psql -U postgres -d docker_agent -c "\d document_chunks"
@@ -84,15 +69,13 @@ docker compose exec postgres psql -U postgres -d docker_agent -c "\d document_ch
 
 其中 `embedding` 应为 `vector(1024)`。
 
-## 6. 先做小规模索引测试
+## 6. 小规模索引测试
 
-不要第一次就直接跑全部 2582 个 chunks。先验证 20 条：
+第一次先验证少量 Chunk：
 
 ```powershell
-uv run python scripts/index_chunks.py --reset --limit 20 --batch-size 8
+uv run python scripts/index_chunks.py --reset --limit 20 --batch-size 4
 ```
-
-第一次运行会加载/下载 BGE-M3，因此明显比之后慢。
 
 检查行数：
 
@@ -100,55 +83,97 @@ uv run python scripts/index_chunks.py --reset --limit 20 --batch-size 8
 docker compose exec postgres psql -U postgres -d docker_agent -c "SELECT COUNT(*) FROM document_chunks;"
 ```
 
-应返回 20。
-
-## 7. 第一次向量搜索
+## 7. 向量搜索
 
 ```powershell
 uv run python scripts/search_docs.py "Docker daemon 连不上怎么办" --top-k 5
 ```
 
-或者：
-
-```powershell
-uv run python scripts/search_docs.py "difference between Docker volume and bind mount" --top-k 5
-```
-
-输出会包含：
-
-- cosine similarity score
-- title
-- section path
-- Docker Docs source URL
-- chunk preview
-
-BGE-M3 是多语言模型，因此后续会专门比较中文 query → 英文 Docker Docs 的跨语言检索效果。
+输出包含 cosine similarity、title、section path、source URL 和 chunk preview。
 
 ## 8. 全量索引
 
 小规模测试正常后：
 
 ```powershell
-uv run python scripts/index_chunks.py --reset --batch-size 32
+uv run python scripts/index_chunks.py --reset --batch-size 4
 ```
 
-如果显存或内存不足，可把脚本 batch 调小；模型内部 embedding batch 由 `.env` 中的 `EMBEDDING_BATCH_SIZE` 控制，默认 8。
+完成后数据库行数应与 `chunks.jsonl` 一致。
 
-## 9. 当前验收标准
+## 9. Retrieval Eval v1
 
-- `document_chunks` 表创建成功
-- 20 条测试数据可以写入
-- 中文和英文 query 都可以返回 Top-K
-- source URL / section path / content 与原 JSONL 对应
-- 全量索引最终行数与 `chunks.jsonl` 数量一致
-- pytest / ruff 继续通过
+最初的 `data/eval/retrieval_baseline.jsonl` 只有 6 条 smoke-test case，用来验证整个评测链路。它的查询相对简单，不应该把其高分理解为真实生产准确率。
 
-## 10. 本阶段暂时不做
+## 10. Retrieval Eval v2
 
-- BM25 / PostgreSQL Full Text Search
-- Hybrid Search
-- Reranker
+`data/eval/retrieval_v2.jsonl` 扩展到 30+ 条困难 case，覆盖：
+
+- 中英文查询；
+- 口语化故障描述；
+- daemon / container / storage / network / compose；
+- 错误症状与配置场景；
+- 多相关文档问题；
+- 部分 case 的 section-level 标注。
+
+运行：
+
+```powershell
+uv run python scripts/eval_retrieval.py
+```
+
+评测脚本会先把标签与当前 `data/processed/chunks.jsonl` 对齐。如果 Docker Docs 路径或标题发生变化，会直接报出 stale label，而不是把错误标签静默算成检索失败。
+
+默认输出两层指标。
+
+### Document-level
+
+- Hit@1 / Hit@3 / Hit@5
+- Recall@1 / Recall@3 / Recall@5
+- MRR
+
+Document-level 只要求命中正确官方文档。
+
+### Section-level
+
+只有带 `relevant_section_terms` 的 case 参与：
+
+- Section Hit@1 / Hit@3 / Hit@5
+- Section MRR
+
+Section-level 同时要求：
+
+1. `file_path` 是相关文档；
+2. `section_path` 命中人工标注的章节关键词。
+
+这样可以区分“搜到了正确文档，但搜错了该文档里的章节”和“真正找到了可直接喂给 LLM 的上下文”。
+
+## 11. 当前实验原则
+
+先保存 Dense Retrieval 的真实 v2 指标，再决定是否加入 Keyword / Hybrid / Reranker。
+
+推荐实验顺序：
+
+```text
+Dense baseline
+    ↓
+分析失败 case
+    ↓
+PostgreSQL keyword/full-text retrieval
+    ↓
+Dense + Keyword fusion
+    ↓
+重新跑同一套 eval
+    ↓
+如排序仍有问题，再加入 reranker
+```
+
+每次改动都使用同一评测集比较，不以单个 Demo 查询作为结论。
+
+## 12. 当前阶段暂不做
+
 - HNSW / IVFFlat
 - LLM 生成答案
+- Agent Tool Calling
 
-先把 dense retrieval 建立成可测量的 baseline。下一阶段再构建 Retrieval Eval，并以实验结果决定如何加入 keyword retrieval 和 rerank。
+先把 Retriever 做成可测量、可比较的稳定基础设施。
