@@ -1,3 +1,5 @@
+import pytest
+
 from docker_agent.rag.store import (
     KeywordSearchResult,
     SearchResult,
@@ -70,3 +72,28 @@ def test_rrf_dense_only_results_keep_dense_order() -> None:
     fused = reciprocal_rank_fusion(dense, [], top_k=3)
 
     assert [item.chunk_id for item in fused] == ["a", "b", "c"]
+
+
+def test_weighted_rrf_can_prefer_dense_evidence() -> None:
+    dense = [_dense("dense-first"), _dense("keyword-first")]
+    keyword = [_keyword("keyword-first"), _keyword("dense-first")]
+
+    fused = reciprocal_rank_fusion(
+        dense,
+        keyword,
+        top_k=2,
+        rrf_k=60,
+        dense_weight=2.0,
+        keyword_weight=1.0,
+    )
+
+    assert fused[0].chunk_id == "dense-first"
+    assert fused[1].chunk_id == "keyword-first"
+
+
+def test_rrf_rejects_invalid_weights() -> None:
+    with pytest.raises(ValueError, match="non-negative"):
+        reciprocal_rank_fusion([], [], dense_weight=-1.0)
+
+    with pytest.raises(ValueError, match="At least one"):
+        reciprocal_rank_fusion([], [], dense_weight=0.0, keyword_weight=0.0)
