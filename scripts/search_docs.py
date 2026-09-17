@@ -8,12 +8,11 @@ from sqlalchemy.exc import SQLAlchemyError
 from docker_agent.config import get_settings
 from docker_agent.db import check_database, create_db_engine
 from docker_agent.rag.embeddings import BgeM3Embedder
-from docker_agent.rag.reranker import BgeReranker, rerank_candidates
+from docker_agent.rag.reranker import BgeReranker, build_rerank_pool, rerank_candidates
 from docker_agent.rag.store import (
     HybridSearchResult,
     KeywordSearchResult,
     SearchResult,
-    reciprocal_rank_fusion,
     search_hybrid_chunks,
     search_keyword_chunks,
     search_similar_chunks,
@@ -36,6 +35,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--rrf-k", type=int, default=60)
     parser.add_argument("--dense-weight", type=float, default=1.0)
     parser.add_argument("--keyword-weight", type=float, default=1.0)
+    parser.add_argument(
+        "--rerank-pool",
+        choices=("rrf", "union", "dense"),
+        default="rrf",
+        help=(
+            "Candidate pool for rerank mode: rrf=top candidate-k after RRF, "
+            "union=up to 2*candidate-k, dense=dense candidates only."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -99,10 +107,11 @@ def main() -> None:
                 args.query,
                 top_k=args.candidate_k,
             )
-            union_candidates = reciprocal_rank_fusion(
+            rerank_pool = build_rerank_pool(
                 dense_candidates,
                 keyword_candidates,
-                top_k=args.candidate_k * 2,
+                strategy=args.rerank_pool,
+                candidate_k=args.candidate_k,
                 rrf_k=args.rrf_k,
                 dense_weight=args.dense_weight,
                 keyword_weight=args.keyword_weight,
@@ -112,7 +121,7 @@ def main() -> None:
             reranker = BgeReranker()
             results = rerank_candidates(
                 args.query,
-                union_candidates,
+                rerank_pool,
                 reranker,
                 top_k=args.top_k,
             )
