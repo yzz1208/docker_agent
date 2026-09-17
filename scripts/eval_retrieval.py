@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import gc
 import json
 from pathlib import Path
 from typing import Any
@@ -15,6 +16,7 @@ from docker_agent.rag.evaluation import (
     summarize_metrics,
     validate_case_labels,
 )
+from docker_agent.rag.reranker import BgeReranker, rerank_candidates
 from docker_agent.rag.store import (
     reciprocal_rank_fusion,
     search_keyword_chunks,
@@ -87,21 +89,21 @@ def load_chunk_rows(path: Path) -> list[dict[str, Any]]:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Evaluate dense, keyword, or hybrid retrieval on Docker Docs."
+        description="Evaluate dense, keyword, hybrid, or reranked retrieval on Docker Docs."
     )
     parser.add_argument("--input", type=Path, default=DEFAULT_INPUT)
     parser.add_argument("--chunks", type=Path, default=DEFAULT_CHUNKS)
     parser.add_argument("--top-k", type=int, default=max(K_VALUES))
     parser.add_argument(
         "--mode",
-        choices=("dense", "keyword", "hybrid"),
+        choices=("dense", "keyword", "hybrid", "rerank"),
         default="dense",
     )
     parser.add_argument(
         "--candidate-k",
         type=int,
         default=20,
-        help="Candidate depth per retriever before hybrid RRF.",
+        help="Candidate depth per retriever before RRF/reranking.",
     )
     parser.add_argument(
         "--rrf-k",
@@ -129,15 +131,29 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def _release_embedding_model(embedder: BgeM3Embedder) -> None:
+    """Release the embedding model before loading the reranker on small GPUs."""
+
+    del embedder
+    gc.collect()
+    try:
+        import torch
+
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+    except ImportError:
+        pass
+
+
 def main() -> None:
     args = parse_args()
     if not args.input.exists():
         raise SystemExit(f"Evaluation file not found: {args.input}")
     if args.top_k < max(K_VALUES):
         raise SystemExit(f"--top-k must be at least {max(K_VALUES)}")
-    if args.mode == "hybrid" and args.candidate_k < max(CANDIDATE_K_VALUES):
+    if args.mode in {"hybrid", "rerank"} and args.candidate_k < max(CANDIDATE_K_VALUES):
         raise SystemExit(
-            f"Hybrid evaluation requires --candidate-k >= {max(CANDIDATE_K_VALUES)} "
+            f"{args.mode} evaluation requires --candidate-k >= {max(CANDIDATE_K_VALUES)} "
             "for candidate coverage metrics"
         )
     if args.dense_weight < 0 or args.keyword_weight < 0:
@@ -158,13 +174,16 @@ def main() -> None:
         print(f"Validated {len(cases)} evaluation cases against {args.chunks}.")
 
     vectors: list[list[float]] | None = None
-    if args.mode in {"dense", "hybrid"}:
+    if args.mode in {"dense", "hybrid", "rerank"}:
         embedder = BgeM3Embedder()
         vectors = embedder.embed_documents(
             [case.query for case in cases],
             show_progress_bar=False,
         )
+        if args.mode == "rerank":
+            _release_embedding_model(embedder)
 
+    reranker = BgeReranker() if args.mode == "rerank" else None
     engine = create_db_engine()
     case_metrics = []
     candidate_metrics = []
@@ -201,14 +220,32 @@ def main() -> None:
                     f" candidate_union@20="
                     f"{'HIT' if coverage.union_hit_at[20] else 'MISS'}"
                 )
-                results = reciprocal_rank_fusion(
-                    dense_candidates,
-                    keyword_candidates,
-                    top_k=args.top_k,
-                    rrf_k=args.rrf_k,
-                    dense_weight=args.dense_weight,
-                    keyword_weight=args.keyword_weight,
-                )
+
+                if args.mode == "hybrid":
+                    results = reciprocal_rank_fusion(
+                        dense_candidates,
+                        keyword_candidates,
+                        top_k=args.top_k,
+                        rrf_k=args.rrf_k,
+                        dense_weight=args.dense_weight,
+                        keyword_weight=args.keyword_weight,
+                    )
+                else:
+                    assert reranker is not None
+                    union_candidates = reciprocal_rank_fusion(
+                        dense_candidates,
+                        keyword_candidates,
+                        top_k=args.candidate_k * 2,
+                        rrf_k=args.rrf_k,
+                        dense_weight=args.dense_weight,
+                        keyword_weight=args.keyword_weight,
+                    )
+                    results = rerank_candidates(
+                        case.query,
+                        union_candidates,
+                        reranker,
+                        top_k=args.top_k,
+                    )
 
         metrics = evaluate_case(case, results, k_values=K_VALUES)
         case_metrics.append(metrics)
@@ -273,6 +310,12 @@ def main() -> None:
                 "dense_weight": args.dense_weight,
                 "keyword_weight": args.keyword_weight,
             },
+        }
+
+    if args.mode == "rerank":
+        payload["reranker"] = {
+            "model": reranker.model_name if reranker is not None else None,
+            "candidate_pool_max": args.candidate_k * 2,
         }
 
     print("\nSummary")
