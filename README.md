@@ -1,367 +1,122 @@
 # Docker Support Agent
 
-基于 Docker 官方开源文档逐步实现的技术支持 Agent。项目按 **数据管道 → RAG → Tool Calling → Agent Workflow → Evaluation** 的顺序推进。
-
-完整设计见：[`doc/Docker_Support_Agent_开发文档.md`](doc/Docker_Support_Agent_开发文档.md)。
+基于 Docker 官方文档构建的技术支持 Agent 项目，按照“数据 → 检索 → 工具 → Agent 工作流 → 评测”的顺序逐步实现。
 
 ## 当前进度
 
-- [x] Python 3.12 + uv 项目结构
-- [x] FastAPI 基础服务
-- [x] PostgreSQL 16 + pgvector
-- [x] `/health` 与 `/health/db`
-- [x] Docker Docs 下载脚本
-- [x] 文档白名单筛选
-- [x] YAML Front Matter 解析
-- [x] Markdown 清洗与 Heading 分段
-- [x] 生成 `documents.jsonl` / `chunks.jsonl`
-- [x] Chunk 数据质量审计
-- [ ] Embedding + pgvector 索引
-- [ ] Hybrid Retrieval + Rerank
-- [ ] Tool Calling
-- [ ] LangGraph Agent
-- [ ] Evaluation
+- Milestone 0：FastAPI + PostgreSQL/pgvector 基础环境
+- Milestone 1：Docker Docs 下载、筛选、Markdown 清洗、Chunk 与数据质量审计
+- Milestone 2：BGE-M3 + PostgreSQL/pgvector dense retrieval baseline（进行中）
 
-## 环境要求
+## 本地环境
 
-- Python 3.12+
-- [uv](https://docs.astral.sh/uv/)
-- Docker Desktop / Docker Engine
-- Git
+推荐：
 
-当前阶段不需要配置大模型 API Key。
+- Python 3.12
+- uv
+- Docker Desktop
+- PostgreSQL 16 + pgvector（通过 Compose）
 
-## 本地启动
-
-### 1. 拉取当前开发分支
-
-```powershell
-git fetch
-git checkout feat/milestone-1-docs-pipeline
-git pull
-```
-
-### 2. 安装依赖
+安装依赖：
 
 ```powershell
 uv sync --all-groups
 ```
 
-### 3. 创建本地配置
-
-```powershell
-Copy-Item .env.example .env
-```
-
-### 4. 启动 PostgreSQL + pgvector
+启动 PostgreSQL：
 
 ```powershell
 docker compose up -d postgres
-docker compose ps
 ```
 
-### 5. 启动 FastAPI
-
-```powershell
-uv run uvicorn docker_agent.main:app --reload
-```
-
-浏览器打开：
-
-```text
-http://127.0.0.1:8000/docs
-```
-
-数据库检查：
-
-```text
-GET /health/db
-```
-
-## Milestone 1：构建 Docker Docs 数据集
-
-Docker Docs 官方仓库当前的内容主要位于 `content/`，本项目 V1 只选取以下范围：
-
-```text
-content/get-started/
-content/manuals/engine/
-content/manuals/compose/
-```
-
-这样先控制知识库范围，后续再根据评测结果决定是否扩充。
-
-### 1. 下载 / 更新 Docker Docs
+## Milestone 1：构建 Docker Docs 数据
 
 ```powershell
 uv run python scripts/download_docs.py
-```
-
-首次运行会 shallow clone：
-
-```text
-data/raw/docker-docs/
-```
-
-以后再次执行会 fetch 最新 `main` 并更新本地 raw 数据。
-
-### 2. 筛选文档
-
-```powershell
 uv run python scripts/select_docs.py
-```
-
-输出：
-
-```text
-data/selected/docker-docs/
-```
-
-脚本会保留 Docker Docs 原始目录结构，方便后续追踪原文来源。
-
-### 3. 清洗、分段并生成 JSONL
-
-```powershell
 uv run python scripts/build_docs.py
+uv run python scripts/audit_chunks.py
 ```
 
-输出：
+处理后的数据：
 
 ```text
 data/processed/documents.jsonl
 data/processed/chunks.jsonl
 ```
 
-`documents.jsonl` 每行代表一篇清洗后的官方文档；`chunks.jsonl` 每行代表后续 RAG 的一个检索单元。
+## Milestone 2：Dense Retrieval
 
-### 4. 快速查看结果
-
-PowerShell：
+初始化 pgvector 表：
 
 ```powershell
-Get-Content data/processed/documents.jsonl -TotalCount 1
-Get-Content data/processed/chunks.jsonl -TotalCount 3
+uv run python scripts/init_vector_store.py
 ```
 
-可以重点检查：
-
-- `title` 是否正确；
-- `section_path` 是否能反映 Markdown 标题层级；
-- Docker 命令和错误文本是否保留；
-- `source_url` 是否指向对应 `docs.docker.com` 页面；
-- 代码块有没有被误当成 Markdown Heading。
-
-### 5. 运行 Chunk 数据质量审计
-
-在进入 Embedding 前先运行：
+第一次建议先索引少量 Chunk：
 
 ```powershell
-uv run python scripts/audit_chunks.py
+uv run python scripts/index_chunks.py --reset --limit 20 --batch-size 4
 ```
 
-脚本会输出一份 JSON 报告，包括：
-
-- Chunk 总数与 Document 数量；
-- word count 的 min / P50 / P90 / P95 / max / average；
-- 过短 Chunk；
-- 超长 Chunk；
-- 空 Chunk；
-- 缺少 `source_url`；
-- 缺少 `section_path`；
-- fenced code block 没有闭合；
-- Docker Docs shortcode 残留；
-- 完全重复的 Chunk 内容。
-
-默认质量阈值：
-
-```text
-min_words = 20
-max_words = 600
-```
-
-这两个值目前只是审计阈值，不会删除数据。后续会结合真实报告决定是否调整 Chunk 策略。
-
-如果要自定义：
+确认流程正常后再索引全部 Chunk：
 
 ```powershell
-uv run python scripts/audit_chunks.py --min-words 30 --max-words 550 --examples 20
+uv run python scripts/index_chunks.py --reset --batch-size 4
 ```
 
-## 数据处理设计
+搜索：
 
-### Front Matter
-
-Docker Docs Markdown 常见：
-
-```markdown
----
-title: Troubleshooting Docker
----
+```powershell
+uv run python scripts/search_docs.py "Docker daemon 连不上怎么办" --top-k 5
 ```
 
-使用 PyYAML 解析 metadata，正文与 metadata 分离。
+### Retrieval Evaluation
 
-### Markdown 清洗
-
-V1 不追求把 Markdown 转成纯文本，而是尽量保留对技术检索有价值的结构：
-
-保留：
-
-- 正文；
-- 列表；
-- 命令；
-- fenced code block；
-- 错误信息；
-- note / tip 内部文本。
-
-删除：
-
-- 单独一行的 Hugo / Docker Docs 展示 shortcode。
-
-### Heading 分段
-
-先按：
+当前提供一个小型人工标注 baseline，用来验证评测框架；后续会继续扩展到 30～50 条以上：
 
 ```text
-# H1
-## H2
-### H3
+data/eval/retrieval_baseline.jsonl
 ```
 
-构造 `section_path`，并显式忽略代码块中的 `#`，例如 Shell comment 不会被识别成文档标题。
+运行：
 
-较长 section 再按段落切分。当前默认：
-
-```text
-max_words = 450
-overlap_words = 60
+```powershell
+uv run python scripts/eval_retrieval.py
 ```
 
-这里暂时使用 word count，而不是某个 Embedding 模型的 tokenizer。进入 Embedding 阶段后，会根据最终选定的模型重新评估 chunk token 分布。
+当前输出指标：
 
-### 为什么要先审计 Chunk
+- Hit@1 / Hit@3 / Hit@5：Top-K 内是否至少命中一个相关文档
+- Recall@1 / Recall@3 / Recall@5：相关文档被召回的比例
+- MRR：第一个相关结果排名的倒数均值
 
-Embedding 会把文本转换成向量；向量本身并不能直接告诉我们原始文本是否已经切坏。
-
-因此先检查：
-
-```text
-Markdown
-→ Document
-→ Chunk
-→ Audit
-```
-
-确认结构正常后，再进入：
-
-```text
-Chunk
-→ Embedding
-→ pgvector
-```
-
-这样后续检索效果不好时，可以区分“数据问题”和“向量检索问题”。
-
-## 数据结构
-
-Document 示例：
-
-```json
-{
-  "document_id": "docker_document_...",
-  "source": "docker_docs",
-  "file_path": "content/manuals/engine/daemon/troubleshoot.md",
-  "title": "Troubleshoot the Docker daemon",
-  "source_url": "https://docs.docker.com/engine/daemon/troubleshoot/",
-  "language": "en",
-  "content": "..."
-}
-```
-
-Chunk 示例：
-
-```json
-{
-  "chunk_id": "docker_document_...__0001",
-  "document_id": "docker_document_...",
-  "title": "Troubleshoot the Docker daemon",
-  "section_path": ["Troubleshoot the Docker daemon", "..."],
-  "content": "...",
-  "source_url": "https://docs.docker.com/engine/daemon/troubleshoot/",
-  "file_path": "content/manuals/engine/daemon/troubleshoot.md",
-  "word_count": 312
-}
-```
+当前 baseline 使用 `file_path` 作为稳定标签，而不是 `chunk_id`。这样以后调整 Chunk 大小或重新生成 Chunk 时，不会因为 Chunk ID 变化导致整套评测标签失效。
 
 ## 测试
 
 ```powershell
-uv run pytest -v
 uv run ruff check .
+uv run pytest -v
 ```
 
-当前测试覆盖：
+## 配置
 
-- YAML Front Matter；
-- Heading hierarchy；
-- 代码块内部 `#` 不被误识别；
-- shortcode wrapper 清理；
-- Docker Docs URL 映射；
-- 长 section 二次切分；
-- Chunk 审计统计与异常标记。
+复制：
 
-## 项目结构
-
-```text
-docker_agent/
-├── doc/
-├── docker/
-│   └── postgres/init/
-├── scripts/
-│   ├── download_docs.py
-│   ├── select_docs.py
-│   ├── build_docs.py
-│   └── audit_chunks.py
-├── src/docker_agent/
-│   ├── config.py
-│   ├── db.py
-│   ├── main.py
-│   └── docs/
-│       ├── audit.py
-│       ├── models.py
-│       ├── markdown.py
-│       └── pipeline.py
-├── tests/
-│   ├── test_health.py
-│   ├── test_docs_audit.py
-│   └── test_docs_markdown.py
-├── compose.yaml
-└── pyproject.toml
+```powershell
+Copy-Item .env.example .env
 ```
 
-## 为什么暂时不把数据写进 PostgreSQL
+常用配置示例：
 
-Milestone 1 的目标是先验证：
-
-```text
-官方 Markdown
-→ 清洗
-→ 结构化 Document
-→ Chunk
-→ Audit
+```env
+DATABASE_URL=postgresql+psycopg://postgres:postgres@localhost:5432/docker_agent
+EMBEDDING_MODEL=BAAI/bge-m3
+EMBEDDING_DEVICE=cuda
+EMBEDDING_CACHE_DIR=F:/models/huggingface
+EMBEDDING_BATCH_SIZE=4
+RETRIEVAL_TOP_K=10
 ```
 
-因此先输出 JSONL，方便人工检查和重复构建。
-
-下一阶段确认数据质量后，再做：
-
-```text
-chunks.jsonl
-    ↓
-Embedding
-    ↓
-PostgreSQL + pgvector
-    ↓
-Vector Retrieval
-```
-
-这样出现检索问题时，可以明确区分是“原始数据 / Chunk 问题”还是“Embedding / 数据库问题”。
+如果没有 CUDA，可以不设置 `EMBEDDING_DEVICE` 或设置为 `cpu`。
