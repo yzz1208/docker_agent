@@ -59,6 +59,24 @@ class RetrievalSummary:
     section_mrr: float
 
 
+@dataclass(frozen=True, slots=True)
+class CandidateCoverageMetrics:
+    case_id: str
+    dense_hit_at: dict[int, bool]
+    keyword_hit_at: dict[int, bool]
+    union_hit_at: dict[int, bool]
+    union_recall_at: dict[int, float]
+
+
+@dataclass(frozen=True, slots=True)
+class CandidateCoverageSummary:
+    cases: int
+    dense_hit_at: dict[int, float]
+    keyword_hit_at: dict[int, float]
+    union_hit_at: dict[int, float]
+    union_recall_at: dict[int, float]
+
+
 def evaluate_case(
     case: RetrievalCase,
     results: Sequence[RetrievalResult],
@@ -106,6 +124,45 @@ def evaluate_case(
         section_first_relevant_rank=section_first_relevant_rank,
         section_hit_at=section_hit_at,
         has_section_labels=case.has_section_labels,
+    )
+
+
+def evaluate_candidate_coverage(
+    case: RetrievalCase,
+    dense_results: Sequence[RetrievalResult],
+    keyword_results: Sequence[RetrievalResult],
+    *,
+    k_values: tuple[int, ...] = (10, 20),
+) -> CandidateCoverageMetrics:
+    """Measure whether first-stage retrievers contain a relevant document."""
+
+    if not case.relevant_file_paths:
+        raise ValueError(f"Case {case.case_id} has no relevant_file_paths")
+    if any(k <= 0 for k in k_values):
+        raise ValueError("k_values must contain only positive integers")
+
+    dense_hit_at: dict[int, bool] = {}
+    keyword_hit_at: dict[int, bool] = {}
+    union_hit_at: dict[int, bool] = {}
+    union_recall_at: dict[int, float] = {}
+
+    for k in k_values:
+        dense_paths = {result.file_path for result in dense_results[:k]}
+        keyword_paths = {result.file_path for result in keyword_results[:k]}
+        union_paths = dense_paths | keyword_paths
+        relevant_found = union_paths & case.relevant_file_paths
+
+        dense_hit_at[k] = bool(dense_paths & case.relevant_file_paths)
+        keyword_hit_at[k] = bool(keyword_paths & case.relevant_file_paths)
+        union_hit_at[k] = bool(relevant_found)
+        union_recall_at[k] = len(relevant_found) / len(case.relevant_file_paths)
+
+    return CandidateCoverageMetrics(
+        case_id=case.case_id,
+        dense_hit_at=dense_hit_at,
+        keyword_hit_at=keyword_hit_at,
+        union_hit_at=union_hit_at,
+        union_recall_at=union_recall_at,
     )
 
 
@@ -161,6 +218,43 @@ def summarize_metrics(
         section_cases=len(section_metrics),
         section_hit_at=section_hit_at,
         section_mrr=section_mrr,
+    )
+
+
+def summarize_candidate_coverage(
+    metrics: list[CandidateCoverageMetrics],
+    *,
+    k_values: tuple[int, ...] = (10, 20),
+) -> CandidateCoverageSummary:
+    """Aggregate dense, keyword, and union candidate coverage."""
+
+    if not metrics:
+        return CandidateCoverageSummary(
+            cases=0,
+            dense_hit_at={k: 0.0 for k in k_values},
+            keyword_hit_at={k: 0.0 for k in k_values},
+            union_hit_at={k: 0.0 for k in k_values},
+            union_recall_at={k: 0.0 for k in k_values},
+        )
+
+    return CandidateCoverageSummary(
+        cases=len(metrics),
+        dense_hit_at={
+            k: mean(1.0 if item.dense_hit_at[k] else 0.0 for item in metrics)
+            for k in k_values
+        },
+        keyword_hit_at={
+            k: mean(1.0 if item.keyword_hit_at[k] else 0.0 for item in metrics)
+            for k in k_values
+        },
+        union_hit_at={
+            k: mean(1.0 if item.union_hit_at[k] else 0.0 for item in metrics)
+            for k in k_values
+        },
+        union_recall_at={
+            k: mean(item.union_recall_at[k] for item in metrics)
+            for k in k_values
+        },
     )
 
 
