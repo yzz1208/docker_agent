@@ -29,6 +29,8 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--candidate-k", type=int, default=20)
     parser.add_argument("--rrf-k", type=int, default=60)
+    parser.add_argument("--dense-weight", type=float, default=1.0)
+    parser.add_argument("--keyword-weight", type=float, default=1.0)
     return parser.parse_args()
 
 
@@ -38,6 +40,10 @@ def main() -> None:
         raise SystemExit("--top-k must be positive")
     if args.candidate_k < args.top_k:
         raise SystemExit("--candidate-k must be greater than or equal to --top-k")
+    if args.dense_weight < 0 or args.keyword_weight < 0:
+        raise SystemExit("RRF weights must be non-negative")
+    if args.dense_weight == 0 and args.keyword_weight == 0:
+        raise SystemExit("At least one RRF weight must be positive")
 
     engine = create_db_engine()
     if args.mode == "keyword":
@@ -55,6 +61,8 @@ def main() -> None:
                 top_k=args.top_k,
                 candidate_k=args.candidate_k,
                 rrf_k=args.rrf_k,
+                dense_weight=args.dense_weight,
+                keyword_weight=args.keyword_weight,
             )
 
     if not results:
