@@ -97,6 +97,7 @@ class HybridSearchResult:
     keyword_rank: int | None
     dense_distance: float | None
     keyword_score: float | None
+    rerank_score: float | None = None
 
 
 def init_vector_store(engine: Engine | None = None) -> Engine:
