@@ -18,7 +18,7 @@ from docker_agent.rag.evaluation import (
     summarize_metrics,
     validate_case_labels,
 )
-from docker_agent.rag.reranker import BgeReranker, rerank_candidates
+from docker_agent.rag.reranker import BgeReranker, build_rerank_pool, rerank_candidates
 from docker_agent.rag.store import (
     reciprocal_rank_fusion,
     search_keyword_chunks,
@@ -124,6 +124,15 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=1.0,
         help="Keyword contribution weight for hybrid RRF.",
+    )
+    parser.add_argument(
+        "--rerank-pool",
+        choices=("rrf", "union", "dense"),
+        default="rrf",
+        help=(
+            "Candidate pool for rerank mode: rrf=top candidate-k after RRF, "
+            "union=up to 2*candidate-k, dense=dense candidates only."
+        ),
     )
     parser.add_argument(
         "--skip-label-validation",
@@ -240,17 +249,18 @@ def main() -> None:
                     )
                 else:
                     assert reranker is not None
-                    union_candidates = reciprocal_rank_fusion(
+                    rerank_pool = build_rerank_pool(
                         dense_candidates,
                         keyword_candidates,
-                        top_k=args.candidate_k * 2,
+                        strategy=args.rerank_pool,
+                        candidate_k=args.candidate_k,
                         rrf_k=args.rrf_k,
                         dense_weight=args.dense_weight,
                         keyword_weight=args.keyword_weight,
                     )
                     results = rerank_candidates(
                         case.query,
-                        union_candidates,
+                        rerank_pool,
                         reranker,
                         top_k=args.top_k,
                     )
@@ -321,9 +331,11 @@ def main() -> None:
         }
 
     if args.mode == "rerank":
+        max_pool = args.candidate_k * 2 if args.rerank_pool == "union" else args.candidate_k
         payload["reranker"] = {
             "model": reranker.model_name if reranker is not None else None,
-            "candidate_pool_max": args.candidate_k * 2,
+            "pool_strategy": args.rerank_pool,
+            "candidate_pool_max": max_pool,
         }
 
     print("\nSummary")
