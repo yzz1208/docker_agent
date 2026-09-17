@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from statistics import mean
-from typing import Any
+from typing import Any, Protocol
 
-from docker_agent.rag.store import SearchResult
+
+class RetrievalResult(Protocol):
+    file_path: str
+    section_path: list[str]
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,7 +61,7 @@ class RetrievalSummary:
 
 def evaluate_case(
     case: RetrievalCase,
-    results: list[SearchResult],
+    results: Sequence[RetrievalResult],
     *,
     k_values: tuple[int, ...] = (1, 3, 5),
 ) -> RetrievalCaseMetrics:
@@ -214,8 +218,8 @@ def validate_case_labels(
 
 
 def _first_rank(
-    results: list[SearchResult],
-    predicate: Any,
+    results: Sequence[RetrievalResult],
+    predicate: Callable[[RetrievalResult], bool],
 ) -> int | None:
     for rank, result in enumerate(results, start=1):
         if predicate(result):
@@ -223,7 +227,7 @@ def _first_rank(
     return None
 
 
-def _is_section_relevant(case: RetrievalCase, result: SearchResult) -> bool:
+def _is_section_relevant(case: RetrievalCase, result: RetrievalResult) -> bool:
     if result.file_path not in case.relevant_file_paths:
         return False
     joined = " > ".join(result.section_path).casefold()
