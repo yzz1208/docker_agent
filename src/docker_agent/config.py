@@ -4,12 +4,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    """Application configuration loaded from environment variables.
-
-    PostgreSQL is the default database for this project. The connection string
-    can still be overridden through ``DATABASE_URL`` without changing
-    application code.
-    """
+    """Application configuration loaded from environment variables."""
 
     app_name: str = "Docker Support Agent"
     app_env: str = "development"
@@ -26,7 +21,17 @@ class Settings(BaseSettings):
     model_base_url: str = ""
 
     embedding_model: str = "BAAI/bge-m3"
+    embedding_device: str = ""
+    embedding_cache_dir: str = ""
+    embedding_batch_size: int = 8
+    embedding_dimension: int = 1024
+
     rerank_model: str = "BAAI/bge-reranker-v2-m3"
+    rerank_device: str = ""
+    rerank_cache_dir: str = ""
+    rerank_batch_size: int = 4
+    rerank_max_length: int = 512
+    rerank_use_fp16: bool = True
 
     tool_mode: str = "mock"
     retrieval_top_k: int = 10

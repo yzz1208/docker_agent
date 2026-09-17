@@ -1,0 +1,6 @@
+{"id":"daemon-connect-zh","query":"Docker daemon 连不上怎么办？","relevant_file_paths":["content/manuals/engine/daemon/troubleshoot.md"]}
+{"id":"daemon-connect-en","query":"Cannot connect to the Docker daemon","relevant_file_paths":["content/manuals/engine/daemon/troubleshoot.md"]}
+{"id":"docker-host-env","query":"Docker client is connecting to the wrong host because of DOCKER_HOST","relevant_file_paths":["content/manuals/engine/daemon/troubleshoot.md"]}
+{"id":"daemon-remote-access","query":"How do I configure Docker daemon remote access with daemon.json?","relevant_file_paths":["content/manuals/engine/daemon/remote-access.md"]}
+{"id":"bind-mount-vs-volume-zh","query":"Docker volume 和 bind mount 有什么区别？","relevant_file_paths":["content/manuals/engine/storage/bind-mounts.md","content/manuals/engine/storage/volumes.md"]}
+{"id":"multi-stage-build-zh","query":"Docker 多阶段构建怎么用？","relevant_file_paths":["content/get-started/docker-concepts/building-images/multi-stage-builds.md"]}

@@ -1,0 +1,37 @@
+{"id":"daemon-connect-zh","query":"Docker daemon 连不上怎么办？","relevant_file_paths":["content/manuals/engine/daemon/troubleshoot.md"],"relevant_section_terms":["Unable to connect to the Docker daemon"]}
+{"id":"daemon-connect-colloquial-zh","query":"我这边 docker 命令都报错，像是后台服务根本没起来，怎么确认？","relevant_file_paths":["content/manuals/engine/daemon/troubleshoot.md"],"relevant_section_terms":["Check whether Docker is running"]}
+{"id":"daemon-connect-en","query":"Cannot connect to the Docker daemon","relevant_file_paths":["content/manuals/engine/daemon/troubleshoot.md"],"relevant_section_terms":["Unable to connect to the Docker daemon"]}
+{"id":"docker-host-env","query":"Docker client is connecting to the wrong host because of DOCKER_HOST","relevant_file_paths":["content/manuals/engine/daemon/troubleshoot.md"],"relevant_section_terms":["Check which host your client is connecting to"]}
+{"id":"daemon-remote-access","query":"How do I configure Docker daemon remote access with daemon.json?","relevant_file_paths":["content/manuals/engine/daemon/remote-access.md"],"relevant_section_terms":["daemon.json"]}
+{"id":"daemon-logs-zh","query":"dockerd 启动失败了，我应该去哪里看 Docker daemon 自己的日志？","relevant_file_paths":["content/manuals/engine/daemon/logs.md"]}
+{"id":"daemon-proxy-zh","query":"公司网络必须走 HTTP 代理，Docker daemon 拉镜像时怎么配置 proxy？","relevant_file_paths":["content/manuals/engine/daemon/proxy.md"]}
+{"id":"daemon-live-restore-zh","query":"升级或重启 Docker daemon 的时候，我想让现有容器继续运行，应该怎么做？","relevant_file_paths":["content/manuals/engine/daemon/live-restore.md"]}
+{"id":"container-oom-137-zh","query":"容器突然退出，exit code 137，而且像是内存不够被系统杀掉了，应该看什么？","relevant_file_paths":["content/manuals/engine/containers/resource_constraints.md"],"relevant_section_terms":["Understand the risks of running out of memory"]}
+{"id":"container-memory-limit-zh","query":"怎么限制一个 Docker 容器最多只能使用 2GB 内存？","relevant_file_paths":["content/manuals/engine/containers/resource_constraints.md"],"relevant_section_terms":["Memory"]}
+{"id":"container-cpu-limit-zh","query":"我不想让这个容器吃满所有 CPU，Docker 里怎么限制 CPU 资源？","relevant_file_paths":["content/manuals/engine/containers/resource_constraints.md"],"relevant_section_terms":["CPU"]}
+{"id":"container-runtime-metrics-en","query":"How can I inspect runtime CPU and memory metrics for Docker containers?","relevant_file_paths":["content/manuals/engine/containers/runmetrics.md"]}
+{"id":"container-restart-policy-zh","query":"机器重启或者容器异常退出后，怎样让 Docker 自动把容器拉起来？","relevant_file_paths":["content/manuals/engine/containers/start-containers-automatically.md"],"relevant_section_terms":["Use a restart policy"]}
+{"id":"container-multiple-processes-zh","query":"一个容器里需要同时跑多个进程或服务，Docker 官方建议怎么处理？","relevant_file_paths":["content/manuals/engine/containers/multi-service_container.md"]}
+{"id":"container-gpu-zh","query":"怎么让 Docker 容器使用 NVIDIA GPU？","relevant_file_paths":["content/manuals/engine/containers/gpu.md"]}
+{"id":"storage-bind-vs-volume-zh","query":"Docker volume 和 bind mount 到底有什么区别，什么时候该选哪个？","relevant_file_paths":["content/manuals/engine/storage/bind-mounts.md","content/manuals/engine/storage/volumes.md"]}
+{"id":"storage-persist-after-delete-zh","query":"容器删掉以后数据还必须保留，下次新容器还能继续用这些数据，应该怎么存？","relevant_file_paths":["content/manuals/engine/storage/volumes.md"]}
+{"id":"storage-host-directory-zh","query":"我要把宿主机上的一个目录直接映射到容器里面，应该用什么 Docker 存储方式？","relevant_file_paths":["content/manuals/engine/storage/bind-mounts.md"]}
+{"id":"storage-tmpfs-zh","query":"有些临时敏感数据只想放内存里，容器停了就消失，不希望写到磁盘，怎么做？","relevant_file_paths":["content/manuals/engine/storage/tmpfs.md"]}
+{"id":"storage-volume-readonly-en","query":"How do I mount a Docker volume as read-only inside a container?","relevant_file_paths":["content/manuals/engine/storage/volumes.md"]}
+{"id":"storage-bind-obscure-en","query":"Why did files already inside the container disappear after I bind-mounted a host directory over that path?","relevant_file_paths":["content/manuals/engine/storage/bind-mounts.md"]}
+{"id":"storage-prune-unused-zh","query":"Docker 主机磁盘快满了，怎样清理已经不用的 volumes？","relevant_file_paths":["content/manuals/engine/storage/volumes.md"]}
+{"id":"network-publish-port-zh","query":"容器里的 Web 服务监听 80，我想通过宿主机 8080 访问它，Docker 网络应该怎么配置？","relevant_file_paths":["content/manuals/engine/network/port-publishing.md"]}
+{"id":"network-dns-service-name-zh","query":"同一个 Docker 网络里的两个容器，能不能直接通过容器名互相访问？DNS 是怎么工作的？","relevant_file_paths":["content/manuals/engine/network/_index.md"]}
+{"id":"network-ca-cert-zh","query":"公司 HTTPS 代理用了自签 CA，Docker 容器里访问内网 HTTPS 一直证书报错，怎么让它信任这个 CA？","relevant_file_paths":["content/manuals/engine/network/ca-certs.md"]}
+{"id":"network-iptables-zh","query":"为什么启动 Docker 后 iptables 规则被改了？我想理解 Docker 和防火墙规则的关系。","relevant_file_paths":["content/manuals/engine/network/firewall-iptables.md"]}
+{"id":"compose-startup-order-zh","query":"Compose 里 web 必须等数据库真正健康后再启动，只写 depends_on 够吗？","relevant_file_paths":["content/manuals/compose/how-tos/startup-order.md"]}
+{"id":"compose-env-precedence-zh","query":"Docker Compose 里 shell、.env、env_file 和 compose.yaml 都设置了同一个变量，到底谁覆盖谁？","relevant_file_paths":["content/manuals/compose/how-tos/environment-variables/envvars-precedence.md"],"relevant_section_terms":["Environment variables precedence"]}
+{"id":"compose-set-env-zh","query":"Compose 里怎么通过 environment 或 env_file 给容器设置环境变量？","relevant_file_paths":["content/manuals/compose/how-tos/environment-variables/set-environment-variables.md"]}
+{"id":"compose-networking-zh","query":"Docker Compose 的多个 services 怎么通过 service name 互相访问，网络是怎么创建的？","relevant_file_paths":["content/manuals/compose/how-tos/networking.md"]}
+{"id":"compose-profiles-zh","query":"我有一个 debug 服务平时不想启动，只在需要时让 Compose 启用它，应该用什么功能？","relevant_file_paths":["content/manuals/compose/how-tos/profiles.md"]}
+{"id":"compose-watch-zh","query":"本地开发时源代码一改就想让 Compose 自动同步或 rebuild，应该怎么配置？","relevant_file_paths":["content/manuals/compose/how-tos/file-watch.md"]}
+{"id":"compose-production-zh","query":"开发和生产想共用基础 Compose 配置，但生产环境覆盖端口和环境变量，官方推荐怎么组织？","relevant_file_paths":["content/manuals/compose/how-tos/production.md"]}
+{"id":"compose-secrets-zh","query":"数据库密码不想直接写进 Compose 环境变量，Compose 里怎么用 secrets？","relevant_file_paths":["content/manuals/compose/how-tos/use-secrets.md"]}
+{"id":"multi-stage-build-zh","query":"我想让最终 Docker 镜像只带运行产物，不把编译工具一起塞进去，多阶段构建怎么做？","relevant_file_paths":["content/get-started/docker-concepts/building-images/multi-stage-builds.md"]}
+{"id":"build-tag-publish-zh","query":"镜像构建完成以后，怎么加 tag 并推送到 Docker Hub？","relevant_file_paths":["content/get-started/docker-concepts/building-images/build-tag-and-publish-an-image.md"],"relevant_section_terms":["Push the image"]}
+{"id":"persisting-data-get-started-zh","query":"入门场景里容器重建后还想保留应用数据，Docker 官方教程是怎么做持久化的？","relevant_file_paths":["content/get-started/docker-concepts/running-containers/persisting-container-data.md"]}
