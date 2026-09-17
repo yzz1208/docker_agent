@@ -27,6 +27,11 @@ class Settings(BaseSettings):
     embedding_dimension: int = 1024
 
     rerank_model: str = "BAAI/bge-reranker-v2-m3"
+    rerank_device: str = ""
+    rerank_cache_dir: str = ""
+    rerank_batch_size: int = 4
+    rerank_max_length: int = 512
+    rerank_use_fp16: bool = True
 
     tool_mode: str = "mock"
     retrieval_top_k: int = 10
