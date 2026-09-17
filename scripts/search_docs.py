@@ -37,8 +37,7 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def _release_embedding_model(embedder: BgeM3Embedder) -> None:
-    del embedder
+def _release_cuda_cache() -> None:
     gc.collect()
     try:
         import torch
@@ -98,7 +97,8 @@ def main() -> None:
                 dense_weight=args.dense_weight,
                 keyword_weight=args.keyword_weight,
             )
-            _release_embedding_model(embedder)
+            del embedder
+            _release_cuda_cache()
             reranker = BgeReranker()
             results = rerank_candidates(
                 args.query,
