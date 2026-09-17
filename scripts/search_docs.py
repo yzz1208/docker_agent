@@ -1,14 +1,17 @@
 from __future__ import annotations
 
 import argparse
+import gc
 
 from docker_agent.config import get_settings
 from docker_agent.db import create_db_engine
 from docker_agent.rag.embeddings import BgeM3Embedder
+from docker_agent.rag.reranker import BgeReranker, rerank_candidates
 from docker_agent.rag.store import (
     HybridSearchResult,
     KeywordSearchResult,
     SearchResult,
+    reciprocal_rank_fusion,
     search_hybrid_chunks,
     search_keyword_chunks,
     search_similar_chunks,
@@ -18,13 +21,13 @@ from docker_agent.rag.store import (
 def parse_args() -> argparse.Namespace:
     settings = get_settings()
     parser = argparse.ArgumentParser(
-        description="Search Docker Docs with dense, keyword, or hybrid retrieval."
+        description="Search Docker Docs with dense, keyword, hybrid, or reranked retrieval."
     )
     parser.add_argument("query", help="Natural-language search query, Chinese or English")
     parser.add_argument("--top-k", type=int, default=settings.retrieval_top_k)
     parser.add_argument(
         "--mode",
-        choices=("dense", "keyword", "hybrid"),
+        choices=("dense", "keyword", "hybrid", "rerank"),
         default="dense",
     )
     parser.add_argument("--candidate-k", type=int, default=20)
@@ -32,6 +35,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--dense-weight", type=float, default=1.0)
     parser.add_argument("--keyword-weight", type=float, default=1.0)
     return parser.parse_args()
+
+
+def _release_embedding_model(embedder: BgeM3Embedder) -> None:
+    del embedder
+    gc.collect()
+    try:
+        import torch
+
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+    except ImportError:
+        pass
 
 
 def main() -> None:
@@ -53,7 +68,7 @@ def main() -> None:
         query_embedding = embedder.embed_query(args.query)
         if args.mode == "dense":
             results = search_similar_chunks(engine, query_embedding, top_k=args.top_k)
-        else:
+        elif args.mode == "hybrid":
             results = search_hybrid_chunks(
                 engine,
                 args.query,
@@ -63,6 +78,33 @@ def main() -> None:
                 rrf_k=args.rrf_k,
                 dense_weight=args.dense_weight,
                 keyword_weight=args.keyword_weight,
+            )
+        else:
+            dense_candidates = search_similar_chunks(
+                engine,
+                query_embedding,
+                top_k=args.candidate_k,
+            )
+            keyword_candidates = search_keyword_chunks(
+                engine,
+                args.query,
+                top_k=args.candidate_k,
+            )
+            union_candidates = reciprocal_rank_fusion(
+                dense_candidates,
+                keyword_candidates,
+                top_k=args.candidate_k * 2,
+                rrf_k=args.rrf_k,
+                dense_weight=args.dense_weight,
+                keyword_weight=args.keyword_weight,
+            )
+            _release_embedding_model(embedder)
+            reranker = BgeReranker()
+            results = rerank_candidates(
+                args.query,
+                union_candidates,
+                reranker,
+                top_k=args.top_k,
             )
 
     if not results:
@@ -87,8 +129,11 @@ def _score_label(result: SearchResult | KeywordSearchResult | HybridSearchResult
 
     dense_rank = result.dense_rank if result.dense_rank is not None else "-"
     keyword_rank = result.keyword_rank if result.keyword_rank is not None else "-"
+    prefix = ""
+    if result.rerank_score is not None:
+        prefix = f"rerank_score={result.rerank_score:.4f} "
     return (
-        f"rrf_score={result.rrf_score:.6f} "
+        f"{prefix}rrf_score={result.rrf_score:.6f} "
         f"dense_rank={dense_rank} keyword_rank={keyword_rank}"
     )
 
