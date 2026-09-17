@@ -6,7 +6,9 @@ import json
 from pathlib import Path
 from typing import Any
 
-from docker_agent.db import create_db_engine
+from sqlalchemy.exc import SQLAlchemyError
+
+from docker_agent.db import check_database, create_db_engine
 from docker_agent.rag.embeddings import BgeM3Embedder
 from docker_agent.rag.evaluation import (
     RetrievalCase,
@@ -170,6 +172,15 @@ def main() -> None:
         validate_case_labels(cases, load_chunk_rows(args.chunks))
         print(f"Validated {len(cases)} evaluation cases against {args.chunks}.")
 
+    engine = create_db_engine()
+    try:
+        check_database(engine)
+    except SQLAlchemyError:
+        raise SystemExit(
+            "PostgreSQL is unavailable. Start Docker Desktop and run "
+            "`docker compose up -d postgres`, then retry."
+        ) from None
+
     vectors: list[list[float]] | None = None
     if args.mode in {"dense", "hybrid", "rerank"}:
         embedder = BgeM3Embedder()
@@ -182,7 +193,6 @@ def main() -> None:
             _release_cuda_cache()
 
     reranker = BgeReranker() if args.mode == "rerank" else None
-    engine = create_db_engine()
     case_metrics = []
     candidate_metrics = []
 
