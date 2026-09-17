@@ -3,8 +3,10 @@ from __future__ import annotations
 import argparse
 import gc
 
+from sqlalchemy.exc import SQLAlchemyError
+
 from docker_agent.config import get_settings
-from docker_agent.db import create_db_engine
+from docker_agent.db import check_database, create_db_engine
 from docker_agent.rag.embeddings import BgeM3Embedder
 from docker_agent.rag.reranker import BgeReranker, rerank_candidates
 from docker_agent.rag.store import (
@@ -60,6 +62,14 @@ def main() -> None:
         raise SystemExit("At least one RRF weight must be positive")
 
     engine = create_db_engine()
+    try:
+        check_database(engine)
+    except SQLAlchemyError:
+        raise SystemExit(
+            "PostgreSQL is unavailable. Start Docker Desktop and run "
+            "`docker compose up -d postgres`, then retry."
+        ) from None
+
     if args.mode == "keyword":
         results = search_keyword_chunks(engine, args.query, top_k=args.top_k)
     else:
