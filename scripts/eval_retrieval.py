@@ -9,12 +9,14 @@ from docker_agent.db import create_db_engine
 from docker_agent.rag.embeddings import BgeM3Embedder
 from docker_agent.rag.evaluation import (
     RetrievalCase,
+    evaluate_candidate_coverage,
     evaluate_case,
+    summarize_candidate_coverage,
     summarize_metrics,
     validate_case_labels,
 )
 from docker_agent.rag.store import (
-    search_hybrid_chunks,
+    reciprocal_rank_fusion,
     search_keyword_chunks,
     search_similar_chunks,
 )
@@ -22,6 +24,7 @@ from docker_agent.rag.store import (
 DEFAULT_INPUT = Path("data/eval/retrieval_v2.jsonl")
 DEFAULT_CHUNKS = Path("data/processed/chunks.jsonl")
 K_VALUES = (1, 3, 5)
+CANDIDATE_K_VALUES = (10, 20)
 
 
 def load_cases(path: Path) -> list[RetrievalCase]:
@@ -98,13 +101,25 @@ def parse_args() -> argparse.Namespace:
         "--candidate-k",
         type=int,
         default=20,
-        help="Candidate depth for hybrid dense/keyword retrieval before RRF.",
+        help="Candidate depth per retriever before hybrid RRF.",
     )
     parser.add_argument(
         "--rrf-k",
         type=int,
         default=60,
         help="RRF rank constant. Higher values make rank differences less aggressive.",
+    )
+    parser.add_argument(
+        "--dense-weight",
+        type=float,
+        default=1.0,
+        help="Dense contribution weight for hybrid RRF.",
+    )
+    parser.add_argument(
+        "--keyword-weight",
+        type=float,
+        default=1.0,
+        help="Keyword contribution weight for hybrid RRF.",
     )
     parser.add_argument(
         "--skip-label-validation",
@@ -120,8 +135,15 @@ def main() -> None:
         raise SystemExit(f"Evaluation file not found: {args.input}")
     if args.top_k < max(K_VALUES):
         raise SystemExit(f"--top-k must be at least {max(K_VALUES)}")
-    if args.candidate_k < args.top_k:
-        raise SystemExit("--candidate-k must be greater than or equal to --top-k")
+    if args.mode == "hybrid" and args.candidate_k < max(CANDIDATE_K_VALUES):
+        raise SystemExit(
+            f"Hybrid evaluation requires --candidate-k >= {max(CANDIDATE_K_VALUES)} "
+            "for candidate coverage metrics"
+        )
+    if args.dense_weight < 0 or args.keyword_weight < 0:
+        raise SystemExit("RRF weights must be non-negative")
+    if args.dense_weight == 0 and args.keyword_weight == 0:
+        raise SystemExit("At least one RRF weight must be positive")
 
     cases = load_cases(args.input)
     if not cases:
@@ -145,8 +167,11 @@ def main() -> None:
 
     engine = create_db_engine()
     case_metrics = []
+    candidate_metrics = []
 
     for index, case in enumerate(cases):
+        candidate_label = ""
+
         if args.mode == "keyword":
             results = search_keyword_chunks(engine, case.query, top_k=args.top_k)
         else:
@@ -155,13 +180,34 @@ def main() -> None:
             if args.mode == "dense":
                 results = search_similar_chunks(engine, vector, top_k=args.top_k)
             else:
-                results = search_hybrid_chunks(
+                dense_candidates = search_similar_chunks(
+                    engine,
+                    vector,
+                    top_k=args.candidate_k,
+                )
+                keyword_candidates = search_keyword_chunks(
                     engine,
                     case.query,
-                    vector,
+                    top_k=args.candidate_k,
+                )
+                coverage = evaluate_candidate_coverage(
+                    case,
+                    dense_candidates,
+                    keyword_candidates,
+                    k_values=CANDIDATE_K_VALUES,
+                )
+                candidate_metrics.append(coverage)
+                candidate_label = (
+                    f" candidate_union@20="
+                    f"{'HIT' if coverage.union_hit_at[20] else 'MISS'}"
+                )
+                results = reciprocal_rank_fusion(
+                    dense_candidates,
+                    keyword_candidates,
                     top_k=args.top_k,
-                    candidate_k=args.candidate_k,
                     rrf_k=args.rrf_k,
+                    dense_weight=args.dense_weight,
+                    keyword_weight=args.keyword_weight,
                 )
 
         metrics = evaluate_case(case, results, k_values=K_VALUES)
@@ -176,11 +222,11 @@ def main() -> None:
 
         print(
             f"[{case.case_id}] doc_rank={document_rank} section_rank={section_rank} "
-            f"top1={top1_label} query={case.query}"
+            f"top1={top1_label}{candidate_label} query={case.query}"
         )
 
     summary = summarize_metrics(case_metrics, k_values=K_VALUES)
-    payload = {
+    payload: dict[str, Any] = {
         "mode": args.mode,
         "cases": summary.cases,
         "document": {
@@ -198,6 +244,37 @@ def main() -> None:
             "mrr": round(summary.section_mrr, 4),
         },
     }
+
+    if candidate_metrics:
+        candidate_summary = summarize_candidate_coverage(
+            candidate_metrics,
+            k_values=CANDIDATE_K_VALUES,
+        )
+        payload["candidate_coverage"] = {
+            "candidate_k": args.candidate_k,
+            "dense_hit_at": {
+                str(k): round(value, 4)
+                for k, value in candidate_summary.dense_hit_at.items()
+            },
+            "keyword_hit_at": {
+                str(k): round(value, 4)
+                for k, value in candidate_summary.keyword_hit_at.items()
+            },
+            "union_hit_at": {
+                str(k): round(value, 4)
+                for k, value in candidate_summary.union_hit_at.items()
+            },
+            "union_recall_at": {
+                str(k): round(value, 4)
+                for k, value in candidate_summary.union_recall_at.items()
+            },
+            "rrf": {
+                "k": args.rrf_k,
+                "dense_weight": args.dense_weight,
+                "keyword_weight": args.keyword_weight,
+            },
+        }
+
     print("\nSummary")
     print(json.dumps(payload, ensure_ascii=False, indent=2))
 
