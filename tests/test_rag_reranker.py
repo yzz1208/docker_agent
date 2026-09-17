@@ -1,7 +1,11 @@
 import pytest
 
-from docker_agent.rag.reranker import build_rerank_passage, rerank_candidates
-from docker_agent.rag.store import HybridSearchResult
+from docker_agent.rag.reranker import (
+    build_rerank_passage,
+    build_rerank_pool,
+    rerank_candidates,
+)
+from docker_agent.rag.store import HybridSearchResult, KeywordSearchResult, SearchResult
 
 
 class FakeScorer:
@@ -31,12 +35,68 @@ def _candidate(chunk_id: str, rrf_score: float) -> HybridSearchResult:
     )
 
 
+def _dense(chunk_id: str, distance: float = 0.2) -> SearchResult:
+    return SearchResult(
+        chunk_id=chunk_id,
+        document_id=f"doc-{chunk_id}",
+        title=chunk_id,
+        section_path=[chunk_id],
+        content="content",
+        source_url="https://docs.docker.com/example/",
+        file_path=f"{chunk_id}.md",
+        distance=distance,
+    )
+
+
+def _keyword(chunk_id: str, score: float = 0.8) -> KeywordSearchResult:
+    return KeywordSearchResult(
+        chunk_id=chunk_id,
+        document_id=f"doc-{chunk_id}",
+        title=chunk_id,
+        section_path=[chunk_id],
+        content="content",
+        source_url="https://docs.docker.com/example/",
+        file_path=f"{chunk_id}.md",
+        rank_score=score,
+    )
+
+
 def test_build_rerank_passage_keeps_document_structure() -> None:
     passage = build_rerank_passage(_candidate("a", 0.1))
 
     assert "Document: Title a" in passage
     assert "Section: Root > Section a" in passage
     assert "Content for a" in passage
+
+
+def test_build_rerank_pool_rrf_trims_to_candidate_k() -> None:
+    dense = [_dense("a"), _dense("shared", 0.25), _dense("b", 0.3)]
+    keyword = [_keyword("shared"), _keyword("keyword-only", 0.7)]
+
+    pool = build_rerank_pool(dense, keyword, strategy="rrf", candidate_k=2)
+
+    assert len(pool) == 2
+    assert pool[0].chunk_id == "shared"
+
+
+def test_build_rerank_pool_union_can_keep_both_retriever_lists() -> None:
+    dense = [_dense("a"), _dense("b")]
+    keyword = [_keyword("c"), _keyword("d")]
+
+    pool = build_rerank_pool(dense, keyword, strategy="union", candidate_k=2)
+
+    assert {item.chunk_id for item in pool} == {"a", "b", "c", "d"}
+
+
+def test_build_rerank_pool_dense_ignores_keyword_candidates() -> None:
+    pool = build_rerank_pool(
+        [_dense("dense-a"), _dense("dense-b")],
+        [_keyword("keyword-only")],
+        strategy="dense",
+        candidate_k=2,
+    )
+
+    assert [item.chunk_id for item in pool] == ["dense-a", "dense-b"]
 
 
 def test_rerank_candidates_orders_by_cross_encoder_score() -> None:
