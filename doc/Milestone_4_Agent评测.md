@@ -183,3 +183,171 @@ Tool choice + grounded diagnosis + citation evaluation
 ~~~
 
 这样可以在不依赖某台真实机器当前容器状态的情况下，重复评测完整 Agent workflow。
+
+
+## 当前 Router Eval 实测结果
+
+首次完整运行：
+
+~~~json
+{
+  "attempts": 30,
+  "safe_decision_rate": 1.0,
+  "route_accuracy": 1.0,
+  "tool_exact_match_accuracy": 0.9667,
+  "container_ref_accuracy": 1.0,
+  "use_docs_accuracy": 1.0,
+  "clarification_accuracy": 1.0,
+  "exact_plan_accuracy": 0.9667
+}
+~~~
+
+其中 follow-up 6/6 全部通过。
+
+这说明 Router 的核心边界已经比较稳定：
+
+- 没有非法/危险计划；
+- route 全部正确；
+- container_ref 全部正确；
+- docs/runtime 选择全部正确；
+- clarification 全部正确。
+
+唯一剩余误差来自 1 次 tool exact mismatch。
+
+评测脚本现在会在失败时直接打印 expected / actual plan，因此不需要手工打开 JSONL 才能定位。
+
+重新运行：
+
+~~~powershell
+uv run python scripts/eval_agent_router.py
+~~~
+
+如果出现 plan=false，会额外显示：
+
+~~~text
+expected:
+  tools=[...]
+actual:
+  tools=[...]
+  reason=...
+~~~
+
+先确认这是 Router 漏工具、加了冗余工具，还是人工标注本身过于严格，再决定是否调整 Prompt。
+
+## Full Agent Workflow Eval v1
+
+Router 指标已经足够稳定，因此下一步增加“完整 Agent workflow”的可重复评测。
+
+文件：
+
+~~~text
+data/eval/agent_workflow_v1.jsonl
+scripts/eval_agent_workflow.py
+~~~
+
+这一层与 Router Eval 不同：
+
+~~~text
+真实 Router LLM
+      ↓
+Synthetic Docker Runtime
+      ↓
+实际 execute_runtime_plan
+      ↓
+Runtime Evidence Builder
+      ↓
+Synthetic Docs Evidence（需要时）
+      ↓
+真实 Answer LLM
+      ↓
+最终 Agent Answer
+~~~
+
+关键点：Synthetic Docker Runtime 不会调用用户本机 Docker。
+
+例如 OOM scenario 人工固定为：
+
+~~~text
+container=ml-job
+OOMKilled=true
+ExitCode=137
+~~~
+
+无论用户电脑此刻有没有 ml-job，都可以重复得到相同证据。
+
+第一版场景包括：
+
+- 当前内存；
+- OOMKilled + exit 137；
+- PostgreSQL 缺少 POSTGRES_PASSWORD 导致退出；
+- 日志 connection refused；
+- 当前 Docker Server 版本；
+- 当前容器列表；
+- runtime diagnosis + Docker Docs restart policy；
+- docs-only volume / bind mount。
+
+### Workflow 指标
+
+- completion_rate
+- route_accuracy
+- tool_call_exact_match_accuracy
+- runtime_citation_rate
+- docs_citation_rate
+- mean_concept_coverage
+- exact_workflow_accuracy
+
+exact_workflow_accuracy 要求：
+
+~~~text
+完成回答
++
+route 正确
++
+实际调用工具正确
++
+需要 runtime 时存在 [R] 引用
++
+需要 docs 时存在 [n] 引用
++
+关键概念全部覆盖
+~~~
+
+### 运行
+
+先 smoke test：
+
+~~~powershell
+uv run python scripts/eval_agent_workflow.py --limit 3
+~~~
+
+确认后完整运行：
+
+~~~powershell
+uv run python scripts/eval_agent_workflow.py
+~~~
+
+结果：
+
+~~~text
+reports/agent_workflow_eval_latest.jsonl
+~~~
+
+这一层的 docs evidence 也是 synthetic，因此它刻意不重复测试 Retrieval。
+
+评测职责现在拆成：
+
+~~~text
+Retrieval Eval
+→ 文档有没有检索对
+
+Answer Eval
+→ 文档回答是否 grounded
+
+Router Eval
+→ Agent 有没有选对 evidence path / tools
+
+Workflow Eval
+→ 工具执行到最终回答的完整链路是否正确
+~~~
+
+下一阶段再把 synthetic workflow 的最终答案接入 Judge，评估 unsupported claims、runtime citation correctness 和 diagnosis quality。
