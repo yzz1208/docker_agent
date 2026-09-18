@@ -21,6 +21,8 @@ class Settings(BaseSettings):
     model_base_url: str = ""
     model_timeout_seconds: float = 60.0
     model_temperature: float = 0.1
+    model_max_retries: int = 2
+    model_retry_backoff_seconds: float = 0.5
 
     embedding_model: str = "BAAI/bge-m3"
     embedding_device: str = ""
