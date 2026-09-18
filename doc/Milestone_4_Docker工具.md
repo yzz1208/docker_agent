@@ -175,3 +175,89 @@ uv run python scripts/route_agent.py "docker-agent-postgres 现在用了多少�
 然后输出真实 `docker stats --no-stream` 结果。
 
 当前仍然没有把 Docker Docs RAG 和 runtime evidence 合并成最终回答；这一层将在下一个子任务完成。
+
+
+## Runtime Evidence + Docker Docs 合并回答
+
+Router 与只读工具通过后，新增：
+
+- `src/docker_agent/agent/evidence.py`
+- `src/docker_agent/agent/answer.py`
+- `scripts/ask_agent.py`
+
+新的端到端流程：
+
+~~~text
+User Question
+      ↓
+Agent Router
+      ↓
+docs_only / runtime_tools / clarify
+      ↓
+runtime_tools 时执行只读 Docker tools
+      ↓
+构造 [R1] [R2] runtime evidence
+      +
+Docker Docs Retrieval + Reranker
+      ↓
+合并到同一个 grounded prompt
+      ↓
+LLM
+      ↓
+Runtime facts + Docker Docs guidance
+~~~
+
+引用规则：
+
+- `[R1]`、`[R2]`：本机 Docker runtime 证据。
+- `[1]`、`[2]`：Docker 官方文档证据。
+
+Agent 必须区分“观察到的事实”和“可能解释”。
+
+例如：
+
+~~~text
+docker-agent-postgres 当前内存使用约 64MiB。[R1]
+
+Docker 的运行时资源统计可以通过 docker stats 查看。[1]
+~~~
+
+如果工具只证明“容器退出了”，但日志/inspect 不能证明根因，模型必须明确说根因仍不能确定。
+
+### 本地测试
+
+先更新：
+
+~~~powershell
+git pull --ff-only
+uv run ruff check .
+uv run pytest -v
+~~~
+
+测试纯文档问题：
+
+~~~powershell
+uv run python scripts/ask_agent.py "Docker volume 和 bind mount 有什么区别？"
+~~~
+
+测试真实 runtime + docs：
+
+~~~powershell
+uv run python scripts/ask_agent.py "docker-agent-postgres 现在用了多少内存？"
+~~~
+
+测试缺少容器名：
+
+~~~powershell
+uv run python scripts/ask_agent.py "我的容器为什么一直重启？"
+~~~
+
+理想行为是直接返回 clarification，不执行 Docker 命令。
+
+还可以利用当前已经退出的测试容器进行诊断：
+
+~~~powershell
+uv run python scripts/ask_agent.py "zealous_kirch 为什么退出了？"
+~~~
+
+这类问题 Router 应优先规划 `docker_inspect` + `docker_logs`，然后结合官方文档回答。当前仍只允许读操作，不会自动 restart / rm / exec。
