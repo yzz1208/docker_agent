@@ -20,7 +20,7 @@ from docker_agent.agent.workflow_judge import (
 from docker_agent.config import get_settings
 from docker_agent.rag.answer import CitationValidationError
 from docker_agent.rag.context import CitationSource, RagContext
-from docker_agent.rag.llm import OpenAICompatibleChatClient
+from docker_agent.rag.llm import ModelRequestError, OpenAICompatibleChatClient
 from docker_agent.tools.docker_cli import DockerToolResult
 
 DEFAULT_INPUT = Path("data/eval/agent_workflow_v1.jsonl")
@@ -106,6 +106,8 @@ def _model(*, temperature: float) -> OpenAICompatibleChatClient:
         api_key=settings.model_api_key,
         timeout_seconds=settings.model_timeout_seconds,
         temperature=temperature,
+        max_retries=settings.model_max_retries,
+        retry_backoff_seconds=settings.model_retry_backoff_seconds,
     )
 
 
@@ -314,14 +316,19 @@ def main() -> None:
                 ensure_ascii=False,
                 indent=2,
             )
-            judged = judge_workflow_answer(
-                question=question,
-                answer=answer_text,
-                runtime_evidence=runtime_evidence_text,
-                docs_evidence=docs_context.text,
-                model=judge_model,
-            )
-            judge_results.append(judged)
+            try:
+                judged = judge_workflow_answer(
+                    question=question,
+                    answer=answer_text,
+                    runtime_evidence=runtime_evidence_text,
+                    docs_evidence=docs_context.text,
+                    model=judge_model,
+                )
+            except (ModelRequestError, json.JSONDecodeError, TypeError, ValueError) as exc:
+                output_row["judge_error"] = str(exc)
+                print(f"  judge_error={exc}")
+            else:
+                judge_results.append(judged)
             output_row["judge"] = {
                 "groundedness": judged.groundedness,
                 "runtime_citation_correctness": judged.runtime_citation_correctness,
