@@ -50,3 +50,12 @@ def test_dynamic_planner_requires_container_for_container_tool() -> None:
             '{"action":"tool","tool":"docker_stats","reason":"check memory"}',
             container_ref=None,
         )
+
+
+def test_dynamic_planner_prompt_distinguishes_restart_mechanism_from_root_cause() -> None:
+    from docker_agent.agent.dynamic_planner import PLANNER_SYSTEM_PROMPT
+
+    assert "does not by itself explain why the container process keeps failing" in (
+        PLANNER_SYSTEM_PROMPT
+    )
+    assert "request docker_logs after inspect" in PLANNER_SYSTEM_PROMPT
