@@ -351,3 +351,87 @@ Workflow Eval
 ~~~
 
 下一阶段再把 synthetic workflow 的最终答案接入 Judge，评估 unsupported claims、runtime citation correctness 和 diagnosis quality。
+
+
+## Full Workflow Eval 首次实测结果
+
+首次完整 8 case 运行：
+
+~~~json
+{
+  "completion_rate": 1.0,
+  "route_accuracy": 1.0,
+  "tool_call_exact_match_accuracy": 0.875,
+  "runtime_citation_rate": 1.0,
+  "docs_citation_rate": 1.0,
+  "mean_concept_coverage": 0.8958,
+  "exact_workflow_accuracy": 0.625
+}
+~~~
+
+解释：
+
+- 8/8 都成功完成回答；
+- 8/8 route 正确；
+- runtime/docs 引用覆盖全部正确；
+- 7/8 实际工具集合与人工预期完全一致；
+- 5/8 满足完整 exact workflow；
+- 当前主要误差已经从“路由/安全”转移到“工具计划细节 + 回答完整性”。
+
+因此暂时不应该为了 exact_workflow=0.625 就直接改 Router Prompt。
+
+先区分两类失败：
+
+1. tool mismatch：
+   - Router 漏工具；
+   - Router 多调用了一个合理但非必要的只读工具；
+   - 人工 gold tool set 是否过严。
+2. concept coverage：
+   - Answer 真的遗漏重要结论；
+   - 只是用了同义表达而字符串规则没命中；
+   - required_concepts 标注是否需要增加合理同义词。
+
+评测脚本已增加 missing concepts 输出，下一次失败会直接显示：
+
+~~~text
+missing concepts=[...]
+~~~
+
+同时 Router Eval 也会输出 expected / actual plan diff。
+
+## Optional Agent Workflow Judge
+
+字符串级 concept coverage 不能判断：
+
+- 一句话是否真的被 runtime evidence 支持；
+- [R1] 是否支持附近的事实；
+- Docker Docs [1] 是否支持配置建议；
+- Root-cause 结论是否强于现有证据；
+- 模型是否产生 unsupported claim。
+
+因此 Full Workflow Eval 现在支持：
+
+~~~powershell
+uv run python scripts/eval_agent_workflow.py --judge
+~~~
+
+Judge 只依据 synthetic runtime + synthetic docs evidence，输出：
+
+- groundedness：1-5
+- runtime_citation_correctness：1-5
+- docs_citation_correctness：1-5
+- diagnosis_quality：1-5
+- unsupported_claims
+- rationale
+
+Summary 额外包含：
+
+~~~text
+mean_groundedness
+mean_runtime_citation_correctness
+mean_docs_citation_correctness
+mean_diagnosis_quality
+unsupported_claim_case_rate
+~~~
+
+当前 Judge 默认仍使用已配置模型，因此只作为诊断信号，不替代 deterministic metrics 或人工抽查。
