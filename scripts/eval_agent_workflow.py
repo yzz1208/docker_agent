@@ -204,6 +204,7 @@ def main() -> None:
     judge_model = _model(temperature=0.0) if args.judge else None
     metrics: list[WorkflowEvalMetrics] = []
     judge_results = []
+    judge_issue_cases: list[dict[str, Any]] = []
     output_rows: list[dict[str, Any]] = []
 
     for row in rows:
@@ -330,6 +331,45 @@ def main() -> None:
                 "rationale": judged.rationale,
             }
 
+            has_judge_issue = (
+                judged.groundedness < 5
+                or judged.runtime_citation_correctness < 5
+                or judged.docs_citation_correctness < 5
+                or judged.diagnosis_quality < 5
+                or bool(judged.unsupported_claims)
+            )
+            if has_judge_issue:
+                issue = {
+                    "id": case_id,
+                    "groundedness": judged.groundedness,
+                    "runtime_citation_correctness": (
+                        judged.runtime_citation_correctness
+                    ),
+                    "docs_citation_correctness": judged.docs_citation_correctness,
+                    "diagnosis_quality": judged.diagnosis_quality,
+                    "unsupported_claims": list(judged.unsupported_claims),
+                    "rationale": judged.rationale,
+                }
+                judge_issue_cases.append(issue)
+                print("  judge diagnostics:")
+                print(f"    groundedness={judged.groundedness}/5")
+                print(
+                    "    runtime_citation_correctness="
+                    f"{judged.runtime_citation_correctness}/5"
+                )
+                print(
+                    "    docs_citation_correctness="
+                    f"{judged.docs_citation_correctness}/5"
+                )
+                print(f"    diagnosis_quality={judged.diagnosis_quality}/5")
+                if judged.unsupported_claims:
+                    print(
+                        "    unsupported_claims="
+                        f"{list(judged.unsupported_claims)}"
+                    )
+                if judged.rationale:
+                    print(f"    rationale={judged.rationale}")
+
         output_rows.append(output_row)
 
         print(
@@ -366,6 +406,7 @@ def main() -> None:
     }
     if judge_model is not None:
         summary["judge"] = summarize_workflow_judges(judge_results)
+        summary["judge_issue_cases"] = judge_issue_cases
         summary["judge_note"] = (
             "Judge scores are diagnostic because the configured model may also be used "
             "for answer generation."
