@@ -380,3 +380,112 @@ uv run python scripts/ask_agent.py "zealous_kirch 为什么退出了？"
 3. `zealous_kirch` 是否仍能利用 compact inspect + logs 判断 PostgreSQL 初始化失败。
 4. 输出末尾是否不再出现无关 release notes。
 5. runtime evidence 是否不再因为完整 inspect 过大而触发 context truncation。
+
+
+## 多轮 Clarification Workflow
+
+单轮 Agent 已经能在缺少容器名时返回 `clarify`，但之前用户必须重新组织完整问题。
+
+现在新增：
+
+- `src/docker_agent/agent/service.py`
+- `src/docker_agent/agent/conversation.py`
+- `scripts/chat_agent.py`
+
+`DockerSupportAgent` 把单轮 orchestration 从 CLI 中抽离出来，负责：
+
+~~~text
+route
+→ runtime tools（可选）
+→ docs retrieval（可选）
+→ evidence context
+→ grounded answer
+→ citation validation
+~~~
+
+`AgentConversation` 只保存最小必要状态：
+
+~~~text
+pending_question
+~~~
+
+它不会缓存或持久化模型生成的工具计划，也不会自动执行上一轮建议的命令。
+
+例如：
+
+~~~text
+You: 我的容器为什么一直重启？
+
+Agent:
+请提供具体的容器名称或ID。
+
+You: zealous_kirch
+
+Agent:
+把上一轮问题 + 本轮 clarification 合并
+→ 重新经过 Router
+→ 重新安全校验 container_ref
+→ inspect + logs
+→ 生成诊断回答
+~~~
+
+这意味着 follow-up 仍然经过完整安全边界，而不是因为“上一轮已经计划过”就跳过校验。
+
+### 交互式测试
+
+~~~powershell
+git pull --ff-only
+uv run ruff check .
+uv run pytest -v
+
+uv run python scripts/chat_agent.py
+~~~
+
+然后输入：
+
+~~~text
+我的容器为什么一直重启？
+~~~
+
+Agent 应追问容器名。
+
+继续输入：
+
+~~~text
+zealous_kirch
+~~~
+
+Agent 应恢复上一轮意图并完成诊断。
+
+也可以测试：
+
+~~~text
+Docker volume 和 bind mount 有什么区别？
+~~~
+
+这类问题应直接走 `docs_only`。
+
+交互命令：
+
+~~~text
+/reset
+~~~
+
+清空当前 pending clarification。
+
+~~~text
+/exit
+~~~
+
+退出会话。
+
+### 当前多轮范围
+
+目前只实现“clarification continuation”，没有持久化完整聊天历史。
+
+这是有意控制范围：
+
+- 可以验证多轮状态机；
+- 不会把整个历史无限塞进 prompt；
+- 不会让旧工具结果在后续回合被误认为当前状态；
+- 下一阶段再设计 session history、context compression 和 API session storage。
