@@ -141,3 +141,25 @@ def test_agent_prompt_forbids_unprovided_background_knowledge() -> None:
     )
 
     assert "do not add general Docker knowledge" in prompt
+
+
+def test_agent_prompt_treats_exit_codes_as_observations_without_docs() -> None:
+    prompt = build_agent_user_prompt(
+        "web-prod 为什么退出了？",
+        RagContext(text="", sources=(), truncated=False),
+        _runtime_context(),
+    )
+
+    assert "Raw exit codes are observations" in prompt
+    assert "do not explain what an exit code generally means" in prompt
+
+
+def test_agent_prompt_does_not_transfer_candidate_state_to_missing_target() -> None:
+    prompt = build_agent_user_prompt(
+        "web-prod 为什么退出了？",
+        RagContext(text="", sources=(), truncated=False),
+        _runtime_context(),
+    )
+
+    assert "similar names from docker_ps are only candidates" in prompt
+    assert "Do not attribute their state or failure reason" in prompt
