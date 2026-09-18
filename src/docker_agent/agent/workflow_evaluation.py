@@ -44,6 +44,21 @@ def concept_coverage(
     return matched / len(groups)
 
 
+
+def missing_concept_groups(
+    answer: str,
+    groups: tuple[tuple[str, ...], ...],
+) -> tuple[tuple[str, ...], ...]:
+    """Return required concept groups that are not represented in the answer."""
+
+    folded = answer.casefold()
+    return tuple(
+        alternatives
+        for alternatives in groups
+        if not any(term.casefold() in folded for term in alternatives)
+    )
+
+
 def summarize_workflow_metrics(
     metrics: list[WorkflowEvalMetrics],
 ) -> dict[str, float | int]:
