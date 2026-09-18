@@ -115,6 +115,7 @@ def main() -> None:
 
     print(f"Route: {decision.route}")
     print(f"Reason: {decision.reason}")
+    print(f"Use docs: {decision.use_docs}")
 
     if decision.route == "clarify":
         print(f"\n{decision.clarification}")
@@ -136,15 +137,16 @@ def main() -> None:
             max_chars=settings.runtime_evidence_max_chars,
         )
 
-    try:
-        docs_context = _retrieve_docs(question)
-    except SQLAlchemyError:
-        if decision.route == "docs_only":
-            raise SystemExit(
-                "PostgreSQL is unavailable. Start Docker Desktop and run "
-                "docker compose up -d postgres, then retry."
-            ) from None
-        docs_context = RagContext(text="", sources=(), truncated=False)
+    docs_context = RagContext(text="", sources=(), truncated=False)
+    if decision.use_docs:
+        try:
+            docs_context = _retrieve_docs(question)
+        except SQLAlchemyError:
+            if decision.route == "docs_only":
+                raise SystemExit(
+                    "PostgreSQL is unavailable. Start Docker Desktop and run "
+                    "docker compose up -d postgres, then retry."
+                ) from None
 
     answer_model = _model(temperature=settings.model_temperature)
     try:
