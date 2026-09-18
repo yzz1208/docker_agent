@@ -131,3 +131,13 @@ def test_agent_prompt_lists_available_citation_labels() -> None:
 
     assert "Docker Docs: <none>" in prompt
     assert "Runtime: [R1]" in prompt
+
+
+def test_agent_prompt_forbids_unprovided_background_knowledge() -> None:
+    prompt = build_agent_user_prompt(
+        "Docker volume 和 bind mount 有什么区别？",
+        _docs_context(),
+        RuntimeEvidenceContext(text="", sources=(), truncated=False),
+    )
+
+    assert "do not add general Docker knowledge" in prompt
