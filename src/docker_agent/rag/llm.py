@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from typing import Any, Protocol
 
 import httpx
@@ -13,6 +14,10 @@ class ModelResponseError(RuntimeError):
     """Raised when a chat endpoint returns an unexpected payload."""
 
 
+class ModelRequestError(RuntimeError):
+    """Raised when a chat request still fails after transient retries."""
+
+
 class OpenAICompatibleChatClient:
     """Minimal client for OpenAI-compatible /chat/completions endpoints."""
 
@@ -24,6 +29,8 @@ class OpenAICompatibleChatClient:
         api_key: str = "",
         timeout_seconds: float = 60.0,
         temperature: float = 0.1,
+        max_retries: int = 2,
+        retry_backoff_seconds: float = 0.5,
         client: httpx.Client | None = None,
     ) -> None:
         self.model = model.strip()
@@ -31,6 +38,8 @@ class OpenAICompatibleChatClient:
         self.api_key = api_key.strip()
         self.timeout_seconds = timeout_seconds
         self.temperature = temperature
+        self.max_retries = max_retries
+        self.retry_backoff_seconds = retry_backoff_seconds
         self._client = client
 
         if not self.model:
@@ -39,6 +48,10 @@ class OpenAICompatibleChatClient:
             raise ValueError("base_url must not be empty")
         if timeout_seconds <= 0:
             raise ValueError("timeout_seconds must be positive")
+        if max_retries < 0:
+            raise ValueError("max_retries must not be negative")
+        if retry_backoff_seconds < 0:
+            raise ValueError("retry_backoff_seconds must not be negative")
 
     @property
     def endpoint(self) -> str:
@@ -66,13 +79,7 @@ class OpenAICompatibleChatClient:
             "temperature": self.temperature,
         }
 
-        if self._client is not None:
-            response = self._client.post(self.endpoint, headers=headers, json=payload)
-        else:
-            with httpx.Client(timeout=self.timeout_seconds) as client:
-                response = client.post(self.endpoint, headers=headers, json=payload)
-
-        response.raise_for_status()
+        response = self._post_with_retry(headers=headers, payload=payload)
         data = response.json()
         try:
             content = data["choices"][0]["message"]["content"]
@@ -84,3 +91,53 @@ class OpenAICompatibleChatClient:
         if not isinstance(content, str) or not content.strip():
             raise ModelResponseError("Model returned an empty message")
         return content.strip()
+
+    def _post_with_retry(
+        self,
+        *,
+        headers: dict[str, str],
+        payload: dict[str, Any],
+    ) -> httpx.Response:
+        attempts = self.max_retries + 1
+        last_error: Exception | None = None
+
+        for attempt in range(attempts):
+            try:
+                response = self._post_once(headers=headers, payload=payload)
+                response.raise_for_status()
+                return response
+            except httpx.HTTPStatusError as exc:
+                last_error = exc
+                if not _is_retryable_status(exc.response.status_code):
+                    raise ModelRequestError(
+                        "Model request failed with HTTP "
+                        f"{exc.response.status_code}: {exc}"
+                    ) from exc
+            except httpx.TransportError as exc:
+                last_error = exc
+
+            if attempt + 1 < attempts:
+                delay = self.retry_backoff_seconds * (2**attempt)
+                if delay > 0:
+                    time.sleep(delay)
+
+        assert last_error is not None
+        raise ModelRequestError(
+            f"Model request failed after {attempts} attempts: {last_error}"
+        ) from last_error
+
+    def _post_once(
+        self,
+        *,
+        headers: dict[str, str],
+        payload: dict[str, Any],
+    ) -> httpx.Response:
+        if self._client is not None:
+            return self._client.post(self.endpoint, headers=headers, json=payload)
+
+        with httpx.Client(timeout=self.timeout_seconds) as client:
+            return client.post(self.endpoint, headers=headers, json=payload)
+
+
+def _is_retryable_status(status_code: int) -> bool:
+    return status_code in {408, 429} or 500 <= status_code <= 599

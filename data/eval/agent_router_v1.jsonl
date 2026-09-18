@@ -1,0 +1,24 @@
+{"id":"docs-volume-bind-zh","question":"Docker volume 和 bind mount 有什么区别？","expected":{"route":"docs_only","tools":[],"container_ref":null,"use_docs":true}}
+{"id":"docs-compose-health-zh","question":"Compose 里怎么等数据库健康后再启动 web？","expected":{"route":"docs_only","tools":[],"container_ref":null,"use_docs":true}}
+{"id":"docs-multistage-zh","question":"Docker 多阶段构建怎么减小最终镜像？","expected":{"route":"docs_only","tools":[],"container_ref":null,"use_docs":true}}
+{"id":"docs-daemon-remote-en","question":"How do I configure Docker daemon remote access with daemon.json?","expected":{"route":"docs_only","tools":[],"container_ref":null,"use_docs":true}}
+{"id":"docs-env-precedence-zh","question":"Compose 里 .env、env_file 和 environment 的优先级是什么？","expected":{"route":"docs_only","tools":[],"container_ref":null,"use_docs":true}}
+{"id":"docs-memory-limit-zh","question":"docker run 怎么限制容器最多使用 2GB 内存？","expected":{"route":"docs_only","tools":[],"container_ref":null,"use_docs":true}}
+{"id":"runtime-memory-zh","question":"docker-agent-postgres 现在用了多少内存？","expected":{"route":"runtime_tools","tools":["docker_stats"],"container_ref":"docker-agent-postgres","use_docs":false}}
+{"id":"runtime-cpu-zh","question":"api-prod 当前 CPU 占用是多少？","expected":{"route":"runtime_tools","tools":["docker_stats"],"container_ref":"api-prod","use_docs":false}}
+{"id":"runtime-exit-cause-zh","question":"zealous_kirch 为什么退出了？","expected":{"route":"runtime_tools","tools":["docker_inspect","docker_logs"],"container_ref":"zealous_kirch","use_docs":false}}
+{"id":"runtime-restart-cause-en","question":"Why does web-1 keep restarting?","expected":{"route":"runtime_tools","tools":["docker_inspect","docker_logs"],"container_ref":"web-1","use_docs":false}}
+{"id":"runtime-logs-zh","question":"帮我看一下 worker-2 最近的日志。","expected":{"route":"runtime_tools","tools":["docker_logs"],"container_ref":"worker-2","use_docs":false}}
+{"id":"runtime-state-zh","question":"redis-cache 现在是 running 还是 exited？","expected":{"route":"runtime_tools","tools":["docker_inspect"],"container_ref":"redis-cache","use_docs":false}}
+{"id":"runtime-list-zh","question":"我这台机器现在有哪些 Docker 容器？","expected":{"route":"runtime_tools","tools":["docker_ps"],"container_ref":null,"use_docs":false}}
+{"id":"runtime-daemon-status-zh","question":"我现在的 Docker daemon 是否正常运行？","expected":{"route":"runtime_tools","tools":["docker_info"],"container_ref":null,"use_docs":false}}
+{"id":"runtime-version-zh","question":"我本机 Docker Server 现在是什么版本？","expected":{"route":"runtime_tools","tools":["docker_info"],"container_ref":null,"use_docs":false}}
+{"id":"runtime-oom-zh","question":"ml-job 刚才是不是因为 OOM 被杀了？","expected":{"route":"runtime_tools","tools":["docker_inspect"],"container_ref":"ml-job","use_docs":false}}
+{"id":"runtime-restart-policy-zh","question":"web 当前配置的 restart policy 是什么？","expected":{"route":"runtime_tools","tools":["docker_inspect"],"container_ref":"web","use_docs":false}}
+{"id":"runtime-remediation-zh","question":"web-1 为什么一直重启？查完以后告诉我 Docker 官方建议怎么设置 restart policy。","expected":{"route":"runtime_tools","tools":["docker_inspect","docker_logs"],"container_ref":"web-1","use_docs":true}}
+{"id":"clarify-restart-zh","question":"我的容器为什么一直重启？","expected":{"route":"clarify","tools":[],"container_ref":null,"use_docs":false},"follow_up":{"message":"web","expected":{"route":"runtime_tools","tools":["docker_inspect","docker_logs"],"container_ref":"web","use_docs":false}}}
+{"id":"clarify-memory-zh","question":"这个容器现在用了多少内存？","expected":{"route":"clarify","tools":[],"container_ref":null,"use_docs":false},"follow_up":{"message":"api-prod","expected":{"route":"runtime_tools","tools":["docker_stats"],"container_ref":"api-prod","use_docs":false}}}
+{"id":"clarify-logs-zh","question":"帮我看看这个容器最近报了什么错。","expected":{"route":"clarify","tools":[],"container_ref":null,"use_docs":false},"follow_up":{"message":"worker-2","expected":{"route":"runtime_tools","tools":["docker_logs"],"container_ref":"worker-2","use_docs":false}}}
+{"id":"clarify-oom-en","question":"Was my container OOM-killed?","expected":{"route":"clarify","tools":[],"container_ref":null,"use_docs":false},"follow_up":{"message":"ml-job","expected":{"route":"runtime_tools","tools":["docker_inspect"],"container_ref":"ml-job","use_docs":false}}}
+{"id":"clarify-state-zh","question":"它现在到底还在运行吗？","expected":{"route":"clarify","tools":[],"container_ref":null,"use_docs":false},"follow_up":{"message":"redis-cache","expected":{"route":"runtime_tools","tools":["docker_inspect"],"container_ref":"redis-cache","use_docs":false}}}
+{"id":"clarify-logs-en","question":"Show me the recent logs for that container.","expected":{"route":"clarify","tools":[],"container_ref":null,"use_docs":false},"follow_up":{"message":"api-prod","expected":{"route":"runtime_tools","tools":["docker_logs"],"container_ref":"api-prod","use_docs":false}}}
