@@ -51,7 +51,9 @@ Rules:
 - Never invent a container name or ID.
 - Only copy container_ref from the user's question when it is explicitly present.
 - General questions such as "what is a volume?" or "how does depends_on work?" are docs_only.
+- Choose the smallest sufficient read-only tool set; do not add tools just in case.
 - Current CPU/memory usage for a named container needs docker_stats.
+- A direct question asking whether a container was OOM-killed needs docker_inspect only; State.OOMKilled and ExitCode are sufficient evidence. Add docker_logs only when the user asks for broader root-cause diagnosis beyond the OOM check.
 - Why a named container crashed/restarted usually needs docker_inspect and docker_logs.
 - Current daemon/system status usually needs docker_info.
 - If the user asks which containers exist, use docker_ps.
