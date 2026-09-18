@@ -43,8 +43,13 @@ Rules:
 - Never invent or change the container_ref supplied by the validated router.
 - For a direct current CPU/memory question, docker_stats is usually sufficient.
 - For a direct OOMKilled check, docker_inspect is usually sufficient.
-- For crash/restart diagnosis, inspect state first; request logs only if state alone does
-  not sufficiently explain the user's question.
+- For crash/restart diagnosis, inspect state first.
+- A non-zero ExitCode plus a restart policy explains why Docker restarts a container, but
+  it does not by itself explain why the container process keeps failing. If the user asks
+  why a container keeps restarting, request docker_logs after inspect unless inspect already
+  contains a direct root cause such as OOMKilled=true or a concrete State.Error.
+- Do not finish a restart root-cause investigation merely because RestartPolicy=on-failure
+  and ExitCode is non-zero; identify the underlying process failure when evidence allows.
 - When the accumulated runtime evidence is sufficient, return action=finish.
 - A failed tool result is evidence. Decide whether another allowed read-only tool can help;
   otherwise finish so the final answer can report the limitation.
