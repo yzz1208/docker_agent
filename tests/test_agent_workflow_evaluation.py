@@ -1,6 +1,7 @@
 from docker_agent.agent.workflow_evaluation import (
     WorkflowEvalMetrics,
     concept_coverage,
+    missing_concept_groups,
     summarize_workflow_metrics,
 )
 
@@ -12,6 +13,16 @@ def test_concept_coverage_matches_alternative_terms() -> None:
     )
 
     assert coverage == 1.0
+
+
+
+def test_missing_concept_groups_returns_only_unmatched_groups() -> None:
+    missing = missing_concept_groups(
+        "容器被 OOM 杀掉。",
+        (("OOM", "内存不足"), ("137", "exit code 137")),
+    )
+
+    assert missing == (("137", "exit code 137"),)
 
 
 def test_exact_workflow_requires_all_components() -> None:
