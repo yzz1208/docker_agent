@@ -599,3 +599,37 @@ uv run python scripts/eval_dynamic_workflow.py `
 - 不进行无意义 fan-out；
 - 不猜测缺失状态；
 - 能区分“没有证据”和“证据证明不存在”。
+
+
+## Failure Recovery Judge 首次实测
+
+Deterministic failure recovery 4/4 完整通过：
+
+~~~text
+container not found → inspect → ps → finish
+daemon unavailable   → info → finish
+logs unavailable     → inspect → logs → finish
+stopped stats        → stats → inspect → finish
+~~~
+
+Judge 唯一问题出现在 `failure-container-not-found-zh`。
+
+Agent 正确观察到：
+
+- 目标 `web-prod` 不存在；
+- `docker_ps` 中存在 `web-prod-old` 和 `web-1`。
+
+但回答额外解释了：
+
+~~~text
+退出代码 1 通常表示容器内的应用程序或进程发生了错误
+~~~
+
+这个解释没有 Docker Docs evidence 支持，而且 `Exited (1)` 属于候选容器 `web-prod-old`，不是用户请求的缺失目标 `web-prod`。
+
+因此 Answer Grounding 增加两条规则：
+
+1. ExitCode 只作为 raw observation。没有 docs evidence 时，不解释“1/137 等代码通常意味着什么”。
+2. 当目标 container lookup 失败后，`docker_ps` 中的相似名称只用于给用户确认候选；不得把候选容器的 state、exit code、logs 或诊断转移给目标容器。
+
+这类规则以后对多轮 clarification 也很重要：候选实体必须经过用户确认，不能自动把相似名称当成同一个对象。
