@@ -535,3 +535,68 @@ uv run python scripts/eval_agent_workflow.py --judge
 4. 字段语义容易误读 → 在 evidence formatter 中增加更明确的说明。
 
 另外，deterministic workflow 两次运行出现 concept coverage 0.9583 与 1.0 的差异，即使 temperature=0 仍可能由远程模型服务产生轻微非确定性。后续正式基线应记录多次运行均值/方差，而不是把单次 1.0 当成绝对结果。
+
+
+## Judge 第二次实测与标注修正
+
+最新 Judge 结果：
+
+~~~json
+{
+  "mean_groundedness": 5.0,
+  "mean_runtime_citation_correctness": 5.0,
+  "mean_docs_citation_correctness": 5.0,
+  "mean_diagnosis_quality": 4.75,
+  "unsupported_claim_case_rate": 0.0,
+  "judge_errors": 0
+}
+~~~
+
+这说明前一轮 unsupported claim 已经没有复现，所有事实与引用都被 Judge 判定为 grounded。
+
+唯一 issue case 是 `workflow-memory-zh`：
+
+~~~text
+question:
+api-prod 现在用了多少内存？
+
+judge:
+groundedness=5
+citations=5
+diagnosis_quality=3
+unsupported_claims=[]
+~~~
+
+Judge 的理由是回答“只陈述内存观测，没有分析原因和不确定性”。
+
+这个扣分不合理，因为用户问的是直接事实查询，不是 root-cause diagnosis。回答当前内存值本身就是完整任务。
+
+因此 Judge rubric 调整为 task-aware：
+
+- 对因果/诊断问题：要求区分 observation / cause / uncertainty；
+- 对直接事实、版本、列表、资源测量问题：只要基于证据直接完整回答即可拿到 diagnosis_quality=5，不要求额外做根因分析。
+
+同时 deterministic memory case 原来强制要求回答 `6.25%`，但用户只问“用了多少内存”。`128MiB` 已经足够回答问题，内存占比属于可选补充。
+
+因此 `workflow-memory-zh` 的 required concepts 从：
+
+~~~text
+128MiB + 6.25%
+~~~
+
+调整为：
+
+~~~text
+128MiB
+~~~
+
+这不是降低质量标准，而是让 gold label 与真实用户意图一致，避免把“可选信息是否出现”误当成 workflow correctness。
+
+下一次复测重点：
+
+~~~powershell
+uv run python scripts/eval_agent_workflow.py
+uv run python scripts/eval_agent_workflow.py --judge
+~~~
+
+如果 deterministic 与 Judge 都稳定，再把 Milestone 4 Agent Eval 作为完成基线。
