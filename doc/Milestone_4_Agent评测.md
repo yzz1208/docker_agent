@@ -435,3 +435,49 @@ unsupported_claim_case_rate
 ~~~
 
 当前 Judge 默认仍使用已配置模型，因此只作为诊断信号，不替代 deterministic metrics 或人工抽查。
+
+
+## Workflow Eval 第二次实测
+
+第二次完整 8 case 运行结果：
+
+~~~json
+{
+  "completion_rate": 1.0,
+  "route_accuracy": 1.0,
+  "tool_call_exact_match_accuracy": 0.875,
+  "runtime_citation_rate": 1.0,
+  "docs_citation_rate": 1.0,
+  "mean_concept_coverage": 1.0,
+  "exact_workflow_accuracy": 0.875
+}
+~~~
+
+这次 7/8 完整通过，回答概念覆盖已经达到 1.0。
+
+唯一失败：
+
+~~~text
+workflow-oom-zh
+expected tools = [docker_inspect]
+actual tools   = [docker_inspect, docker_logs]
+~~~
+
+这是“工具计划不够最小化”，不是路由错误或安全错误。
+
+对于明确的问题：
+
+~~~text
+ml-job 刚才是不是因为 OOM 被杀了？
+~~~
+
+`docker inspect` 中的 `State.OOMKilled` 和 `ExitCode` 已经足够回答该问题，因此额外读取日志会增加一次不必要的工具调用和延迟。
+
+Router Prompt 现在增加最小工具原则：
+
+- 选择能够回答问题的最小只读工具集合；
+- 不要为了“以防万一”添加工具；
+- 明确询问是否 OOMKilled 时优先只用 `docker_inspect`；
+- 只有用户要求进一步分析更广泛根因时才增加 `docker_logs`。
+
+评测 gold 不放宽，因为这里保留 strict exact-match 可以持续衡量工具调用效率。
