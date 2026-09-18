@@ -368,3 +368,89 @@ reports/dynamic_workflow_eval_latest.jsonl
 ~~~
 
 下一阶段会根据 Dynamic Eval 失败 case 增加 tool failure recovery，例如 daemon unavailable、container not found 等 observation-driven recovery。
+
+
+## Dynamic Eval 首次实测分析
+
+完整 deterministic run 已达到：
+
+~~~json
+{
+  "completion_rate": 1.0,
+  "route_accuracy": 1.0,
+  "tool_sequence_accuracy": 1.0,
+  "finish_rate": 1.0,
+  "step_limit_pass_rate": 1.0,
+  "no_repeat_tool_rate": 1.0,
+  "runtime_citation_rate": 1.0,
+  "docs_citation_rate": 1.0,
+  "mean_concept_coverage": 1.0,
+  "exact_dynamic_workflow_accuracy": 1.0
+}
+~~~
+
+这说明动态规划主链已经稳定：顺序、停止条件、步数限制、重复工具约束全部通过。
+
+### 暴露出的三个评测/生成问题
+
+#### 1. 偶发非法文档 citation
+
+一次 smoke run 中，runtime-only PostgreSQL case 的最终回答生成了 [1]，但该 case 没有提供 Docker Docs evidence，因此 Citation Guard 正确拒绝输出。
+
+这是生成层的偶发 citation hallucination，不是 Dynamic Planner 错误。
+
+现在 Answer Prompt 会显式列出可用 citation labels：
+
+~~~text
+Docker Docs: <none>
+Runtime: [R1], [R2]
+~~~
+
+如果模型仍生成非法 citation，Agent 会进行一次受约束的 citation repair：
+
+~~~text
+invalid answer
+→ CitationValidationError
+→ 把 validation error + allowed labels 回给模型
+→ 只重写 citation / 保留已有 supported substance
+→ 再次程序校验
+~~~
+
+第二次仍非法则继续失败，不会绕过 Citation Guard。
+
+#### 2. deterministic concept gold 过严
+
+`db-test 为什么退出了？` 的回答只要正确说明 PostgreSQL 未初始化且缺少 `POSTGRES_PASSWORD`，就已经回答了“为什么”。
+
+ExitCode=1 是重要 observation，但不是回答 root cause 的必要概念，因此不再把 ExitCode 强制作为 exact workflow required concept。
+
+restart remediation case 的 `connection refused` 允许合理中文/英文同义表达，例如“连接失败”“无法连接”“failed to connect”。
+
+#### 3. Judge 必须只看到 Agent 实际观察过的 runtime evidence
+
+Dynamic Eval 的 Judge 原来读取完整 synthetic runtime scenario。
+
+这在动态工作流中不够严格：scenario 可能预先定义 inspect + logs，但 Agent 实际只调用 inspect。Judge 不应该看到尚未执行的 logs。
+
+现在 Judge runtime evidence 只包含：
+
+~~~text
+docker_tools.calls
+~~~
+
+对应的实际 observation。
+
+这样 Judge 评估的是 Agent 真正获取到的证据，而不是测试夹具中隐藏的全部真相。
+
+### Judge diagnostics
+
+Dynamic Eval 的 `--judge` 现在也会像 Milestone 4 一样直接打印：
+
+- groundedness
+- runtime citation correctness
+- docs citation correctness
+- diagnosis quality
+- unsupported claims
+- rationale
+
+并在 Summary 中加入 `judge_issue_cases`，方便定位具体失败 case。
