@@ -454,3 +454,148 @@ Dynamic Eval 的 `--judge` 现在也会像 Milestone 4 一样直接打印：
 - rationale
 
 并在 Summary 中加入 `judge_issue_cases`，方便定位具体失败 case。
+
+## Dynamic Workflow 基线完成
+
+最新完整 `--judge` 已达到：
+
+~~~json
+{
+  "completion_rate": 1.0,
+  "route_accuracy": 1.0,
+  "tool_sequence_accuracy": 1.0,
+  "finish_rate": 1.0,
+  "step_limit_pass_rate": 1.0,
+  "no_repeat_tool_rate": 1.0,
+  "runtime_citation_rate": 1.0,
+  "docs_citation_rate": 1.0,
+  "mean_concept_coverage": 1.0,
+  "exact_dynamic_workflow_accuracy": 1.0,
+  "mean_groundedness": 5.0,
+  "mean_runtime_citation_correctness": 5.0,
+  "mean_docs_citation_correctness": 5.0,
+  "mean_diagnosis_quality": 5.0,
+  "unsupported_claim_case_rate": 0.0
+}
+~~~
+
+因此第一阶段 observation-driven planning 作为 Milestone 5 的稳定基线。
+
+## Tool Failure Recovery v1
+
+下一阶段不增加写操作，先处理只读工具失败后的动态恢复。
+
+Planner 新增原则：
+
+~~~text
+失败 observation
+→ 判断失败类型
+→ 只有不同工具能提供“新的、有用证据”时才 fallback
+→ 最多使用一个合理 fallback
+→ 否则 finish 并如实报告 limitation
+~~~
+
+重点场景：
+
+### 1. Container not found
+
+~~~text
+docker_inspect web-prod
+→ No such object: web-prod
+
+Planner
+→ docker_ps
+
+Observation
+→ 当前实际容器名称
+
+Planner
+→ finish
+~~~
+
+Agent 不会自动猜测并改成另一个容器，只会告诉用户目标不存在以及当前可见候选。
+
+### 2. Docker daemon unavailable
+
+~~~text
+docker_info
+→ Cannot connect to Docker daemon
+
+Planner
+→ finish
+~~~
+
+不会继续 inspect / ps / stats 轮番尝试，因为它们依赖同一个不可用 daemon。
+
+### 3. Logs unavailable
+
+~~~text
+docker_inspect
+→ ExitCode=1
+
+docker_logs
+→ logging driver does not support reading
+
+Planner
+→ finish
+~~~
+
+最终回答只能说明观察到异常退出，但日志不可用，因此不能编造具体 root cause。
+
+### 4. stats 对 stopped container 失败
+
+~~~text
+docker_stats api-old
+→ container is not running
+
+Planner
+→ docker_inspect api-old
+
+Observation
+→ State=exited
+
+Planner
+→ finish
+~~~
+
+回答应说明当前无法取得“实时内存”，并解释容器处于 stopped/exited 状态。
+
+### Failure Eval 数据
+
+新增：
+
+~~~text
+data/eval/dynamic_failure_v1.jsonl
+~~~
+
+当前包含 4 个场景：
+
+- container not found → inspect → ps → finish
+- daemon unavailable → info → finish
+- logs unavailable → inspect → logs → finish
+- stopped stats → stats → inspect → finish
+
+复用现有 Dynamic Eval runner：
+
+~~~powershell
+uv run python scripts/eval_dynamic_workflow.py `
+  --input data/eval/dynamic_failure_v1.jsonl `
+  --output reports/dynamic_failure_eval_latest.jsonl
+~~~
+
+通过后再加 Judge：
+
+~~~powershell
+uv run python scripts/eval_dynamic_workflow.py `
+  --input data/eval/dynamic_failure_v1.jsonl `
+  --output reports/dynamic_failure_eval_latest.jsonl `
+  --judge
+~~~
+
+这一阶段的目标不是“所有工具都必须成功”，而是：
+
+- 工具失败仍然能完成一个 grounded answer；
+- 不重复失败工具；
+- 不进行无意义 fan-out；
+- 不猜测缺失状态；
+- 能区分“没有证据”和“证据证明不存在”。
