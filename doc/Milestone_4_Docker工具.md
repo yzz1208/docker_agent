@@ -489,3 +489,103 @@ Docker volume 和 bind mount 有什么区别？
 - 不会把整个历史无限塞进 prompt；
 - 不会让旧工具结果在后续回合被误认为当前状态；
 - 下一阶段再设计 session history、context compression 和 API session storage。
+
+
+## FastAPI /chat 接口
+
+CLI 多轮流程验证后，Agent orchestration 已抽取为可复用 service，并接入 FastAPI。
+
+当前接口：
+
+~~~text
+POST /chat
+DELETE /chat/{session_id}
+~~~
+
+### 第一次提问
+
+请求：
+
+~~~json
+{
+  "message": "我的容器为什么一直重启？"
+}
+~~~
+
+如果缺少容器名，响应类似：
+
+~~~json
+{
+  "session_id": "...",
+  "session_active": true,
+  "route": "clarify",
+  "reason": "...",
+  "use_docs": false,
+  "clarification": "请提供具体的容器名称或 ID。",
+  "answer": null,
+  "runtime_sources": [],
+  "doc_sources": []
+}
+~~~
+
+客户端保留 session_id。
+
+### Clarification follow-up
+
+请求：
+
+~~~json
+{
+  "message": "zealous_kirch",
+  "session_id": "上一步返回的 session_id"
+}
+~~~
+
+Agent 会恢复 pending question、重新经过 Router 和安全校验，再执行必要的只读 Docker 工具。
+
+完成回答后：
+
+~~~text
+session_active=false
+~~~
+
+当前 session 会自动从内存中删除，防止把旧 runtime 状态长期保留为“当前事实”。
+
+### 主动清空 pending session
+
+~~~text
+DELETE /chat/{session_id}
+~~~
+
+用于前端用户取消当前 clarification。
+
+### 启动 API
+
+~~~powershell
+uv run uvicorn docker_agent.main:app --reload
+~~~
+
+浏览：
+
+~~~text
+http://127.0.0.1:8000/docs
+~~~
+
+可直接使用 FastAPI Swagger 测试 POST /chat。
+
+PowerShell 也可以先用 Invoke-RestMethod 发送第一条 POST /chat，再把返回的 session_id 放入第二条 JSON 请求中。
+
+### 当前 Session 范围
+
+当前服务只持久化“正在等待 clarification 的问题”。
+
+已经完成的回答不会进入长期 session history。
+
+这是当前阶段的安全选择：
+
+- runtime 状态容易过期；
+- 不把旧日志/旧 stats 自动带到未来问题；
+- session 内存有明确生命周期；
+- 为后续真正的 history window / summary / persistent session store 留出独立设计空间。
+
+下一步将增加 API 级 Agent Eval，然后设计有限窗口的 conversation history，而不是直接把所有历史消息无限拼进 prompt。
