@@ -50,7 +50,7 @@ def select_cited_sources(
     answer: str,
     sources: tuple[CitationSource, ...],
 ) -> tuple[tuple[int, ...], tuple[CitationSource, ...]]:
-    """Validate answer citation labels and return their source objects."""
+    """Validate citation labels and return cited sources in numeric label order."""
 
     citation_indices = extract_citation_indices(answer)
     source_by_index = {source.index: source for source in sources}
@@ -61,7 +61,9 @@ def select_cited_sources(
             f"Model cited source labels that were not provided: {labels}"
         )
 
-    cited_sources = tuple(source_by_index[index] for index in citation_indices)
+    cited_sources = tuple(
+        source_by_index[index] for index in sorted(citation_indices)
+    )
     return citation_indices, cited_sources
 
 
