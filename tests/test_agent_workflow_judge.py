@@ -8,6 +8,7 @@ class FakeJudge:
     def complete(self, *, system_prompt: str, user_prompt: str) -> str:
         assert "strict Docker Agent evaluator" in system_prompt
         assert "Runtime evidence" in user_prompt
+        assert "direct factual or measurement questions" in user_prompt
         return (
             "```json\n"
             "{"
