@@ -246,7 +246,12 @@ def main() -> None:
         result = None
         try:
             result = agent.handle(question)
-        except (AgentRoutingError, CitationValidationError, ValueError) as exc:
+        except (
+            AgentRoutingError,
+            CitationValidationError,
+            ModelRequestError,
+            ValueError,
+        ) as exc:
             error = str(exc)
 
         completed = result is not None and result.answer is not None
