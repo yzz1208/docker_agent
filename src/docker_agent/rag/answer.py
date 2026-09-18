@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
 from docker_agent.rag.context import CitationSource, RagContext
 from docker_agent.rag.llm import ChatModel
+
+_CITATION_RE = re.compile(r"\[(\d+)\]")
 
 SYSTEM_PROMPT = """You are a Docker technical support assistant.
 Use only the Docker documentation excerpts provided in the user prompt as factual support.
@@ -16,11 +19,50 @@ Only use citation numbers that appear in the provided context.
 Prefer concrete troubleshooting steps and commands when they are supported by the context."""
 
 
+class CitationValidationError(ValueError):
+    """Raised when an answer cites a source label that was not provided."""
+
+
 @dataclass(frozen=True, slots=True)
 class GroundedAnswer:
     answer: str
     sources: tuple[CitationSource, ...]
+    cited_sources: tuple[CitationSource, ...]
+    citation_indices: tuple[int, ...]
     context_truncated: bool
+
+
+def extract_citation_indices(answer: str) -> tuple[int, ...]:
+    """Return unique citation numbers in first-appearance order."""
+
+    indices: list[int] = []
+    seen: set[int] = set()
+    for raw_index in _CITATION_RE.findall(answer):
+        index = int(raw_index)
+        if index in seen:
+            continue
+        seen.add(index)
+        indices.append(index)
+    return tuple(indices)
+
+
+def select_cited_sources(
+    answer: str,
+    sources: tuple[CitationSource, ...],
+) -> tuple[tuple[int, ...], tuple[CitationSource, ...]]:
+    """Validate answer citation labels and return their source objects."""
+
+    citation_indices = extract_citation_indices(answer)
+    source_by_index = {source.index: source for source in sources}
+    invalid = [index for index in citation_indices if index not in source_by_index]
+    if invalid:
+        labels = ", ".join(f"[{index}]" for index in invalid)
+        raise CitationValidationError(
+            f"Model cited source labels that were not provided: {labels}"
+        )
+
+    cited_sources = tuple(source_by_index[index] for index in citation_indices)
+    return citation_indices, cited_sources
 
 
 def build_user_prompt(question: str, context: RagContext) -> str:
@@ -51,8 +93,11 @@ def generate_grounded_answer(
 ) -> GroundedAnswer:
     user_prompt = build_user_prompt(question, context)
     answer = model.complete(system_prompt=SYSTEM_PROMPT, user_prompt=user_prompt)
+    citation_indices, cited_sources = select_cited_sources(answer, context.sources)
     return GroundedAnswer(
         answer=answer,
         sources=context.sources,
+        cited_sources=cited_sources,
+        citation_indices=citation_indices,
         context_truncated=context.truncated,
     )
