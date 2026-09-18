@@ -65,7 +65,8 @@ def test_unknown_or_write_tool_is_rejected() -> None:
     with pytest.raises(AgentRoutingError, match="Unsupported Docker tool"):
         parse_route_decision(
             '{"route":"runtime_tools","reason":"fix it",'
-            '"container_ref":"web","tools":["docker_restart"],"clarification":null,"use_docs":false}'
+            '"container_ref":"web","tools":["docker_restart"],'
+            '"clarification":null,"use_docs":false}'
         )
 
 
