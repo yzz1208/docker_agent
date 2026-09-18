@@ -85,3 +85,15 @@ def test_docs_route_cannot_smuggle_container_or_tools() -> None:
             '{"route":"docs_only","reason":"docs",'
             '"container_ref":"web","tools":[],"clarification":null}'
         )
+
+
+def test_route_question_rejects_invented_container_ref() -> None:
+    with pytest.raises(AgentRoutingError, match="invented"):
+        route_question(
+            "这个容器现在用了多少内存？",
+            FakeModel(
+                '{"route":"runtime_tools","reason":"current usage",'
+                '"container_ref":"web","tools":["docker_stats"],'
+                '"clarification":null}'
+            ),
+        )
