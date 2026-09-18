@@ -93,7 +93,12 @@ def route_question(question: str, model: ChatModel) -> AgentRouteDecision:
         system_prompt=ROUTER_SYSTEM_PROMPT,
         user_prompt=f"User question:\n{question}",
     )
-    return parse_route_decision(raw)
+    decision = parse_route_decision(raw)
+    if decision.container_ref is not None and decision.container_ref not in question:
+        raise AgentRoutingError(
+            "Router invented a container_ref that does not appear in the user question"
+        )
+    return decision
 
 
 def parse_route_decision(raw: str) -> AgentRouteDecision:
