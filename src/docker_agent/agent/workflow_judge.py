@@ -53,8 +53,11 @@ def judge_workflow_answer(
             "claims. If runtime evidence is absent and no runtime citation is needed, score 5.\n"
             "- docs_citation_correctness: [#] citations must support nearby Docker guidance. "
             "If docs evidence is absent and no docs citation is needed, score 5.\n"
-            "- diagnosis_quality: distinguish observations, likely causes, and uncertainty. "
-            "Do not reward conclusions stronger than the evidence."
+            "- diagnosis_quality: judge fitness for the user's task. For causal or diagnostic "
+            "questions, distinguish observations, likely causes, and uncertainty, and do not "
+            "reward conclusions stronger than the evidence. For direct factual or measurement "
+            "questions, score 5 when the answer directly and sufficiently answers the question "
+            "from evidence; do not require extra root-cause analysis or uncertainty discussion."
         ),
     )
     payload = _parse_json_object(raw)
