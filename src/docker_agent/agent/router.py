@@ -56,6 +56,10 @@ Rules:
 - Current daemon/system status usually needs docker_info.
 - If the user asks which containers exist, use docker_ps.
 - If a container-specific runtime question has no exact container reference, choose clarify.
+- For runtime_tools, set use_docs=true only when Docker documentation is useful for the
+  user's requested how-to or remediation. Otherwise set use_docs=false.
+- Current measurements, logs, and root-cause questions that can be answered directly from
+  runtime evidence usually use_docs=false.
 - Do not request or plan write/destructive tools.
 
 Return exactly:
@@ -64,7 +68,8 @@ Return exactly:
   "reason": "brief reason",
   "container_ref": "exact name/id from question or null",
   "tools": ["allowed tool names"],
-  "clarification": "question to ask user or null"
+  "clarification": "question to ask user or null",
+  "use_docs": true | false
 }
 """
 
@@ -80,6 +85,7 @@ class AgentRouteDecision:
     container_ref: str | None
     tools: tuple[DockerToolName, ...]
     clarification: str | None
+    use_docs: bool
 
 
 def route_question(question: str, model: ChatModel) -> AgentRouteDecision:
@@ -110,6 +116,7 @@ def parse_route_decision(raw: str) -> AgentRouteDecision:
     clarification_raw = payload.get("clarification")
     container_raw = payload.get("container_ref")
     tools_raw = payload.get("tools")
+    use_docs_raw = payload.get("use_docs")
 
     if route_raw not in {"docs_only", "runtime_tools", "clarify"}:
         raise AgentRoutingError(f"Unsupported route: {route_raw!r}")
@@ -119,6 +126,12 @@ def parse_route_decision(raw: str) -> AgentRouteDecision:
         raise AgentRoutingError("Route decision requires a non-empty reason")
     if not isinstance(tools_raw, list):
         raise AgentRoutingError("Route decision tools must be a list")
+    if use_docs_raw is None:
+        use_docs = route == "docs_only"
+    elif isinstance(use_docs_raw, bool):
+        use_docs = use_docs_raw
+    else:
+        raise AgentRoutingError("use_docs must be boolean")
 
     tools: list[DockerToolName] = []
     seen: set[str] = set()
@@ -152,9 +165,13 @@ def parse_route_decision(raw: str) -> AgentRouteDecision:
         if container_ref is not None:
             raise AgentRoutingError("docs_only route must not contain container_ref")
         clarification = None
+        use_docs = True
     elif route == "clarify":
-        if tools:
-            raise AgentRoutingError("clarify route must not execute runtime tools")
+        # Safe normalization: the model may mention tools it would use after
+        # clarification, but no runtime command is permitted on this turn.
+        tools = []
+        container_ref = None
+        use_docs = False
         if not clarification:
             raise AgentRoutingError("clarify route requires a clarification question")
     else:
@@ -172,6 +189,7 @@ def parse_route_decision(raw: str) -> AgentRouteDecision:
         container_ref=container_ref,
         tools=tuple(tools),
         clarification=clarification,
+        use_docs=use_docs,
     )
 
 
