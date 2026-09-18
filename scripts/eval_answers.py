@@ -176,7 +176,8 @@ def main() -> None:
     _release_cuda_cache()
 
     reranker = BgeReranker()
-    answer_model = _model_client(temperature=settings.model_temperature)
+    # Use deterministic decoding for repeatable evaluation runs.
+    answer_model = _model_client(temperature=0.0)
     judge_model = _model_client(temperature=0.0) if args.judge else None
 
     deterministic_metrics = []
@@ -300,6 +301,7 @@ def main() -> None:
         "cases": len(cases),
         "generation_failures": failures,
         "deterministic": summarize_deterministic_metrics(deterministic_metrics),
+        "answer_temperature": 0.0,
         "output": str(args.output),
     }
     if judge_model is not None:
