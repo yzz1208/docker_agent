@@ -99,3 +99,79 @@ RAG only      Docker read tools
 ~~~
 
 Agent 不会一开始就“自动跑一堆命令”，而是只在问题确实依赖本机状态时调用最小必要的只读工具。
+
+
+## Agent Router
+
+工具 smoke test 通过后，新增：
+
+- `src/docker_agent/agent/router.py`
+- `src/docker_agent/agent/runtime.py`
+- `scripts/route_agent.py`
+
+Router 只做“证据路径选择”，不直接回答问题。当前输出三种 route：
+
+~~~text
+docs_only
+runtime_tools
+clarify
+~~~
+
+典型行为：
+
+~~~text
+Docker volume 和 bind mount 有什么区别？
+→ docs_only
+
+docker-agent-postgres 现在用了多少内存？
+→ runtime_tools
+→ docker_stats
+
+web 容器为什么重启？
+→ runtime_tools
+→ docker_inspect + docker_logs
+
+我的容器为什么一直重启？
+→ clarify
+→ 先询问具体容器名
+~~~
+
+Router 的模型输出仍然不是可信输入，因此在执行之前会进行严格校验：
+
+1. tool name 必须属于只读 allowlist。
+2. `docker_restart`、`docker_rm` 等未知/写操作会被拒绝。
+3. inspect/logs/stats 必须有显式 container_ref。
+4. container_ref 必须通过字符白名单校验。
+5. `docs_only` route 不允许夹带任何 runtime tool。
+
+### 测试 Router，不执行命令
+
+~~~powershell
+uv run python scripts/route_agent.py "Docker volume 和 bind mount 有什么区别？"
+
+uv run python scripts/route_agent.py "docker-agent-postgres 现在用了多少内存？"
+
+uv run python scripts/route_agent.py "我的容器为什么一直重启？"
+~~~
+
+### 执行经过校验的只读计划
+
+使用当前已存在的测试容器：
+
+~~~powershell
+uv run python scripts/route_agent.py "docker-agent-postgres 现在用了多少内存？" --execute
+~~~
+
+理想 route：
+
+~~~json
+{
+  "route": "runtime_tools",
+  "container_ref": "docker-agent-postgres",
+  "tools": ["docker_stats"]
+}
+~~~
+
+然后输出真实 `docker stats --no-stream` 结果。
+
+当前仍然没有把 Docker Docs RAG 和 runtime evidence 合并成最终回答；这一层将在下一个子任务完成。
