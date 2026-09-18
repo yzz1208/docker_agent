@@ -60,7 +60,7 @@ def test_generate_grounded_answer_passes_numbered_context_to_model() -> None:
     assert result.cited_sources == (_source(1),)
 
 
-def test_generate_grounded_answer_tracks_only_used_sources() -> None:
+def test_generate_grounded_answer_tracks_used_sources_in_numeric_order() -> None:
     context = RagContext(
         text="[1] one\n\n[2] two\n\n[3] three",
         sources=(_source(1), _source(2), _source(3)),
@@ -71,4 +71,4 @@ def test_generate_grounded_answer_tracks_only_used_sources() -> None:
     result = generate_grounded_answer("test", context, model)
 
     assert result.citation_indices == (2, 1)
-    assert [source.index for source in result.cited_sources] == [2, 1]
+    assert [source.index for source in result.cited_sources] == [1, 2]
