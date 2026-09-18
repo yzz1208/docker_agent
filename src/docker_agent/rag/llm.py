@@ -109,7 +109,10 @@ class OpenAICompatibleChatClient:
             except httpx.HTTPStatusError as exc:
                 last_error = exc
                 if not _is_retryable_status(exc.response.status_code):
-                    raise
+                    raise ModelRequestError(
+                        "Model request failed with HTTP "
+                        f"{exc.response.status_code}: {exc}"
+                    ) from exc
             except httpx.TransportError as exc:
                 last_error = exc
 
