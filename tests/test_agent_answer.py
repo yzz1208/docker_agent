@@ -19,6 +19,16 @@ class FakeModel:
         return self.answer
 
 
+class SequenceModel:
+    def __init__(self, answers: list[str]) -> None:
+        self.answers = list(answers)
+        self.prompts: list[str] = []
+
+    def complete(self, *, system_prompt: str, user_prompt: str) -> str:
+        self.prompts.append(user_prompt)
+        return self.answers.pop(0)
+
+
 def _docs_context() -> RagContext:
     return RagContext(
         text="[1]\nTitle: Stats\nContent:\nUse docker stats.",
@@ -88,3 +98,36 @@ def test_build_agent_prompt_allows_docs_only_evidence() -> None:
 
     assert "<no local runtime evidence>" in prompt
     assert "[1]" in prompt
+
+
+def test_generate_agent_answer_repairs_invalid_doc_citation_once() -> None:
+    model = SequenceModel(
+        [
+            "当前使用 64MiB。[R1] 这是 Docker 的标准行为。[1]",
+            "当前使用 64MiB。[R1]",
+        ]
+    )
+
+    result = generate_agent_answer(
+        "web 现在用了多少内存？",
+        RagContext(text="", sources=(), truncated=False),
+        _runtime_context(),
+        model,
+    )
+
+    assert result.answer == "当前使用 64MiB。[R1]"
+    assert result.doc_citation_indices == ()
+    assert result.runtime_citation_indices == (1,)
+    assert len(model.prompts) == 2
+    assert "failed citation validation" in model.prompts[1]
+
+
+def test_agent_prompt_lists_available_citation_labels() -> None:
+    prompt = build_agent_user_prompt(
+        "web 现在用了多少内存？",
+        RagContext(text="", sources=(), truncated=False),
+        _runtime_context(),
+    )
+
+    assert "Docker Docs: <none>" in prompt
+    assert "Runtime: [R1]" in prompt
