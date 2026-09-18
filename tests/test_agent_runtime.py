@@ -45,6 +45,7 @@ def test_execute_runtime_plan_runs_tools_in_validated_order() -> None:
         container_ref="web",
         tools=("docker_inspect", "docker_logs"),
         clarification=None,
+        use_docs=False,
     )
     tools = FakeDockerTools()
 
