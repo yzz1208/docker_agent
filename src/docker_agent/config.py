@@ -41,6 +41,7 @@ class Settings(BaseSettings):
     docker_tool_timeout_seconds: float = 15.0
     docker_logs_max_lines: int = 200
     runtime_evidence_max_chars: int = 8_000
+    dynamic_runtime_max_steps: int = 4
 
     retrieval_top_k: int = 10
     retrieval_candidate_k: int = 20
