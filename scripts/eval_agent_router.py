@@ -184,6 +184,29 @@ def _run_plan(
     return metrics, row
 
 
+
+def _print_failure(row: dict[str, Any]) -> None:
+    """Print a compact expected-vs-actual diff for one failed plan."""
+
+    expected = row.get("expected", {})
+    actual = row.get("actual")
+    print("  expected:")
+    print(f"    route={expected.get('route')}")
+    print(f"    tools={expected.get('tools')}")
+    print(f"    container_ref={expected.get('container_ref')}")
+    print(f"    use_docs={expected.get('use_docs')}")
+
+    if isinstance(actual, dict):
+        print("  actual:")
+        print(f"    route={actual.get('route')}")
+        print(f"    tools={actual.get('tools')}")
+        print(f"    container_ref={actual.get('container_ref')}")
+        print(f"    use_docs={actual.get('use_docs')}")
+        print(f"    reason={actual.get('reason')}")
+    elif "validation_error" in row:
+        print(f"  validation_error={row['validation_error']}")
+
+
 def main() -> None:
     args = parse_args()
     if not args.input.exists():
@@ -222,6 +245,8 @@ def main() -> None:
                 f"tools={first_metrics.tool_exact_match} "
                 f"plan={first_metrics.exact_plan_match}"
             )
+            if not first_metrics.exact_plan_match:
+                _print_failure(first_row)
 
             if case.follow_up_message is None or case.follow_up_expected is None:
                 continue
@@ -248,6 +273,8 @@ def main() -> None:
                 f"tools={follow_metrics.tool_exact_match} "
                 f"plan={follow_metrics.exact_plan_match}"
             )
+            if not follow_metrics.exact_plan_match:
+                _print_failure(follow_row)
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     with args.output.open("w", encoding="utf-8") as handle:
