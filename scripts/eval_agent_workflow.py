@@ -329,25 +329,7 @@ def main() -> None:
                 print(f"  judge_error={exc}")
             else:
                 judge_results.append(judged)
-            output_row["judge"] = {
-                "groundedness": judged.groundedness,
-                "runtime_citation_correctness": judged.runtime_citation_correctness,
-                "docs_citation_correctness": judged.docs_citation_correctness,
-                "diagnosis_quality": judged.diagnosis_quality,
-                "unsupported_claims": list(judged.unsupported_claims),
-                "rationale": judged.rationale,
-            }
-
-            has_judge_issue = (
-                judged.groundedness < 5
-                or judged.runtime_citation_correctness < 5
-                or judged.docs_citation_correctness < 5
-                or judged.diagnosis_quality < 5
-                or bool(judged.unsupported_claims)
-            )
-            if has_judge_issue:
-                issue = {
-                    "id": case_id,
+                output_row["judge"] = {
                     "groundedness": judged.groundedness,
                     "runtime_citation_correctness": (
                         judged.runtime_citation_correctness
@@ -357,25 +339,47 @@ def main() -> None:
                     "unsupported_claims": list(judged.unsupported_claims),
                     "rationale": judged.rationale,
                 }
-                judge_issue_cases.append(issue)
-                print("  judge diagnostics:")
-                print(f"    groundedness={judged.groundedness}/5")
-                print(
-                    "    runtime_citation_correctness="
-                    f"{judged.runtime_citation_correctness}/5"
+
+                has_judge_issue = (
+                    judged.groundedness < 5
+                    or judged.runtime_citation_correctness < 5
+                    or judged.docs_citation_correctness < 5
+                    or judged.diagnosis_quality < 5
+                    or bool(judged.unsupported_claims)
                 )
-                print(
-                    "    docs_citation_correctness="
-                    f"{judged.docs_citation_correctness}/5"
-                )
-                print(f"    diagnosis_quality={judged.diagnosis_quality}/5")
-                if judged.unsupported_claims:
+                if has_judge_issue:
+                    issue = {
+                        "id": case_id,
+                        "groundedness": judged.groundedness,
+                        "runtime_citation_correctness": (
+                            judged.runtime_citation_correctness
+                        ),
+                        "docs_citation_correctness": (
+                            judged.docs_citation_correctness
+                        ),
+                        "diagnosis_quality": judged.diagnosis_quality,
+                        "unsupported_claims": list(judged.unsupported_claims),
+                        "rationale": judged.rationale,
+                    }
+                    judge_issue_cases.append(issue)
+                    print("  judge diagnostics:")
+                    print(f"    groundedness={judged.groundedness}/5")
                     print(
-                        "    unsupported_claims="
-                        f"{list(judged.unsupported_claims)}"
+                        "    runtime_citation_correctness="
+                        f"{judged.runtime_citation_correctness}/5"
                     )
-                if judged.rationale:
-                    print(f"    rationale={judged.rationale}")
+                    print(
+                        "    docs_citation_correctness="
+                        f"{judged.docs_citation_correctness}/5"
+                    )
+                    print(f"    diagnosis_quality={judged.diagnosis_quality}/5")
+                    if judged.unsupported_claims:
+                        print(
+                            "    unsupported_claims="
+                            f"{list(judged.unsupported_claims)}"
+                        )
+                    if judged.rationale:
+                        print(f"    rationale={judged.rationale}")
 
         output_rows.append(output_row)
 
@@ -413,6 +417,9 @@ def main() -> None:
     }
     if judge_model is not None:
         summary["judge"] = summarize_workflow_judges(judge_results)
+        summary["judge_errors"] = sum(
+            1 for row in output_rows if "judge_error" in row
+        )
         summary["judge_issue_cases"] = judge_issue_cases
         summary["judge_note"] = (
             "Judge scores are diagnostic because the configured model may also be used "
