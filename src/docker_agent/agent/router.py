@@ -56,6 +56,7 @@ Rules:
 - Current daemon/system status usually needs docker_info.
 - If the user asks which containers exist, use docker_ps.
 - If a container-specific runtime question has no exact container reference, choose clarify.
+- Write clarification in the same language as the user question.
 - For runtime_tools, set use_docs=true only when Docker documentation is useful for the
   user's requested how-to or remediation. Otherwise set use_docs=false.
 - Current measurements, logs, and root-cause questions that can be answered directly from
