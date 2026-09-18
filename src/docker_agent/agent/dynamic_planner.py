@@ -53,6 +53,20 @@ Rules:
 - When the accumulated runtime evidence is sufficient, return action=finish.
 - A failed tool result is evidence. Decide whether another allowed read-only tool can help;
   otherwise finish so the final answer can report the limitation.
+- Failure recovery must be evidence-driven, not trial-and-error. Use at most one distinct
+  fallback tool when it can answer a different question about the failure.
+- If a container-specific tool reports "No such container", "No such object", or an
+  equivalent not-found error, use docker_ps once to verify available container names, then
+  finish. Do not guess a replacement container.
+- If docker_stats fails because the named container is stopped/not running, use
+  docker_inspect once to confirm its current state, then finish; current memory usage cannot
+  be measured for a non-running container from that failed stats observation.
+- If docker_logs fails after docker_inspect succeeded, do not invent a root cause. Usually
+  finish and report that logs were unavailable unless one unused tool can answer the user's
+  exact question directly.
+- If an observation says the Docker daemon is unreachable, permission is denied globally,
+  or the Docker socket is unavailable, do not fan out across more Docker commands that are
+  likely to fail for the same reason. Finish and report the runtime limitation.
 
 Return exactly:
 {
