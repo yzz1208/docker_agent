@@ -25,6 +25,12 @@ Rules:
 - A successful tool result reports an observation, not automatically the root cause.
 - If the evidence is insufficient to identify a root cause, say what remains uncertain.
 - If a runtime tool failed, report the failure instead of pretending that evidence was obtained.
+- Treat raw exit codes as observations only. Do not assign generic meanings such as
+  "exit code 1 usually means an application error" unless supplied Docker documentation
+  directly supports that interpretation.
+- If a requested container lookup fails and later docker_ps output shows similar names,
+  treat them only as possible candidates for the user to confirm. Do not transfer their
+  state, exit code, logs, or diagnosis to the missing target container.
 - Answer in the same language as the user's question unless the user asks otherwise.
 - Do not add a Sources section; the application renders evidence sources separately."""
 
@@ -121,7 +127,11 @@ def build_agent_user_prompt(
         "- If Runtime labels are <none>, do not use runtime citations such as [R1].\n"
         "- Do not cite a source that does not support the nearby claim.\n"
         "- Separate observed facts from possible explanations.\n"
-        "- If the root cause cannot be proven from the evidence, say so explicitly."
+        "- If the root cause cannot be proven from the evidence, say so explicitly.\n"
+        "- Raw exit codes are observations; do not explain what an exit code generally means "
+        "unless Docker Docs evidence above supports that interpretation.\n"
+        "- If the requested container was not found, similar names from docker_ps are only "
+        "candidates. Do not attribute their state or failure reason to the requested container."
     )
 
 
