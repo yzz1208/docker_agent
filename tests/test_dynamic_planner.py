@@ -59,3 +59,14 @@ def test_dynamic_planner_prompt_distinguishes_restart_mechanism_from_root_cause(
         PLANNER_SYSTEM_PROMPT
     )
     assert "request docker_logs after inspect" in PLANNER_SYSTEM_PROMPT
+
+
+def test_dynamic_planner_prompt_defines_failure_recovery_policy() -> None:
+    from docker_agent.agent.dynamic_planner import PLANNER_SYSTEM_PROMPT
+
+    assert 'No such container' in PLANNER_SYSTEM_PROMPT
+    assert 'use docker_ps once' in PLANNER_SYSTEM_PROMPT
+    assert 'docker_stats fails because the named container is stopped' in (
+        PLANNER_SYSTEM_PROMPT
+    )
+    assert 'do not fan out across more Docker commands' in PLANNER_SYSTEM_PROMPT
