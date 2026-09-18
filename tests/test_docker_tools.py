@@ -119,3 +119,26 @@ def test_stats_uses_no_stream_mode() -> None:
         "{{json .}}",
         "api",
     )
+
+
+def test_inspect_compacts_output_and_keeps_only_env_keys() -> None:
+    runner = RecordingRunner(
+        stdout=(
+            '[{"Id":"abc","Name":"/web","RestartCount":2,'
+            '"State":{"Status":"exited","ExitCode":1,"OOMKilled":false,'
+            '"Running":false,"Restarting":false,"Dead":false,'
+            '"Error":"","StartedAt":"start","FinishedAt":"finish"},'
+            '"Config":{"Image":"postgres:16","Cmd":["postgres"],'
+            '"Entrypoint":["docker-entrypoint.sh"],'
+            '"Env":["POSTGRES_PASSWORD=super-secret","PATH=/usr/bin"]},'
+            '"HostConfig":{"RestartPolicy":{"Name":"no","MaximumRetryCount":0}}}]'
+        )
+    )
+    tools = DockerReadOnlyTools(runner=runner)
+
+    result = tools.inspect("web")
+
+    assert "super-secret" not in result.output
+    assert '"EnvKeys":["POSTGRES_PASSWORD","PATH"]' in result.output
+    assert '"ExitCode":1' in result.output
+    assert '"RestartCount":2' in result.output
