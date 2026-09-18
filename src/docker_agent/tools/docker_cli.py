@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import json
 import re
 import subprocess
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+from typing import Any
 
 _CONTAINER_REF_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
 
@@ -112,10 +114,24 @@ class DockerReadOnlyTools:
         return self._run("docker_ps", args)
 
     def inspect(self, container: str) -> DockerToolResult:
-        """Inspect one container and return Docker's JSON payload."""
+        """Inspect one container and return a compact non-secret diagnostic summary."""
 
         container = validate_container_ref(container)
-        return self._run("docker_inspect", ["inspect", container])
+        result = self._run("docker_inspect", ["inspect", container])
+        if not result.ok:
+            return result
+
+        summary = _summarize_inspect_output(result.stdout)
+        if summary is None:
+            return result
+
+        return DockerToolResult(
+            tool=result.tool,
+            command=result.command,
+            returncode=result.returncode,
+            stdout=json.dumps(summary, ensure_ascii=False, separators=(",", ":")),
+            stderr=result.stderr,
+        )
 
     def logs(self, container: str, *, tail: int = 100) -> DockerToolResult:
         """Return a bounded number of recent container log lines."""
@@ -157,3 +173,65 @@ class DockerReadOnlyTools:
             stdout=completed.stdout or "",
             stderr=completed.stderr or "",
         )
+
+
+def _summarize_inspect_output(raw: str) -> dict[str, Any] | None:
+    """Reduce docker inspect JSON to fields useful for diagnosis.
+
+    Environment values are deliberately excluded. Only environment variable names
+    are retained so runtime evidence does not send passwords/tokens to the model.
+    """
+
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(payload, list) or not payload or not isinstance(payload[0], dict):
+        return None
+
+    item = payload[0]
+    state = item.get("State") if isinstance(item.get("State"), dict) else {}
+    config = item.get("Config") if isinstance(item.get("Config"), dict) else {}
+    host_config = (
+        item.get("HostConfig") if isinstance(item.get("HostConfig"), dict) else {}
+    )
+    restart_policy = (
+        host_config.get("RestartPolicy")
+        if isinstance(host_config.get("RestartPolicy"), dict)
+        else {}
+    )
+
+    env = config.get("Env")
+    env_keys: list[str] = []
+    if isinstance(env, list):
+        for entry in env:
+            if not isinstance(entry, str):
+                continue
+            key = entry.split("=", 1)[0].strip()
+            if key and key not in env_keys:
+                env_keys.append(key)
+
+    return {
+        "Id": item.get("Id"),
+        "Name": item.get("Name"),
+        "Image": config.get("Image"),
+        "Entrypoint": config.get("Entrypoint"),
+        "Cmd": config.get("Cmd"),
+        "EnvKeys": env_keys,
+        "RestartCount": item.get("RestartCount"),
+        "RestartPolicy": {
+            "Name": restart_policy.get("Name"),
+            "MaximumRetryCount": restart_policy.get("MaximumRetryCount"),
+        },
+        "State": {
+            "Status": state.get("Status"),
+            "Running": state.get("Running"),
+            "Restarting": state.get("Restarting"),
+            "OOMKilled": state.get("OOMKilled"),
+            "Dead": state.get("Dead"),
+            "ExitCode": state.get("ExitCode"),
+            "Error": state.get("Error"),
+            "StartedAt": state.get("StartedAt"),
+            "FinishedAt": state.get("FinishedAt"),
+        },
+    }
