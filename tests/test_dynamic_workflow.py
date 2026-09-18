@@ -106,3 +106,62 @@ def test_dynamic_crash_flow_observes_inspect_before_logs() -> None:
     assert tools.calls == ["docker_inspect", "docker_logs"]
     assert "[R1]" in model.prompts[1]
     assert len(result.results) == 2
+
+
+
+class FailureDockerTools:
+    def __init__(self) -> None:
+        self.calls: list[str] = []
+
+    def inspect(self, container: str) -> DockerToolResult:
+        self.calls.append("docker_inspect")
+        return DockerToolResult(
+            tool="docker_inspect",
+            command=("docker", "inspect", container),
+            returncode=1,
+            stdout="",
+            stderr=f"Error: No such object: {container}",
+        )
+
+    def ps(self, *, include_stopped: bool = True) -> DockerToolResult:
+        self.calls.append("docker_ps")
+        return DockerToolResult(
+            tool="docker_ps",
+            command=("docker", "ps", "--all"),
+            returncode=0,
+            stdout='{"Names":"web-old","State":"exited"}',
+            stderr="",
+        )
+
+    def logs(self, container: str, *, tail: int = 100) -> DockerToolResult:
+        raise AssertionError("unexpected docker_logs")
+
+    def stats(self, container: str) -> DockerToolResult:
+        raise AssertionError("unexpected docker_stats")
+
+    def info(self) -> DockerToolResult:
+        raise AssertionError("unexpected docker_info")
+
+
+def test_dynamic_failure_flow_can_verify_missing_container_with_ps() -> None:
+    model = SequenceModel(
+        [
+            '{"action":"tool","tool":"docker_inspect","reason":"inspect named container"}',
+            '{"action":"tool","tool":"docker_ps","reason":"verify available names"}',
+            '{"action":"finish","tool":null,"reason":"named container is absent"}',
+        ]
+    )
+    tools = FailureDockerTools()
+
+    result = run_dynamic_runtime_workflow(
+        question="web 为什么退出了？",
+        route=_route("web"),
+        planner_model=model,
+        docker_tools=tools,  # type: ignore[arg-type]
+    )
+
+    assert tools.calls == ["docker_inspect", "docker_ps"]
+    assert result.results[0].ok is False
+    assert result.results[1].ok is True
+    assert "[R1]" in model.prompts[1]
+    assert "[R2]" in model.prompts[2]
