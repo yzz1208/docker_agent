@@ -10,7 +10,12 @@ from docker_agent.agent.service import DockerSupportAgent
 from docker_agent.agent.workflow_evaluation import (
     WorkflowEvalMetrics,
     concept_coverage,
+    missing_concept_groups,
     summarize_workflow_metrics,
+)
+from docker_agent.agent.workflow_judge import (
+    judge_workflow_answer,
+    summarize_workflow_judges,
 )
 from docker_agent.config import get_settings
 from docker_agent.rag.answer import CitationValidationError
@@ -82,6 +87,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--input", type=Path, default=DEFAULT_INPUT)
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
     parser.add_argument("--limit", type=int, default=None)
+    parser.add_argument(
+        "--judge",
+        action="store_true",
+        help="Run an additional evidence-grounded LLM judge for completed answers.",
+    )
     return parser.parse_args()
 
 
@@ -191,7 +201,9 @@ def main() -> None:
 
     router_model = _model(temperature=0.0)
     answer_model = _model(temperature=0.0)
+    judge_model = _model(temperature=0.0) if args.judge else None
     metrics: list[WorkflowEvalMetrics] = []
+    judge_results = []
     output_rows: list[dict[str, Any]] = []
 
     for row in rows:
@@ -265,6 +277,8 @@ def main() -> None:
         actual_route = result.decision.route if result is not None else None
         actual_use_docs = result.decision.use_docs if result is not None else None
 
+        missing_concepts = missing_concept_groups(answer_text, required)
+
         output_row: dict[str, Any] = {
             "id": case_id,
             "question": question,
@@ -285,12 +299,37 @@ def main() -> None:
                 "runtime_citation_present": case_metrics.runtime_citation_present,
                 "docs_citation_present": case_metrics.docs_citation_present,
                 "concept_coverage": case_metrics.concept_coverage,
+                "missing_concepts": [list(group) for group in missing_concepts],
                 "exact_workflow_match": case_metrics.exact_workflow_match,
             },
             "answer": answer_text,
         }
         if error is not None:
             output_row["error"] = error
+
+        if judge_model is not None and completed:
+            runtime_evidence_text = json.dumps(
+                runtime,
+                ensure_ascii=False,
+                indent=2,
+            )
+            judged = judge_workflow_answer(
+                question=question,
+                answer=answer_text,
+                runtime_evidence=runtime_evidence_text,
+                docs_evidence=docs_context.text,
+                model=judge_model,
+            )
+            judge_results.append(judged)
+            output_row["judge"] = {
+                "groundedness": judged.groundedness,
+                "runtime_citation_correctness": judged.runtime_citation_correctness,
+                "docs_citation_correctness": judged.docs_citation_correctness,
+                "diagnosis_quality": judged.diagnosis_quality,
+                "unsupported_claims": list(judged.unsupported_claims),
+                "rationale": judged.rationale,
+            }
+
         output_rows.append(output_row)
 
         print(
@@ -305,6 +344,8 @@ def main() -> None:
             print(f"  expected tools={sorted(expected_tools)}")
             print(f"  actual tools={docker_tools.calls}")
             print(f"  expected route={expected_route} actual route={actual_route}")
+            if missing_concepts:
+                print(f"  missing concepts={[list(group) for group in missing_concepts]}")
             if error:
                 print(f"  error={error}")
 
@@ -323,6 +364,12 @@ def main() -> None:
             "not retrieval quality."
         ),
     }
+    if judge_model is not None:
+        summary["judge"] = summarize_workflow_judges(judge_results)
+        summary["judge_note"] = (
+            "Judge scores are diagnostic because the configured model may also be used "
+            "for answer generation."
+        )
 
     print("\nSummary")
     print(json.dumps(summary, ensure_ascii=False, indent=2))
