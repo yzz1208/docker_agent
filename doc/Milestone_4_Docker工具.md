@@ -261,3 +261,122 @@ uv run python scripts/ask_agent.py "zealous_kirch 为什么退出了？"
 ~~~
 
 这类问题 Router 应优先规划 `docker_inspect` + `docker_logs`，然后结合官方文档回答。当前仍只允许读操作，不会自动 restart / rm / exec。
+
+
+## 本轮实机结果与改进
+
+真实测试已经验证：
+
+- `docker-agent-postgres 现在用了多少内存？`
+  - Router: `runtime_tools`
+  - Tool: `docker_stats`
+  - 成功得到约 64 MiB 的实时内存使用。
+- `Docker volume 和 bind mount 有什么区别？`
+  - Router: `docs_only`
+  - 没有执行 runtime tool。
+- `我的容器为什么一直重启？`
+  - Router: `clarify`
+  - 没有容器名时先追问。
+- `zealous_kirch 为什么退出了？`
+  - Router: `runtime_tools`
+  - `docker_inspect + docker_logs` 成功定位 PostgreSQL 初始化缺少密码配置。
+
+这轮实机测试也暴露了三个工程问题，因此继续修正：
+
+### 1. Clarify 不应该因为模型预先列出工具而失败
+
+之前 Router 有时会输出：
+
+~~~text
+route=clarify
+tools=[docker_inspect, docker_logs]
+~~~
+
+虽然这些工具并不会执行，但严格校验会直接报错。
+
+现在对 clarify 使用“安全归一化”：
+
+~~~text
+clarify
+→ 强制 tools=[]
+→ 强制 container_ref=None
+→ use_docs=False
+→ 只保留 clarification
+~~~
+
+因此缺少容器名时一定不会执行命令，同时也不会因为模型描述未来计划而中断对话。
+
+### 2. Runtime-only 问题不再强制做文档检索
+
+此前 `zealous_kirch 为什么退出了？` 已经被 logs 明确解释，但原始问题仍会检索到无关的 Docker Engine release notes。
+
+Router 现在额外返回：
+
+~~~json
+"use_docs": true | false
+~~~
+
+对于当前内存、当前日志、已有运行时证据足以回答的根因问题，通常为 false。
+
+这样可以：
+
+- 减少无关文档噪声；
+- 避免每次 runtime 查询都加载 BGE-M3 和 reranker；
+- 降低 GPU/延迟开销；
+- 让最终回答更聚焦于真实运行证据。
+
+如果用户同时询问“为什么 + 官方如何配置/修复”，Router 可以设置 `use_docs=true`。
+
+### 3. docker inspect 不再把完整配置直接送给模型
+
+完整 `docker inspect` 很大，而且 `Config.Env` 可能包含密码、token 等敏感值。
+
+现在工具仍执行只读：
+
+~~~text
+docker inspect <container>
+~~~
+
+但在送入 Agent context 前只保留诊断摘要：
+
+- State / ExitCode / OOMKilled / Error
+- StartedAt / FinishedAt
+- RestartCount / RestartPolicy
+- Image / Entrypoint / Cmd
+- EnvKeys
+
+环境变量只保留“变量名”，不保留变量值。
+
+例如：
+
+~~~text
+POSTGRES_PASSWORD=secret
+~~~
+
+只会进入模型上下文为：
+
+~~~json
+"EnvKeys": ["POSTGRES_PASSWORD"]
+~~~
+
+这既保留诊断价值，也减少 secret 泄露风险。
+
+## 下一轮验证
+
+~~~powershell
+git pull --ff-only
+uv run ruff check .
+uv run pytest -v
+
+uv run python scripts/ask_agent.py "docker-agent-postgres 现在用了多少内存？"
+uv run python scripts/ask_agent.py "我的容器为什么一直重启？"
+uv run python scripts/ask_agent.py "zealous_kirch 为什么退出了？"
+~~~
+
+重点观察：
+
+1. 前两个 runtime-only 问题是否不再加载 BGE-M3 / reranker。
+2. clarify 是否稳定输出追问而不是 invalid route。
+3. `zealous_kirch` 是否仍能利用 compact inspect + logs 判断 PostgreSQL 初始化失败。
+4. 输出末尾是否不再出现无关 release notes。
+5. runtime evidence 是否不再因为完整 inspect 过大而触发 context truncation。
