@@ -481,3 +481,57 @@ Router Prompt 现在增加最小工具原则：
 - 只有用户要求进一步分析更广泛根因时才增加 `docker_logs`。
 
 评测 gold 不放宽，因为这里保留 strict exact-match 可以持续衡量工具调用效率。
+
+
+## Workflow Judge 首次实测
+
+首次 Judge Summary：
+
+~~~json
+{
+  "mean_groundedness": 4.5,
+  "mean_runtime_citation_correctness": 5.0,
+  "mean_docs_citation_correctness": 5.0,
+  "mean_diagnosis_quality": 4.75,
+  "unsupported_claim_case_rate": 0.25
+}
+~~~
+
+解释：
+
+- runtime citation 与 docs citation 都是满分，说明引用标签和证据类型区分已经稳定；
+- groundedness 4.5 / diagnosis 4.75 表明主要剩余问题是“结论强度”而不是 citation placement；
+- unsupported_claim_case_rate=0.25 表示 8 个 case 中约 2 个被 Judge 标记为存在至少一条超出证据的说法。
+
+此时不应直接修改 Answer Prompt，因为必须先知道具体是哪两个 case、哪句话被判定为 unsupported。
+
+评测脚本现在会在 Judge 发现以下任一情况时直接打印 per-case diagnostics：
+
+- groundedness < 5
+- runtime citation correctness < 5
+- docs citation correctness < 5
+- diagnosis quality < 5
+- unsupported_claims 非空
+
+同时 Summary 增加：
+
+~~~text
+judge_issue_cases
+~~~
+
+其中包含 case id、各分数、unsupported claims 和 rationale。
+
+下一步先重新运行：
+
+~~~powershell
+uv run python scripts/eval_agent_workflow.py --judge
+~~~
+
+根据具体 claim 再区分：
+
+1. Agent 真的做了过强推断 → 收紧 answer prompt；
+2. Synthetic evidence 不够完整 → 补 scenario evidence；
+3. Judge 过严或误判 → 保留人工说明，不为了分数扭曲 Agent；
+4. 字段语义容易误读 → 在 evidence formatter 中增加更明确的说明。
+
+另外，deterministic workflow 两次运行出现 concept coverage 0.9583 与 1.0 的差异，即使 temperature=0 仍可能由远程模型服务产生轻微非确定性。后续正式基线应记录多次运行均值/方差，而不是把单次 1.0 当成绝对结果。
