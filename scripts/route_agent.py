@@ -49,6 +49,7 @@ def main() -> None:
                 "container_ref": decision.container_ref,
                 "tools": list(decision.tools),
                 "clarification": decision.clarification,
+                "use_docs": decision.use_docs,
             },
             ensure_ascii=False,
             indent=2,
