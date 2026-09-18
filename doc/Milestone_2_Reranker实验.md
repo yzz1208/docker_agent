@@ -1,10 +1,12 @@
 # Milestone 2：Reranker 实验
 
-## 已有基线
+## 评测集
 
 评测集：`data/eval/retrieval_v2.jsonl`，共 37 个查询。
 
-### Hybrid（Dense + PostgreSQL FTS + RRF）
+## Hybrid 基线
+
+Dense + PostgreSQL FTS + RRF：
 
 - Document Hit@1: 0.6757
 - Document Hit@3: 0.8649
@@ -15,7 +17,7 @@
 - Section Hit@5: 0.7273
 - Section MRR: 0.5864
 
-### Candidate coverage
+## Candidate coverage
 
 - Dense Hit@10: 0.9189
 - Dense Hit@20: 1.0000
@@ -25,11 +27,13 @@
 - Union Hit@20: 1.0000
 - Union Recall@20: 1.0000
 
-这说明当前主要瓶颈已经不是第一阶段召回，而是候选排序。
+这说明当前 37 条评测中，正确文档已经全部进入 Dense Top-20 / Union Top-20，主要瓶颈已经从第一阶段召回转移到候选排序。
 
-### Reranker：union pool（最多约 40 chunks）
+## Reranker 对比
 
 模型：`BAAI/bge-reranker-v2-m3`
+
+### Union pool（最多约 40 chunks）
 
 - Document Hit@1: 0.6486
 - Document Hit@3: 0.9189
@@ -40,34 +44,73 @@
 - Section Hit@5: 1.0000
 - Section MRR: 0.7576
 
-结论：Reranker 明显改善了 Top-3 / Top-5 和 section-level 排序，但 Document Hit@1 从 0.6757 降到 0.6486。当前 union pool 最多会把 20 个 dense 候选与 20 个 keyword 候选一起交给 Cross Encoder，可能带入了不必要的噪声，同时增加推理开销。
+### Dense Top-20 pool
 
-## 下一组实验：rerank candidate pool
+- Document Hit@1: 0.6486
+- Document Hit@3: 0.9189
+- Document Hit@5: 0.9459
+- Document MRR: 0.7770
+- Section Hit@1: 0.6364
+- Section Hit@3: 0.8182
+- Section Hit@5: 1.0000
+- Section MRR: 0.7576
 
-新增 `--rerank-pool`：
+### RRF Top-20 pool（最终方案）
 
-- `rrf`：先用 RRF 压缩为 Top-20，再交给 reranker（新的默认方案）
-- `union`：保留旧行为，最多约 40 个候选
-- `dense`：只对 Dense Top-20 进行 rerank
+- Document Hit@1: 0.6757
+- Document Hit@3: 0.9189
+- Document Hit@5: 0.9459
+- Document MRR: 0.7905
+- Section Hit@1: 0.6364
+- Section Hit@3: 0.8182
+- Section Hit@5: 1.0000
+- Section MRR: 0.7576
 
-运行：
+## 最终选择
 
-```powershell
-uv run python scripts/eval_retrieval.py --mode rerank --rerank-pool rrf
-uv run python scripts/eval_retrieval.py --mode rerank --rerank-pool dense
+Milestone 2 最终检索链路确定为：
+
+```text
+User Query
+   ├─ BGE-M3 Dense Top-20
+   └─ PostgreSQL FTS Top-20
+              ↓
+       RRF (1.0 : 1.0)
+              ↓
+           Top-20
+              ↓
+  BGE-reranker-v2-m3
+              ↓
+           Top-5
 ```
 
-`union` 已有基线，如需复现：
+选择 RRF Top-20 的原因：
 
-```powershell
-uv run python scripts/eval_retrieval.py --mode rerank --rerank-pool union
+1. 保持 Hybrid 的 Document Hit@1 = 0.6757。
+2. Document Hit@3 / Hit@5 提升到 0.9189 / 0.9459。
+3. Document MRR 提升到 0.7905，是本轮对比中最高。
+4. Section Hit@1 从 Hybrid 的 0.5455 提升到 0.6364。
+5. Section Hit@5 达到 1.0000。
+6. 相比 union pool，reranker 只需处理最多 20 个候选，减少约一半 pair 推理量。
+
+## Milestone 2 结论
+
+Milestone 2 到此收尾，不再围绕当前 37 条评测继续细调 RRF 常数、权重或候选深度，避免对小型评测集过拟合。
+
+下一阶段进入 Milestone 3：
+
+```text
+Retrieval
+  ↓
+RRF Top-20
+  ↓
+Reranker Top-5
+  ↓
+Context Builder
+  ↓
+Grounded Prompt
+  ↓
+LLM
+  ↓
+Answer + Docker Docs citations
 ```
-
-重点比较：
-
-1. Document Hit@1 是否恢复或超过 Hybrid 的 0.6757。
-2. Section Hit@1 / Hit@5 是否继续保持 Reranker 的优势。
-3. RRF Top-20 能否在减少一半左右 rerank pair 数量的同时保持质量。
-4. Dense-only Top-20 是否说明 Keyword union 中的候选会干扰 Cross Encoder。
-
-如果 `rrf` pool 在 Document Hit@1、Section 指标和推理成本之间表现稳定，则将其作为 Milestone 2 的最终检索链路，并进入 Milestone 3：Context Builder + LLM Answer Generation。
