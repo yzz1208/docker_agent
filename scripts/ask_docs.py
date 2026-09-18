@@ -7,7 +7,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from docker_agent.config import get_settings
 from docker_agent.db import check_database, create_db_engine
-from docker_agent.rag.answer import generate_grounded_answer
+from docker_agent.rag.answer import CitationValidationError, generate_grounded_answer
 from docker_agent.rag.context import build_rag_context
 from docker_agent.rag.embeddings import BgeM3Embedder
 from docker_agent.rag.llm import OpenAICompatibleChatClient
@@ -41,6 +41,11 @@ def parse_args() -> argparse.Namespace:
         "--context-max-chars",
         type=int,
         default=settings.rag_context_max_chars,
+    )
+    parser.add_argument(
+        "--show-all-sources",
+        action="store_true",
+        help="Print every retrieved source instead of only sources cited by the answer.",
     )
     return parser.parse_args()
 
@@ -140,12 +145,20 @@ def main() -> None:
         timeout_seconds=settings.model_timeout_seconds,
         temperature=settings.model_temperature,
     )
-    result = generate_grounded_answer(args.question, context, model)
+    try:
+        result = generate_grounded_answer(args.question, context, model)
+    except CitationValidationError as exc:
+        raise SystemExit(f"Invalid model citation: {exc}") from None
 
     print("\nAnswer\n")
     print(result.answer)
     print("\nSources")
-    for source in result.sources:
+
+    sources = result.sources if args.show_all_sources else result.cited_sources
+    if not sources:
+        sources = result.sources
+
+    for source in sources:
         section = f" > {source.section}" if source.section else ""
         print(f"[{source.index}] {source.title}{section}")
         print(f"    {source.source_url}")
