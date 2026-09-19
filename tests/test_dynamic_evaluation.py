@@ -18,6 +18,7 @@ def test_exact_dynamic_workflow_requires_full_trace_quality() -> None:
         concept_coverage=1.0,
     )
 
+    assert metrics.exact_orchestration_match is True
     assert metrics.exact_dynamic_workflow_match is True
 
 
@@ -35,6 +36,7 @@ def test_exact_dynamic_workflow_fails_when_sequence_is_wrong() -> None:
         concept_coverage=1.0,
     )
 
+    assert metrics.exact_orchestration_match is False
     assert metrics.exact_dynamic_workflow_match is False
 
 
@@ -72,4 +74,23 @@ def test_dynamic_workflow_summary_reports_sequence_and_finish_rates() -> None:
     assert summary["finish_rate"] == 0.5
     assert summary["step_limit_pass_rate"] == 0.5
     assert summary["no_repeat_tool_rate"] == 0.5
+    assert summary["exact_orchestration_accuracy"] == 0.5
     assert summary["exact_dynamic_workflow_accuracy"] == 0.5
+
+
+def test_orchestration_can_pass_when_answer_concept_wording_varies() -> None:
+    metrics = DynamicWorkflowEvalMetrics(
+        case_id="paraphrase",
+        completed=True,
+        route_match=True,
+        tool_sequence_match=True,
+        finish_present=True,
+        step_limit_ok=True,
+        no_repeated_tools=True,
+        runtime_citation_present=True,
+        docs_citation_present=True,
+        concept_coverage=0.67,
+    )
+
+    assert metrics.exact_orchestration_match is True
+    assert metrics.exact_dynamic_workflow_match is False
