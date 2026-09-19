@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any
 
-from docker_agent.core.tool_result import ToolErrorType, ToolResult
+from docker_agent.core.tool_result import ToolResult
 
 if TYPE_CHECKING:
     from docker_agent.rag.context import CitationSource
