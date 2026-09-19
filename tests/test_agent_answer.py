@@ -19,6 +19,16 @@ class FakeModel:
         return self.answer
 
 
+class SequenceModel:
+    def __init__(self, answers: list[str]) -> None:
+        self.answers = list(answers)
+        self.prompts: list[str] = []
+
+    def complete(self, *, system_prompt: str, user_prompt: str) -> str:
+        self.prompts.append(user_prompt)
+        return self.answers.pop(0)
+
+
 def _docs_context() -> RagContext:
     return RagContext(
         text="[1]\nTitle: Stats\nContent:\nUse docker stats.",
@@ -88,3 +98,68 @@ def test_build_agent_prompt_allows_docs_only_evidence() -> None:
 
     assert "<no local runtime evidence>" in prompt
     assert "[1]" in prompt
+
+
+def test_generate_agent_answer_repairs_invalid_doc_citation_once() -> None:
+    model = SequenceModel(
+        [
+            "当前使用 64MiB。[R1] 这是 Docker 的标准行为。[1]",
+            "当前使用 64MiB。[R1]",
+        ]
+    )
+
+    result = generate_agent_answer(
+        "web 现在用了多少内存？",
+        RagContext(text="", sources=(), truncated=False),
+        _runtime_context(),
+        model,
+    )
+
+    assert result.answer == "当前使用 64MiB。[R1]"
+    assert result.doc_citation_indices == ()
+    assert result.runtime_citation_indices == (1,)
+    assert len(model.prompts) == 2
+    assert "failed citation validation" in model.prompts[1]
+
+
+def test_agent_prompt_lists_available_citation_labels() -> None:
+    prompt = build_agent_user_prompt(
+        "web 现在用了多少内存？",
+        RagContext(text="", sources=(), truncated=False),
+        _runtime_context(),
+    )
+
+    assert "Docker Docs: <none>" in prompt
+    assert "Runtime: [R1]" in prompt
+
+
+def test_agent_prompt_forbids_unprovided_background_knowledge() -> None:
+    prompt = build_agent_user_prompt(
+        "Docker volume 和 bind mount 有什么区别？",
+        _docs_context(),
+        RuntimeEvidenceContext(text="", sources=(), truncated=False),
+    )
+
+    assert "do not add general Docker knowledge" in prompt
+
+
+def test_agent_prompt_treats_exit_codes_as_observations_without_docs() -> None:
+    prompt = build_agent_user_prompt(
+        "web-prod 为什么退出了？",
+        RagContext(text="", sources=(), truncated=False),
+        _runtime_context(),
+    )
+
+    assert "Raw exit codes are observations" in prompt
+    assert "do not explain what an exit code generally means" in prompt
+
+
+def test_agent_prompt_does_not_transfer_candidate_state_to_missing_target() -> None:
+    prompt = build_agent_user_prompt(
+        "web-prod 为什么退出了？",
+        RagContext(text="", sources=(), truncated=False),
+        _runtime_context(),
+    )
+
+    assert "similar names from docker_ps are only candidates" in prompt
+    assert "Do not attribute their state or failure reason" in prompt

@@ -25,6 +25,12 @@ Rules:
 - A successful tool result reports an observation, not automatically the root cause.
 - If the evidence is insufficient to identify a root cause, say what remains uncertain.
 - If a runtime tool failed, report the failure instead of pretending that evidence was obtained.
+- Treat raw exit codes as observations only. Do not assign generic meanings such as
+  "exit code 1 usually means an application error" unless supplied Docker documentation
+  directly supports that interpretation.
+- If a requested container lookup fails and later docker_ps output shows similar names,
+  treat them only as possible candidates for the user to confirm. Do not transfer their
+  state, exit code, logs, or diagnosis to the missing target container.
 - Answer in the same language as the user's question unless the user asks otherwise.
 - Do not add a Sources section; the application renders evidence sources separately."""
 
@@ -90,6 +96,16 @@ def build_agent_user_prompt(
 
     docs_text = docs_context.text or "<no Docker documentation evidence>"
     runtime_text = runtime_context.text or "<no local runtime evidence>"
+    doc_labels = (
+        ", ".join(f"[{source.index}]" for source in docs_context.sources)
+        if docs_context.sources
+        else "<none>"
+    )
+    runtime_labels = (
+        ", ".join(f"[R{source.index}]" for source in runtime_context.sources)
+        if runtime_context.sources
+        else "<none>"
+    )
 
     return (
         "User question:\n"
@@ -98,13 +114,56 @@ def build_agent_user_prompt(
         f"{docs_text}\n\n"
         "Local Docker runtime evidence:\n"
         f"{runtime_text}\n\n"
+        "Available citation labels:\n"
+        f"- Docker Docs: {doc_labels}\n"
+        f"- Runtime: {runtime_labels}\n\n"
         "Answer requirements:\n"
-        "- Use only the evidence above.\n"
+        "- Use only the evidence above; do not add general Docker knowledge that is absent "
+        "from the supplied evidence.\n"
         "- Cite runtime observations with [R1]-style labels.\n"
-        "- Cite Docker documentation claims with [1]-style labels.\n"
+        "- Cite Docker documentation claims with [1]-style labels only when a Docker Docs "
+        "label is available above.\n"
+        "- If Docker Docs labels are <none>, do not use numeric citations such as [1].\n"
+        "- If Runtime labels are <none>, do not use runtime citations such as [R1].\n"
         "- Do not cite a source that does not support the nearby claim.\n"
         "- Separate observed facts from possible explanations.\n"
-        "- If the root cause cannot be proven from the evidence, say so explicitly."
+        "- If the root cause cannot be proven from the evidence, say so explicitly.\n"
+        "- Raw exit codes are observations; do not explain what an exit code generally means "
+        "unless Docker Docs evidence above supports that interpretation.\n"
+        "- If the requested container was not found, similar names from docker_ps are only "
+        "candidates. Do not attribute their state or failure reason to the requested container."
+    )
+
+
+
+def _repair_invalid_citations(
+    *,
+    question: str,
+    invalid_answer: str,
+    validation_error: str,
+    docs_context: RagContext,
+    runtime_context: RuntimeEvidenceContext,
+    model: ChatModel,
+) -> str:
+    """Ask the model once to repair an otherwise useful answer's citation labels."""
+
+    base_prompt = build_agent_user_prompt(
+        question,
+        docs_context,
+        runtime_context,
+    )
+    repair_prompt = (
+        f"{base_prompt}\n\n"
+        "The previous answer failed citation validation:\n"
+        f"{validation_error}\n\n"
+        "Previous answer:\n"
+        f"{invalid_answer}\n\n"
+        "Rewrite the answer with the same supported substance, but use only the "
+        "available citation labels listed above. Do not introduce new facts."
+    )
+    return model.complete(
+        system_prompt=AGENT_SYSTEM_PROMPT,
+        user_prompt=repair_prompt,
     )
 
 
@@ -119,11 +178,32 @@ def generate_agent_answer(
     prompt = build_agent_user_prompt(question, docs_context, runtime_context)
     answer = model.complete(system_prompt=AGENT_SYSTEM_PROMPT, user_prompt=prompt)
 
-    doc_indices, cited_docs = select_cited_sources(answer, docs_context.sources)
-    runtime_indices, cited_runtime = select_runtime_sources(
-        answer,
-        runtime_context.sources,
-    )
+    try:
+        doc_indices, cited_docs = select_cited_sources(
+            answer,
+            docs_context.sources,
+        )
+        runtime_indices, cited_runtime = select_runtime_sources(
+            answer,
+            runtime_context.sources,
+        )
+    except CitationValidationError as exc:
+        answer = _repair_invalid_citations(
+            question=question,
+            invalid_answer=answer,
+            validation_error=str(exc),
+            docs_context=docs_context,
+            runtime_context=runtime_context,
+            model=model,
+        )
+        doc_indices, cited_docs = select_cited_sources(
+            answer,
+            docs_context.sources,
+        )
+        runtime_indices, cited_runtime = select_runtime_sources(
+            answer,
+            runtime_context.sources,
+        )
 
     return AgentAnswer(
         answer=answer,
