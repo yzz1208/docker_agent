@@ -11,6 +11,7 @@ from docker_agent.agent.dynamic_evaluation import (
 )
 from docker_agent.agent.dynamic_planner import DynamicPlannerError
 from docker_agent.agent.dynamic_service import DynamicDockerSupportAgent
+from docker_agent.agent.evidence import build_runtime_evidence
 from docker_agent.agent.dynamic_workflow import DynamicWorkflowError
 from docker_agent.agent.router import AgentRoutingError
 from docker_agent.agent.workflow_evaluation import (
@@ -363,19 +364,19 @@ def main() -> None:
 
         if judge_model is not None and completed:
             try:
-                observed_runtime = {
-                    tool: runtime.get(tool)
-                    for tool in docker_tools.calls
-                    if tool in runtime
-                }
+                observed_results = tuple(
+                    step.result
+                    for step in trace
+                    if step.result is not None
+                )
+                observed_evidence = build_runtime_evidence(
+                    observed_results,
+                    max_chars=settings.runtime_evidence_max_chars,
+                )
                 judged = judge_workflow_answer(
                     question=question,
                     answer=answer_text,
-                    runtime_evidence=json.dumps(
-                        observed_runtime,
-                        ensure_ascii=False,
-                        indent=2,
-                    ),
+                    runtime_evidence=observed_evidence.text,
                     docs_evidence=docs_context.text,
                     model=judge_model,
                 )
