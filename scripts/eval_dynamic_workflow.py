@@ -225,6 +225,7 @@ def main() -> None:
     metrics: list[DynamicWorkflowEvalMetrics] = []
     judge_results = []
     judge_issue_cases: list[dict[str, Any]] = []
+    judge_error_cases: list[dict[str, str]] = []
     shadow_results: list[bool] = []
     shadow_issue_cases: list[dict[str, Any]] = []
     output_rows: list[dict[str, Any]] = []
@@ -456,7 +457,15 @@ def main() -> None:
                     model=judge_model,
                 )
             except (ModelRequestError, json.JSONDecodeError, TypeError, ValueError) as exc:
-                output_row["judge_error"] = str(exc)
+                judge_error = str(exc)
+                output_row["judge_error"] = judge_error
+                judge_error_cases.append(
+                    {
+                        "id": case_id,
+                        "error": judge_error,
+                    }
+                )
+                print(f"  judge error={judge_error}")
             else:
                 judge_results.append(judged)
                 output_row["judge"] = {
@@ -575,9 +584,8 @@ def main() -> None:
     }
     if judge_model is not None:
         summary["judge"] = summarize_workflow_judges(judge_results)
-        summary["judge_errors"] = sum(
-            1 for row in output_rows if "judge_error" in row
-        )
+        summary["judge_errors"] = len(judge_error_cases)
+        summary["judge_error_cases"] = judge_error_cases
         summary["judge_issue_cases"] = judge_issue_cases
 
     print("\nSummary")
