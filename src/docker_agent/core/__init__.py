@@ -8,6 +8,7 @@ from docker_agent.core.evidence import (
     runtime_tool_result_to_evidence,
     user_message_to_evidence,
 )
+from docker_agent.core.state import AgentState, AgentStep
 from docker_agent.core.tool_result import (
     ToolErrorType,
     ToolResult,
@@ -16,6 +17,8 @@ from docker_agent.core.tool_result import (
 )
 
 __all__ = [
+    "AgentState",
+    "AgentStep",
     "Evidence",
     "EvidenceBundle",
     "EvidenceKind",
