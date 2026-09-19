@@ -25,7 +25,7 @@ from docker_agent.config import get_settings
 from docker_agent.rag.answer import CitationValidationError
 from docker_agent.rag.context import CitationSource, RagContext
 from docker_agent.rag.llm import ModelRequestError, OpenAICompatibleChatClient
-from docker_agent.tools.docker_cli import DockerToolResult
+from docker_agent.tools.docker_cli import DockerToolResult, DockerToolTimeout
 
 DEFAULT_INPUT = Path("data/eval/dynamic_workflow_v1.jsonl")
 DEFAULT_OUTPUT = Path("reports/dynamic_workflow_eval_latest.jsonl")
@@ -71,6 +71,13 @@ class ScenarioDockerTools:
                 stdout="",
                 stderr=f"Scenario does not define output for {tool}",
             )
+
+        if raw.get("timeout") is True:
+            message = str(
+                raw.get("message")
+                or f"{tool} timed out while collecting runtime evidence"
+            )
+            raise DockerToolTimeout(message)
 
         return DockerToolResult(
             tool=tool,
