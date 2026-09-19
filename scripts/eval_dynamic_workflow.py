@@ -316,7 +316,9 @@ def main() -> None:
         )
 
         shadow_report: CoreShadowReport | None = None
-        if result is not None and result.answer is not None:
+        shadow_error: str | None = None
+        shadow_attempted = result is not None and result.answer is not None
+        if shadow_attempted:
             try:
                 shadow_report = build_core_shadow_report(
                     question=question,
@@ -328,11 +330,12 @@ def main() -> None:
                     answer=answer_text,
                 )
             except ValueError as exc:
+                shadow_error = str(exc)
                 shadow_results.append(False)
                 shadow_issue_cases.append(
                     {
                         "id": case_id,
-                        "issues": [str(exc)],
+                        "issues": [shadow_error],
                     }
                 )
             else:
@@ -402,8 +405,13 @@ def main() -> None:
             },
             "answer": answer_text,
             "shadow": {
-                "ran": shadow_report is not None,
-                "ok": shadow_report.ok if shadow_report is not None else None,
+                "ran": shadow_attempted,
+                "ok": (
+                    shadow_report.ok
+                    if shadow_report is not None
+                    else False if shadow_attempted else None
+                ),
+                "error": shadow_error,
                 "issues": (
                     list(shadow_report.issues)
                     if shadow_report is not None
@@ -505,8 +513,12 @@ def main() -> None:
         output_rows.append(output_row)
 
         shadow_status = "n/a"
-        if shadow_report is not None:
-            shadow_status = "pass" if shadow_report.ok else "fail"
+        if shadow_attempted:
+            shadow_status = (
+                "pass"
+                if shadow_report is not None and shadow_report.ok
+                else "fail"
+            )
 
         print(
             f"[{case_id}] complete={case_metrics.completed} "
@@ -518,7 +530,9 @@ def main() -> None:
             f"shadow={shadow_status}"
         )
 
-        if shadow_report is not None and not shadow_report.ok:
+        if shadow_error is not None:
+            print(f"  shadow error={shadow_error}")
+        elif shadow_report is not None and not shadow_report.ok:
             print(f"  shadow issues={list(shadow_report.issues)}")
 
         if not case_metrics.exact_dynamic_workflow_match:
