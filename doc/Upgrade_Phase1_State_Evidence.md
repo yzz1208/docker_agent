@@ -353,3 +353,84 @@ uv run python scripts/eval_dynamic_workflow.py --judge
 - unsupported claims 继续为 0。
 
 若全部通过，Upgrade Phase 1 的 schema migration 主体即可认为完成，下一步只做 Phase 1 收尾和 Baseline 对比，不立即进入 LangGraph。
+
+
+## 15. Step 6 首次回归分析
+
+Answer Context 切到 Unified Evidence 后，四组 Shadow parity 仍保持通过；已运行的 normal / failure / timeout 均为：
+
+~~~text
+shadow.coverage_rate = 1.0
+shadow.pass_rate     = 1.0
+shadow.issue_cases   = []
+~~~
+
+同时：
+
+- route accuracy = 1.0；
+- tool sequence accuracy = 1.0；
+- finish rate = 1.0；
+- no-repeat tool rate = 1.0；
+- runtime/docs citation rate = 1.0。
+
+这说明 State / Evidence / Answer Context 迁移没有改变 orchestration 或 evidence view。
+
+本轮出现的 end-to-end 降分来自生成文本与字符串型 required_concepts 的表达差异，例如：
+
+~~~text
+database connection error
+vs
+connection refused
+
+守护进程
+vs
+Docker daemon
+
+代码 1
+vs
+ExitCode
+~~~
+
+LLM Judge 同时认为这些回答 grounded 且 citation 正确。因此评测层新增：
+
+~~~text
+exact_orchestration_accuracy
+~~~
+
+它只衡量：
+
+- completed；
+- route；
+- tool sequence；
+- finish；
+- step limit；
+- no repeated tools。
+
+原有 `exact_dynamic_workflow_accuracy` 继续保留，作为包含 citation + deterministic concept coverage 的 legacy end-to-end 指标。
+
+这样后续架构迁移可以区分：
+
+~~~text
+控制流是否回退
+vs
+回答措辞是否命中 deterministic lexical gold
+~~~
+
+同时只对明显合理的中文/英文同义表达扩充 required_concepts，不降低 groundedness 或 citation 标准。
+
+### Judge Error 可观测性
+
+`--judge` 之前只输出 `judge_errors` 数量。现在新增：
+
+~~~json
+{
+  "judge_error_cases": [
+    {
+      "id": "...",
+      "error": "..."
+    }
+  ]
+}
+~~~
+
+并在运行时直接打印 `judge error=...`，方便区分网络/API/JSON judge failure 与 Agent answer failure。
