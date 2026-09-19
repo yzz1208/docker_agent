@@ -162,3 +162,83 @@ LangGraph、Supervisor Agent、Diagnosis Agent、MCP、Redis、Celery、React、
 ## 12. 下一步
 
 Phase 1 第一项只实现 core/tool_result.py：让 Docker 的 timeout / not-found / permission-denied / daemon-unavailable / command-failed 有统一机器可读语义。
+
+
+## 13. Step 5 — Shadow Mode 已实现
+
+当前 Dynamic Workflow Eval 会在不改变最终 Answer 输入的前提下，同时构建：
+
+~~~text
+Legacy Path
+DockerToolResult
+  ↓
+RuntimeEvidenceContext
+
+Shadow Path
+DockerToolResult
+  ↓
+ToolResult
+  ↓
+Evidence
+  ↓
+EvidenceBundle
+  ↓
+AgentState
+~~~
+
+最终回答仍然使用旧的 RuntimeEvidenceContext / RagContext，因此 Shadow Mode 不参与生产决策。
+
+Shadow 会校验：
+
+- runtime evidence 数量；
+- citation label；
+- tool/source；
+- success/failure 状态；
+- evidence content；
+- runtime trace 的 step/action/tool/reason/ok；
+- route / container_ref / use_docs；
+- final answer 是否一致。
+
+Dynamic Eval 输出新增：
+
+~~~text
+shadow=pass / fail
+~~~
+
+Summary 新增：
+
+~~~json
+{
+  "shadow": {
+    "cases": 8,
+    "coverage_rate": 1.0,
+    "pass_rate": 1.0,
+    "issue_cases": []
+  }
+}
+~~~
+
+若 Shadow adapter 或 parity check 出错，只记录 shadow failure，不改变旧 Agent 的执行结果。这保证当前阶段可以安全观察新 Schema，而不是立即切流。
+
+另外修正了两个兼容细节：
+
+1. Docker error classification 同时检查 stdout + stderr，避免 partial stdout 掩盖真正的 permission/daemon 错误；
+2. failed runtime Evidence 保留旧逻辑的 stdout 优先级，确保迁移时 prompt evidence 内容不发生隐式变化。
+
+### Step 5 验证命令
+
+~~~powershell
+uv run ruff check .
+uv run pytest -v
+uv run python scripts/eval_dynamic_workflow.py
+~~~
+
+第一目标是：
+
+~~~text
+shadow.coverage_rate = 1.0
+shadow.pass_rate     = 1.0
+shadow.issue_cases   = []
+~~~
+
+然后再分别运行 failure / timeout / permission 数据集，确认异常证据同样能通过 Shadow Mode。
