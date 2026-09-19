@@ -5,12 +5,12 @@ import json
 from pathlib import Path
 from typing import Any
 
+from docker_agent.agent.core_shadow import CoreShadowReport, build_core_shadow_report
 from docker_agent.agent.dynamic_evaluation import (
     DynamicWorkflowEvalMetrics,
     summarize_dynamic_workflow_metrics,
 )
 from docker_agent.agent.dynamic_planner import DynamicPlannerError
-from docker_agent.agent.core_shadow import CoreShadowReport, build_core_shadow_report
 from docker_agent.agent.dynamic_service import DynamicDockerSupportAgent
 from docker_agent.agent.dynamic_workflow import DynamicWorkflowError
 from docker_agent.agent.evidence import build_runtime_evidence
