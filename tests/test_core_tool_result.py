@@ -119,3 +119,13 @@ def test_tool_result_rejects_failed_none_error_type() -> None:
             error="failed",
             error_type=ToolErrorType.NONE,
         )
+
+
+def test_classifier_reads_stderr_even_when_stdout_is_present() -> None:
+    result = _docker_result(
+        returncode=1,
+        stdout="partial diagnostic output",
+        stderr="permission denied while trying to connect to the Docker daemon socket",
+    )
+
+    assert classify_docker_tool_error(result) is ToolErrorType.PERMISSION_DENIED
