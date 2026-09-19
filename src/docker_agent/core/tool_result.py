@@ -46,7 +46,7 @@ def classify_docker_tool_error(result: DockerToolResult) -> ToolErrorType:
     if result.ok:
         return ToolErrorType.NONE
 
-    text = result.output.casefold()
+    text = f"{result.stdout}\n{result.stderr}".casefold()
 
     if "timed out" in text or "timeout" in text:
         return ToolErrorType.TIMEOUT
