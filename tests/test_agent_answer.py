@@ -2,7 +2,13 @@ import pytest
 
 from docker_agent.agent.answer import (
     build_agent_user_prompt,
+    build_agent_user_prompt_from_evidence,
     generate_agent_answer,
+    generate_agent_answer_from_evidence,
+)
+from docker_agent.agent.core_adapters import (
+    rag_context_to_evidence_bundle,
+    runtime_context_to_evidence_bundle,
 )
 from docker_agent.agent.evidence import RuntimeEvidenceContext, RuntimeEvidenceSource
 from docker_agent.rag.answer import CitationValidationError
@@ -163,3 +169,53 @@ def test_agent_prompt_does_not_transfer_candidate_state_to_missing_target() -> N
 
     assert "similar names from docker_ps are only candidates" in prompt
     assert "Do not attribute their state or failure reason" in prompt
+
+
+
+def test_unified_evidence_prompt_matches_legacy_wrapper() -> None:
+    docs_context = _docs_context()
+    runtime_context = _runtime_context()
+
+    legacy_prompt = build_agent_user_prompt(
+        "web 现在用了多少内存？",
+        docs_context,
+        runtime_context,
+    )
+    evidence_prompt = build_agent_user_prompt_from_evidence(
+        "web 现在用了多少内存？",
+        rag_context_to_evidence_bundle(docs_context),
+        runtime_context_to_evidence_bundle(runtime_context),
+    )
+
+    assert evidence_prompt == legacy_prompt
+
+
+def test_generate_agent_answer_from_evidence_preserves_legacy_sources() -> None:
+    docs_context = _docs_context()
+    runtime_context = _runtime_context()
+
+    result = generate_agent_answer_from_evidence(
+        "web 现在用了多少内存？",
+        rag_context_to_evidence_bundle(docs_context),
+        runtime_context_to_evidence_bundle(runtime_context),
+        FakeModel("当前内存使用约 64MiB。[R1] 可用 docker stats 查看运行指标。[1]"),
+        doc_sources=docs_context.sources,
+        runtime_sources=runtime_context.sources,
+    )
+
+    assert result.doc_citation_indices == (1,)
+    assert result.runtime_citation_indices == (1,)
+    assert result.cited_doc_sources[0].chunk_id == "chunk-1"
+    assert result.cited_runtime_sources[0].tool == "docker_stats"
+
+
+def test_unified_evidence_prompt_rejects_wrong_bundle_kind() -> None:
+    docs_bundle = runtime_context_to_evidence_bundle(_runtime_context())
+    runtime_bundle = runtime_context_to_evidence_bundle(_runtime_context())
+
+    with pytest.raises(ValueError, match="expected kind=knowledge"):
+        build_agent_user_prompt_from_evidence(
+            "web 现在用了多少内存？",
+            docs_bundle,
+            runtime_bundle,
+        )
