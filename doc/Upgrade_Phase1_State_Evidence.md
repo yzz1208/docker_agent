@@ -242,3 +242,114 @@ shadow.issue_cases   = []
 ~~~
 
 然后再分别运行 failure / timeout / permission 数据集，确认异常证据同样能通过 Shadow Mode。
+
+
+## 14. Step 6 — Answer Context 迁移到 Unified Evidence
+
+Shadow Mode 在 normal / failure / timeout / permission 四组数据上全部达到：
+
+~~~text
+coverage_rate = 1.0
+pass_rate     = 1.0
+issue_cases   = []
+~~~
+
+因此开始将 Answer Prompt 的内部输入切换到统一 Evidence。
+
+### 新的内部路径
+
+~~~text
+Legacy Context
+RagContext / RuntimeEvidenceContext
+        ↓ compatibility adapter
+EvidenceBundle
+        ↓
+build_agent_user_prompt_from_evidence()
+        ↓
+LLM
+        ↓
+Citation Validation
+~~~
+
+外部兼容入口仍然保留：
+
+~~~python
+generate_agent_answer(
+    question,
+    docs_context,
+    runtime_context,
+    model,
+)
+~~~
+
+但该函数现在只负责把旧 Context 转换为 EvidenceBundle，然后委托给：
+
+~~~python
+generate_agent_answer_from_evidence(...)
+~~~
+
+同样：
+
+~~~python
+build_agent_user_prompt(...)
+~~~
+
+现在也是 compatibility wrapper，真正构建 Prompt 的实现已经变成：
+
+~~~python
+build_agent_user_prompt_from_evidence(...)
+~~~
+
+### 当前保持不变的部分
+
+为了避免一次迁移过多：
+
+- AgentAnswer 的 public fields 不变；
+- CitationSource / RuntimeEvidenceSource 暂时仍用于 API/source rendering；
+- Citation validation 逻辑不变；
+- 用户可见 [1] / [R1] 不变；
+- prompt compatibility text 不变；
+- Dynamic Planner / Runtime Workflow 不变；
+- FastAPI response schema 不变。
+
+也就是说：
+
+~~~text
+Prompt 输入内部结构已经迁移
+但外部行为和返回结构保持兼容
+~~~
+
+### 新增验证
+
+新增测试确认：
+
+1. unified Evidence prompt 与 legacy wrapper prompt 完全一致；
+2. evidence-native answer path 仍返回原来的 citation source objects；
+3. docs/runtime EvidenceBundle 类型不能混用；
+4. legacy generate_agent_answer 继续经过统一 Evidence 路径。
+
+### Step 6 回归目标
+
+本地先运行：
+
+~~~powershell
+uv run ruff check .
+uv run pytest -v
+~~~
+
+然后重新运行四组 Dynamic Eval，建议这次全部带 Judge：
+
+~~~powershell
+uv run python scripts/eval_dynamic_workflow.py --judge
+~~~
+
+以及 failure / timeout / permission 三组对应的 `--judge`。
+
+目标：
+
+- 原有 workflow 指标不回退；
+- shadow.pass_rate = 1.0；
+- groundedness / citation correctness / diagnosis quality 不回退；
+- unsupported claims 继续为 0。
+
+若全部通过，Upgrade Phase 1 的 schema migration 主体即可认为完成，下一步只做 Phase 1 收尾和 Baseline 对比，不立即进入 LangGraph。
