@@ -40,7 +40,12 @@ def build_runtime_evidence(
 
     for result in results:
         index = len(sources) + 1
-        status = "success" if result.ok else f"error(returncode={result.returncode})"
+        if result.ok:
+            status = "success"
+        elif result.returncode == 124 and "timed out" in result.output.casefold():
+            status = "timeout"
+        else:
+            status = f"error(returncode={result.returncode})"
         command = " ".join(result.command)
         prefix = (
             f"[R{index}]\n"
