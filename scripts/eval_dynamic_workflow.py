@@ -10,6 +10,7 @@ from docker_agent.agent.dynamic_evaluation import (
     summarize_dynamic_workflow_metrics,
 )
 from docker_agent.agent.dynamic_planner import DynamicPlannerError
+from docker_agent.agent.core_shadow import CoreShadowReport, build_core_shadow_report
 from docker_agent.agent.dynamic_service import DynamicDockerSupportAgent
 from docker_agent.agent.dynamic_workflow import DynamicWorkflowError
 from docker_agent.agent.evidence import build_runtime_evidence
@@ -224,6 +225,8 @@ def main() -> None:
     metrics: list[DynamicWorkflowEvalMetrics] = []
     judge_results = []
     judge_issue_cases: list[dict[str, Any]] = []
+    shadow_results: list[bool] = []
+    shadow_issue_cases: list[dict[str, Any]] = []
     output_rows: list[dict[str, Any]] = []
 
     for row in rows:
@@ -302,6 +305,46 @@ def main() -> None:
                 docs_citation_ok = bool(result.answer.doc_citation_indices)
             coverage = concept_coverage(answer_text, required)
 
+        observed_results = tuple(
+            step.result
+            for step in trace
+            if step.result is not None
+        )
+        observed_runtime_context = build_runtime_evidence(
+            observed_results,
+            max_chars=settings.runtime_evidence_max_chars,
+        )
+
+        shadow_report: CoreShadowReport | None = None
+        if result is not None and result.answer is not None:
+            try:
+                shadow_report = build_core_shadow_report(
+                    question=question,
+                    decision=result.decision,
+                    runtime_results=observed_results,
+                    runtime_context=observed_runtime_context,
+                    docs_context=docs_context,
+                    runtime_trace=trace,
+                    answer=answer_text,
+                )
+            except ValueError as exc:
+                shadow_results.append(False)
+                shadow_issue_cases.append(
+                    {
+                        "id": case_id,
+                        "issues": [str(exc)],
+                    }
+                )
+            else:
+                shadow_results.append(shadow_report.ok)
+                if not shadow_report.ok:
+                    shadow_issue_cases.append(
+                        {
+                            "id": case_id,
+                            "issues": list(shadow_report.issues),
+                        }
+                    )
+
         case_metrics = DynamicWorkflowEvalMetrics(
             case_id=case_id,
             completed=completed,
@@ -358,25 +401,49 @@ def main() -> None:
                 ),
             },
             "answer": answer_text,
+            "shadow": {
+                "ran": shadow_report is not None,
+                "ok": shadow_report.ok if shadow_report is not None else None,
+                "issues": (
+                    list(shadow_report.issues)
+                    if shadow_report is not None
+                    else []
+                ),
+                "tool_result_count": (
+                    len(shadow_report.state.tool_results)
+                    if shadow_report is not None
+                    else 0
+                ),
+                "evidence_count": (
+                    len(shadow_report.state.evidence)
+                    if shadow_report is not None
+                    else 0
+                ),
+                "runtime_step_count": (
+                    len(shadow_report.state.runtime_steps)
+                    if shadow_report is not None
+                    else 0
+                ),
+                "evidence_labels": (
+                    [
+                        item.citation_label
+                        for item in shadow_report.state.evidence
+                        if item.citation_label is not None
+                    ]
+                    if shadow_report is not None
+                    else []
+                ),
+            },
         }
         if error is not None:
             output_row["error"] = error
 
         if judge_model is not None and completed:
             try:
-                observed_results = tuple(
-                    step.result
-                    for step in trace
-                    if step.result is not None
-                )
-                observed_evidence = build_runtime_evidence(
-                    observed_results,
-                    max_chars=settings.runtime_evidence_max_chars,
-                )
                 judged = judge_workflow_answer(
                     question=question,
                     answer=answer_text,
-                    runtime_evidence=observed_evidence.text,
+                    runtime_evidence=observed_runtime_context.text,
                     docs_evidence=docs_context.text,
                     model=judge_model,
                 )
@@ -437,14 +504,22 @@ def main() -> None:
 
         output_rows.append(output_row)
 
+        shadow_status = "n/a"
+        if shadow_report is not None:
+            shadow_status = "pass" if shadow_report.ok else "fail"
+
         print(
             f"[{case_id}] complete={case_metrics.completed} "
             f"route={case_metrics.route_match} "
             f"sequence={case_metrics.tool_sequence_match} "
             f"finish={case_metrics.finish_present} "
             f"concepts={case_metrics.concept_coverage:.2f} "
-            f"workflow={case_metrics.exact_dynamic_workflow_match}"
+            f"workflow={case_metrics.exact_dynamic_workflow_match} "
+            f"shadow={shadow_status}"
         )
+
+        if shadow_report is not None and not shadow_report.ok:
+            print(f"  shadow issues={list(shadow_report.issues)}")
 
         if not case_metrics.exact_dynamic_workflow_match:
             print(f"  expected sequence={expected_sequence}")
@@ -461,13 +536,27 @@ def main() -> None:
         for row in output_rows:
             handle.write(json.dumps(row, ensure_ascii=False) + "\n")
 
+    shadow_case_count = len(shadow_results)
+    shadow_pass_rate = (
+        sum(1 for item in shadow_results if item) / shadow_case_count
+        if shadow_case_count
+        else 0.0
+    )
+
     summary: dict[str, Any] = {
         "cases": len(rows),
         "summary": summarize_dynamic_workflow_metrics(metrics),
+        "shadow": {
+            "cases": shadow_case_count,
+            "coverage_rate": shadow_case_count / len(rows),
+            "pass_rate": shadow_pass_rate,
+            "issue_cases": shadow_issue_cases,
+        },
         "output": str(args.output),
         "note": (
             "Synthetic runtime evidence is used. No local Docker command is executed. "
-            "This evaluates observation-driven planning plus final grounded answers."
+            "This evaluates observation-driven planning plus final grounded answers. "
+            "Core state/evidence schemas run in shadow mode only."
         ),
     }
     if judge_model is not None:
