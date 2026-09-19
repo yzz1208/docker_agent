@@ -5,6 +5,7 @@ from docker_agent.core.evidence import (
     EvidenceBundle,
     EvidenceKind,
     citation_source_to_evidence,
+    make_evidence_id,
     runtime_tool_result_to_evidence,
     user_message_to_evidence,
 )
@@ -27,6 +28,7 @@ __all__ = [
     "citation_source_to_evidence",
     "classify_docker_tool_error",
     "from_docker_tool_result",
+    "make_evidence_id",
     "runtime_tool_result_to_evidence",
     "user_message_to_evidence",
 ]
