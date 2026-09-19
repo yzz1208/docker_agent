@@ -14,7 +14,7 @@ from docker_agent.core.evidence import (
     EvidenceBundle,
     runtime_tool_result_to_evidence,
 )
-from docker_agent.core.state import AgentState
+from docker_agent.core.state import AgentState, AgentStep
 from docker_agent.core.tool_result import ToolResult, from_docker_tool_result
 from docker_agent.rag.context import RagContext
 from docker_agent.tools.docker_cli import DockerToolResult
@@ -144,7 +144,7 @@ def _compare_runtime_bundles(
 
 def _compare_trace(
     legacy: tuple[DynamicRuntimeStep, ...],
-    normalized: tuple[object, ...],
+    normalized: tuple[AgentStep, ...],
 ) -> list[str]:
     issues: list[str] = []
     if len(legacy) != len(normalized):
@@ -154,16 +154,16 @@ def _compare_trace(
         zip(legacy, normalized, strict=True),
         start=1,
     ):
-        if getattr(new, "index", None) != old.step:
+        if new.index != old.step:
             issues.append(f"runtime step {index} index changed")
-        if getattr(new, "action", None) != old.decision.action:
+        if new.action != old.decision.action:
             issues.append(f"runtime step {index} action changed")
-        if getattr(new, "tool_name", None) != old.decision.tool:
+        if new.tool_name != old.decision.tool:
             issues.append(f"runtime step {index} tool changed")
-        if getattr(new, "reason", None) != old.decision.reason:
+        if new.reason != old.decision.reason:
             issues.append(f"runtime step {index} reason changed")
         legacy_ok = old.result.ok if old.result is not None else None
-        if getattr(new, "ok", None) != legacy_ok:
+        if new.ok != legacy_ok:
             issues.append(f"runtime step {index} result status changed")
 
     return issues
