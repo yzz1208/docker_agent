@@ -10,7 +10,11 @@ from docker_agent.agent.dynamic_planner import (
 from docker_agent.agent.evidence import RuntimeEvidenceContext, build_runtime_evidence
 from docker_agent.agent.router import AgentRouteDecision, DockerToolName
 from docker_agent.rag.llm import ChatModel
-from docker_agent.tools.docker_cli import DockerReadOnlyTools, DockerToolResult
+from docker_agent.tools.docker_cli import (
+    DockerReadOnlyTools,
+    DockerToolResult,
+    DockerToolTimeout,
+)
 
 
 class DynamicWorkflowError(RuntimeError):
@@ -85,6 +89,12 @@ def run_dynamic_runtime_workflow(
                 container_ref=route.container_ref,
                 docker_tools=docker_tools,
             )
+        except DockerToolTimeout as exc:
+            result = _timeout_result(
+                decision.tool,
+                container_ref=route.container_ref,
+                message=str(exc),
+            )
         except (ValueError, DynamicPlannerError) as exc:
             raise DynamicWorkflowError(str(exc)) from exc
 
@@ -125,3 +135,34 @@ def _execute_one(
         return docker_tools.stats(container_ref)
 
     raise DynamicWorkflowError(f"Unsupported validated runtime tool: {tool}")
+
+
+
+def _timeout_result(
+    tool: DockerToolName,
+    *,
+    container_ref: str | None,
+    message: str,
+) -> DockerToolResult:
+    """Convert a tool timeout into bounded runtime evidence for the planner."""
+
+    if tool == "docker_info":
+        command = ("docker", "info")
+    elif tool == "docker_ps":
+        command = ("docker", "ps", "--all")
+    elif tool == "docker_inspect" and container_ref is not None:
+        command = ("docker", "inspect", container_ref)
+    elif tool == "docker_logs" and container_ref is not None:
+        command = ("docker", "logs", "--tail", "100", container_ref)
+    elif tool == "docker_stats" and container_ref is not None:
+        command = ("docker", "stats", "--no-stream", container_ref)
+    else:
+        command = ("docker", tool)
+
+    return DockerToolResult(
+        tool=tool,
+        command=command,
+        returncode=124,
+        stdout="",
+        stderr=message,
+    )
