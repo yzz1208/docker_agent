@@ -76,8 +76,8 @@ def runtime_tool_result_to_evidence(
 
     label = f"[R{index}]"
     content = result.output.strip()
-    if not result.ok:
-        content = (result.error or result.output).strip()
+    if not content and not result.ok:
+        content = (result.error or "").strip()
     if not content:
         content = "<no output>"
 
