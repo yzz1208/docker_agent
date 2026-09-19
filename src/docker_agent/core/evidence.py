@@ -90,7 +90,7 @@ def runtime_tool_result_to_evidence(
     )
 
     return Evidence(
-        evidence_id=_stable_evidence_id(
+        evidence_id=make_evidence_id(
             "runtime",
             result.tool_name,
             label,
@@ -118,7 +118,7 @@ def citation_source_to_evidence(
 
     label = f"[{source.index}]"
     return Evidence(
-        evidence_id=_stable_evidence_id(
+        evidence_id=make_evidence_id(
             "knowledge",
             source.chunk_id,
             label,
@@ -151,7 +151,7 @@ def user_message_to_evidence(
         raise ValueError("user evidence content must not be empty")
 
     return Evidence(
-        evidence_id=_stable_evidence_id(
+        evidence_id=make_evidence_id(
             "user",
             source,
             normalized_content,
@@ -164,7 +164,12 @@ def user_message_to_evidence(
     )
 
 
-def _stable_evidence_id(*parts: str) -> str:
+def make_evidence_id(*parts: str) -> str:
+    """Build a stable internal evidence ID from deterministic source parts."""
+
+    if not parts or any(not part for part in parts):
+        raise ValueError("evidence ID parts must be non-empty")
+
     payload = "\x1f".join(parts).encode("utf-8")
     digest = hashlib.sha256(payload).hexdigest()[:16]
     return f"ev_{digest}"
