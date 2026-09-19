@@ -141,3 +141,18 @@ def test_evidence_bundle_rejects_duplicate_citation_labels() -> None:
 def test_runtime_evidence_requires_positive_index() -> None:
     with pytest.raises(ValueError, match="index must be positive"):
         runtime_tool_result_to_evidence(_runtime_result(), index=0)
+
+
+def test_failed_runtime_evidence_preserves_partial_stdout_before_stderr() -> None:
+    result = ToolResult(
+        tool_name="docker_logs",
+        ok=False,
+        output="partial stdout",
+        error="permission denied",
+        error_type=ToolErrorType.PERMISSION_DENIED,
+    )
+
+    evidence = runtime_tool_result_to_evidence(result, index=1)
+
+    assert evidence.content == "partial stdout"
+    assert evidence.metadata["error_type"] == "permission_denied"
