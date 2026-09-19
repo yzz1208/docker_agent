@@ -67,6 +67,9 @@ Rules:
 - If an observation says the Docker daemon is unreachable, permission is denied globally,
   or the Docker socket is unavailable, do not fan out across more Docker commands that are
   likely to fail for the same reason. Finish and report the runtime limitation.
+- If a Docker tool times out, treat the timeout itself as evidence that the requested
+  observation was not obtained. Do not silently retry the same tool or fan out to unrelated
+  Docker commands. Usually finish and report the timeout so the user can retry explicitly.
 
 Return exactly:
 {
