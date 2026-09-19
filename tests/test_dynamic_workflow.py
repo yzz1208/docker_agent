@@ -1,6 +1,6 @@
 from docker_agent.agent.dynamic_workflow import run_dynamic_runtime_workflow
 from docker_agent.agent.router import AgentRouteDecision
-from docker_agent.tools.docker_cli import DockerToolResult
+from docker_agent.tools.docker_cli import DockerToolResult, DockerToolTimeout
 
 
 class SequenceModel:
@@ -165,3 +165,48 @@ def test_dynamic_failure_flow_can_verify_missing_container_with_ps() -> None:
     assert result.results[1].ok is True
     assert "[R1]" in model.prompts[1]
     assert "[R2]" in model.prompts[2]
+
+
+
+class TimeoutDockerTools:
+    def __init__(self) -> None:
+        self.calls: list[str] = []
+
+    def stats(self, container: str) -> DockerToolResult:
+        self.calls.append("docker_stats")
+        raise DockerToolTimeout("docker_stats timed out after 15 seconds")
+
+    def inspect(self, container: str) -> DockerToolResult:
+        raise AssertionError("unexpected docker_inspect")
+
+    def logs(self, container: str, *, tail: int = 100) -> DockerToolResult:
+        raise AssertionError("unexpected docker_logs")
+
+    def info(self) -> DockerToolResult:
+        raise AssertionError("unexpected docker_info")
+
+    def ps(self, *, include_stopped: bool = True) -> DockerToolResult:
+        raise AssertionError("unexpected docker_ps")
+
+
+def test_dynamic_timeout_becomes_runtime_evidence_instead_of_crashing() -> None:
+    model = SequenceModel(
+        [
+            '{"action":"tool","tool":"docker_stats","reason":"measure memory"}',
+            '{"action":"finish","tool":null,"reason":"stats timed out; report limitation"}',
+        ]
+    )
+    tools = TimeoutDockerTools()
+
+    result = run_dynamic_runtime_workflow(
+        question="web 现在用了多少内存？",
+        route=_route("web"),
+        planner_model=model,
+        docker_tools=tools,  # type: ignore[arg-type]
+    )
+
+    assert tools.calls == ["docker_stats"]
+    assert result.results[0].ok is False
+    assert result.results[0].returncode == 124
+    assert "timed out after 15 seconds" in result.evidence.text
+    assert "[R1]" in model.prompts[1]
