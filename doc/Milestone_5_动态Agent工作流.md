@@ -633,3 +633,79 @@ Agent 正确观察到：
 2. 当目标 container lookup 失败后，`docker_ps` 中的相似名称只用于给用户确认候选；不得把候选容器的 state、exit code、logs 或诊断转移给目标容器。
 
 这类规则以后对多轮 clarification 也很重要：候选实体必须经过用户确认，不能自动把相似名称当成同一个对象。
+
+
+## Tool Timeout Recovery 完成
+
+Timeout Recovery 两个 synthetic case 已通过 deterministic + Judge：
+
+~~~text
+stats timeout               → stats → finish
+logs timeout after inspect  → inspect → logs → finish
+~~~
+
+最终指标：
+
+~~~text
+exact_dynamic_workflow_accuracy = 1.0
+groundedness                  = 5.0
+runtime citation correctness  = 5.0
+docs citation correctness     = 5.0
+diagnosis quality             = 5.0
+unsupported claim rate        = 0.0
+~~~
+
+Timeout 内部使用的 sentinel returncode 不再暴露给回答或 Judge，runtime evidence 只显示 `Status: timeout`。
+
+## Permission Denied Recovery v1
+
+下一小步只测试 Docker daemon/socket 权限不足，不扩展其他异常。
+
+新增：
+
+~~~text
+data/eval/dynamic_permission_v1.jsonl
+~~~
+
+覆盖两个场景：
+
+~~~text
+docker_info
+→ permission denied on Docker daemon socket
+→ finish
+~~~
+
+以及：
+
+~~~text
+docker_inspect web
+→ permission denied on Docker daemon socket
+→ finish
+~~~
+
+这类错误属于全局 runtime access 问题。Planner 不应继续 fan-out 到 `docker_ps`、`docker_logs`、`docker_stats`，因为它们依赖同一个 daemon/socket 权限。
+
+评测目标：
+
+- 只调用用户问题所需的第一个工具；
+- permission denied 后直接 finish；
+- 不尝试其他 Docker 工具；
+- 回答明确区分“无法访问 runtime”与“容器本身有问题”；
+- 不猜测 Docker 版本、容器退出原因或状态。
+
+运行：
+
+~~~powershell
+uv run python scripts/eval_dynamic_workflow.py `
+  --input data/eval/dynamic_permission_v1.jsonl `
+  --output reports/dynamic_permission_eval_latest.jsonl
+~~~
+
+通过后再运行：
+
+~~~powershell
+uv run python scripts/eval_dynamic_workflow.py `
+  --input data/eval/dynamic_permission_v1.jsonl `
+  --output reports/dynamic_permission_eval_latest.jsonl `
+  --judge
+~~~
