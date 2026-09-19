@@ -11,8 +11,8 @@ from docker_agent.agent.dynamic_evaluation import (
 )
 from docker_agent.agent.dynamic_planner import DynamicPlannerError
 from docker_agent.agent.dynamic_service import DynamicDockerSupportAgent
-from docker_agent.agent.evidence import build_runtime_evidence
 from docker_agent.agent.dynamic_workflow import DynamicWorkflowError
+from docker_agent.agent.evidence import build_runtime_evidence
 from docker_agent.agent.router import AgentRoutingError
 from docker_agent.agent.workflow_evaluation import (
     concept_coverage,
