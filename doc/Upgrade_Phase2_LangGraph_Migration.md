@@ -324,3 +324,49 @@ uv run python scripts/eval_langgraph_parity.py
 ~~~
 
 完整 parity 通过后，再为 Graph path 增加 Judge 回归并关闭 Phase 2A。
+
+
+## 16. Phase 2A Parity Gate 结果
+
+Legacy vs LangGraph 完整 8-case parity 已通过：
+
+~~~text
+route_parity_rate                 1.0
+container_ref_parity_rate         1.0
+use_docs_parity_rate              1.0
+tool_sequence_parity_rate         1.0
+trace_parity_rate                 1.0
+citation_parity_rate              1.0
+clarification_parity_rate         1.0
+graph_evidence_labels_match_rate  1.0
+legacy_expected_accuracy          1.0
+graph_expected_accuracy           1.0
+exact_parity_rate                 1.0
+~~~
+
+这说明 coarse-grained LangGraph 在 normal 8-case 上已经与 legacy dynamic agent 行为一致，并且两条路径同时满足现有 expected baseline。
+
+### 最后一个 Phase 2A Gate：Graph Judge
+
+Parity 通过后，不立即进入 Phase 2B。
+
+先运行：
+
+~~~powershell
+uv run python scripts/eval_langgraph_parity.py --judge
+~~~
+
+Judge 只评估 LangGraph answer，并只提供 Graph 实际经过的 evidence。
+
+目标：
+
+~~~text
+mean_groundedness                  = 5
+mean_runtime_citation_correctness  = 5
+mean_docs_citation_correctness     = 5
+mean_diagnosis_quality             = 5
+unsupported_claim_case_rate        = 0
+graph_judge_errors                 = 0
+~~~
+
+若全部通过，则 Phase 2A 可以正式 closeout。
