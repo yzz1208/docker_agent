@@ -17,6 +17,11 @@ from docker_agent.core.state import AgentState
 from docker_agent.core.tool_result import from_docker_tool_result
 from docker_agent.graph.runtime_loop import run_runtime_loop_graph
 from docker_agent.graph.state import GraphState
+from docker_agent.multi_agent.workers import (
+    DiagnosisWorker,
+    KnowledgeWorker,
+    RuntimeWorker,
+)
 from docker_agent.rag.context import RagContext
 from docker_agent.rag.llm import ChatModel
 from docker_agent.tools.docker_cli import DockerReadOnlyTools
@@ -92,17 +97,10 @@ def build_docs_only_graph(
         return "end"
 
     def docs_node(state: GraphState) -> dict[str, object]:
-        current = state["agent_state"]
-        docs_context = docs_retriever(current.question)
-        docs_bundle = rag_context_to_evidence_bundle(docs_context)
-
-        updated = current
-        for item in docs_bundle.items:
-            updated = updated.append_evidence(item)
-
+        result = knowledge_worker.run(state["agent_state"])
         return {
-            "agent_state": updated,
-            "docs_context": docs_context,
+            "agent_state": result.state,
+            "docs_context": result.context,
         }
 
     def answer_node(state: GraphState) -> dict[str, object]:
@@ -239,32 +237,12 @@ def build_runtime_graph(
         decision = state["decision"]
         if decision is None:
             raise ValueError("route decision is missing")
-        if decision.route != "runtime_tools":
-            raise ValueError("runtime node requires runtime_tools route")
 
-        dynamic = run_runtime_loop_graph(
-            question=current.question,
-            route=decision,
-            planner_model=planner_model,
-            docker_tools=docker_tools,
-            max_steps=max_steps,
-            evidence_max_chars=evidence_max_chars,
-        )
-
-        updated = current
-        for result in dynamic.results:
-            updated = updated.append_tool_result(
-                from_docker_tool_result(result)
-            )
-        for item in runtime_context_to_evidence_bundle(dynamic.evidence).items:
-            updated = updated.append_evidence(item)
-        for step in dynamic_trace_to_agent_steps(dynamic.trace):
-            updated = updated.append_runtime_step(step)
-
+        result = runtime_worker.run(current, decision)
         return {
-            "agent_state": updated,
-            "runtime_context": dynamic.evidence,
-            "runtime_trace": dynamic.trace,
+            "agent_state": result.state,
+            "runtime_context": result.context,
+            "runtime_trace": result.trace,
         }
 
     def answer_node(state: GraphState) -> dict[str, object]:
@@ -356,7 +334,16 @@ def build_support_graph(
     max_steps: int = 4,
     evidence_max_chars: int = 8_000,
 ):
-    """Compile the Phase 2 Step 4 unified coarse-grained support graph."""
+    """Compile the unified support graph using explicit worker services."""
+
+    knowledge_worker = KnowledgeWorker(docs_retriever)
+    runtime_worker = RuntimeWorker(
+        planner_model=planner_model,
+        docker_tools=docker_tools,
+        max_steps=max_steps,
+        evidence_max_chars=evidence_max_chars,
+    )
+    diagnosis_worker = DiagnosisWorker(answer_model)
 
     def route_node(state: GraphState) -> dict[str, object]:
         current = state["agent_state"]
@@ -437,37 +424,19 @@ def build_support_graph(
         }
 
     def answer_node(state: GraphState) -> dict[str, object]:
-        current = state["agent_state"]
         decision = state["decision"]
         if decision is None:
             raise ValueError("route decision is missing")
 
-        docs_context = state["docs_context"] or RagContext(
-            text="",
-            sources=(),
-            truncated=False,
+        result = diagnosis_worker.run(
+            state["agent_state"],
+            decision,
+            docs_context=state["docs_context"],
+            runtime_context=state["runtime_context"],
         )
-        runtime_context = state["runtime_context"]
-        if runtime_context is None:
-            raise ValueError("runtime context is missing")
-
-        answer = generate_agent_answer_from_evidence(
-            current.question,
-            rag_context_to_evidence_bundle(docs_context),
-            runtime_context_to_evidence_bundle(runtime_context),
-            answer_model,
-            doc_sources=docs_context.sources,
-            runtime_sources=runtime_context.sources,
-        )
-
-        if decision.route == "docs_only" and not answer.doc_citation_indices:
-            raise ValueError("Model answer did not cite Docker documentation evidence")
-        if decision.route == "runtime_tools" and not answer.runtime_citation_indices:
-            raise ValueError("Model answer did not cite requested runtime evidence")
-
         return {
-            "agent_state": current.with_answer(answer.answer),
-            "answer": answer,
+            "agent_state": result.state,
+            "answer": result.answer,
         }
 
     builder = StateGraph(GraphState)
