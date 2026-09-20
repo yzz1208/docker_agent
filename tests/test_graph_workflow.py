@@ -1,5 +1,6 @@
 import pytest
 
+from docker_agent.agent.dynamic_planner import PLANNER_SYSTEM_PROMPT
 from docker_agent.core.evidence import EvidenceKind
 from docker_agent.graph.workflow import (
     run_docs_only_graph,
@@ -285,7 +286,8 @@ class SequencePlannerModel:
 
     def complete(self, *, system_prompt: str, user_prompt: str) -> str:
         self.calls += 1
-        assert "Docker runtime diagnostic planner" in system_prompt
+        assert system_prompt == PLANNER_SYSTEM_PROMPT
+        assert "Runtime evidence so far:" in user_prompt
         return self.responses.pop(0)
 
 
