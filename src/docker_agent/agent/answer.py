@@ -31,6 +31,11 @@ Rules:
   or tuning effects unless the supplied evidence explicitly supports those claims.
 - Do not recommend changing retry counts, restart limits, policy parameters, or other
   operational settings unless the supplied evidence explicitly recommends that change.
+- Treat evidence as an entailment boundary: a statement that something is Docker-managed
+  does not by itself support claims about storage paths, portability, host independence,
+  performance, APIs, drivers, or other implementation details.
+- When comparing two Docker mechanisms, mention only differences that are explicitly
+  supported by the supplied evidence. If the evidence is narrow, keep the comparison narrow.
 - A successful tool result reports an observation, not automatically the root cause.
 - If the evidence is insufficient to identify a root cause, say what remains uncertain.
 - If a runtime tool failed, report the failure instead of pretending that evidence was obtained.
@@ -138,6 +143,11 @@ def build_agent_user_prompt_from_evidence(
         "or tuning consequences unless the evidence explicitly states them.\n"
         "- Do not recommend changing retry counts, restart limits, or policy parameters "
         "unless the evidence explicitly recommends that change.\n"
+        "- Treat the supplied evidence as an entailment boundary. A claim that something is "
+        "Docker-managed does not imply storage paths, portability, host independence, "
+        "performance, APIs, drivers, or other implementation details.\n"
+        "- For comparisons, include only differences explicitly supported by the evidence; "
+        "if the evidence is narrow, keep the comparison narrow.\n"
         "- Separate observed facts from possible explanations.\n"
         "- If the root cause cannot be proven from the evidence, say so explicitly.\n"
         "- Raw exit codes are observations; do not explain what an exit code generally means "
