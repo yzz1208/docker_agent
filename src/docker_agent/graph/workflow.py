@@ -97,10 +97,17 @@ def build_docs_only_graph(
         return "end"
 
     def docs_node(state: GraphState) -> dict[str, object]:
-        result = knowledge_worker.run(state["agent_state"])
+        current = state["agent_state"]
+        docs_context = docs_retriever(current.question)
+        docs_bundle = rag_context_to_evidence_bundle(docs_context)
+
+        updated = current
+        for item in docs_bundle.items:
+            updated = updated.append_evidence(item)
+
         return {
-            "agent_state": result.state,
-            "docs_context": result.context,
+            "agent_state": updated,
+            "docs_context": docs_context,
         }
 
     def answer_node(state: GraphState) -> dict[str, object]:
@@ -237,12 +244,32 @@ def build_runtime_graph(
         decision = state["decision"]
         if decision is None:
             raise ValueError("route decision is missing")
+        if decision.route != "runtime_tools":
+            raise ValueError("runtime node requires runtime_tools route")
 
-        result = runtime_worker.run(current, decision)
+        dynamic = run_runtime_loop_graph(
+            question=current.question,
+            route=decision,
+            planner_model=planner_model,
+            docker_tools=docker_tools,
+            max_steps=max_steps,
+            evidence_max_chars=evidence_max_chars,
+        )
+
+        updated = current
+        for result in dynamic.results:
+            updated = updated.append_tool_result(
+                from_docker_tool_result(result)
+            )
+        for item in runtime_context_to_evidence_bundle(dynamic.evidence).items:
+            updated = updated.append_evidence(item)
+        for step in dynamic_trace_to_agent_steps(dynamic.trace):
+            updated = updated.append_runtime_step(step)
+
         return {
-            "agent_state": result.state,
-            "runtime_context": result.context,
-            "runtime_trace": result.trace,
+            "agent_state": updated,
+            "runtime_context": dynamic.evidence,
+            "runtime_trace": dynamic.trace,
         }
 
     def answer_node(state: GraphState) -> dict[str, object]:
@@ -375,32 +402,12 @@ def build_support_graph(
         decision = state["decision"]
         if decision is None:
             raise ValueError("route decision is missing")
-        if decision.route != "runtime_tools":
-            raise ValueError("runtime node requires runtime_tools route")
 
-        dynamic = run_runtime_loop_graph(
-            question=current.question,
-            route=decision,
-            planner_model=planner_model,
-            docker_tools=docker_tools,
-            max_steps=max_steps,
-            evidence_max_chars=evidence_max_chars,
-        )
-
-        updated = current
-        for result in dynamic.results:
-            updated = updated.append_tool_result(
-                from_docker_tool_result(result)
-            )
-        for item in runtime_context_to_evidence_bundle(dynamic.evidence).items:
-            updated = updated.append_evidence(item)
-        for step in dynamic_trace_to_agent_steps(dynamic.trace):
-            updated = updated.append_runtime_step(step)
-
+        result = runtime_worker.run(current, decision)
         return {
-            "agent_state": updated,
-            "runtime_context": dynamic.evidence,
-            "runtime_trace": dynamic.trace,
+            "agent_state": result.state,
+            "runtime_context": result.context,
+            "runtime_trace": result.trace,
         }
 
     def after_runtime_edge(state: GraphState) -> RouteEdge:
@@ -410,17 +417,10 @@ def build_support_graph(
         return "docs" if decision.use_docs else "answer"
 
     def docs_node(state: GraphState) -> dict[str, object]:
-        current = state["agent_state"]
-        docs_context = docs_retriever(current.question)
-        docs_bundle = rag_context_to_evidence_bundle(docs_context)
-
-        updated = current
-        for item in docs_bundle.items:
-            updated = updated.append_evidence(item)
-
+        result = knowledge_worker.run(state["agent_state"])
         return {
-            "agent_state": updated,
-            "docs_context": docs_context,
+            "agent_state": result.state,
+            "docs_context": result.context,
         }
 
     def answer_node(state: GraphState) -> dict[str, object]:
