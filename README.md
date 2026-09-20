@@ -4,9 +4,14 @@
 
 ## 当前进度
 
-- Milestone 0：FastAPI + PostgreSQL/pgvector 基础环境
-- Milestone 1：Docker Docs 下载、筛选、Markdown 清洗、Chunk 与数据质量审计
-- Milestone 2：BGE-M3 + PostgreSQL/pgvector dense retrieval baseline（进行中）
+- Milestone 0：FastAPI + PostgreSQL/pgvector 基础环境 ✅
+- Milestone 1：Docker Docs 数据管线、Markdown 清洗、Chunk 与质量审计 ✅
+- Milestone 2：BGE-M3 Dense Retrieval + pgvector ✅
+- Milestone 3：Hybrid Retrieval + RRF + BGE Reranker + Retrieval Eval ✅
+- Milestone 4：Grounded Answer + Docs Citation + Runtime Tools + Router ✅
+- Milestone 5：Dynamic Workflow + Failure/Timeout/Permission Recovery + Agent Eval ✅
+- Upgrade Phase 1：Unified ToolResult + Evidence + AgentState + Shadow Migration ✅
+- Upgrade Phase 2：LangGraph Migration（下一阶段）
 
 ## 本地环境
 

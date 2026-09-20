@@ -18,7 +18,9 @@ class DynamicWorkflowEvalMetrics:
     concept_coverage: float
 
     @property
-    def exact_dynamic_workflow_match(self) -> bool:
+    def exact_orchestration_match(self) -> bool:
+        """Return whether the dynamic control flow itself matched exactly."""
+
         return (
             self.completed
             and self.route_match
@@ -26,6 +28,14 @@ class DynamicWorkflowEvalMetrics:
             and self.finish_present
             and self.step_limit_ok
             and self.no_repeated_tools
+        )
+
+    @property
+    def exact_dynamic_workflow_match(self) -> bool:
+        """Legacy end-to-end pass including answer citation and concept checks."""
+
+        return (
+            self.exact_orchestration_match
             and self.runtime_citation_present
             and self.docs_citation_present
             and self.concept_coverage == 1.0
@@ -47,6 +57,7 @@ def summarize_dynamic_workflow_metrics(
             "runtime_citation_rate": 0.0,
             "docs_citation_rate": 0.0,
             "mean_concept_coverage": 0.0,
+            "exact_orchestration_accuracy": 0.0,
             "exact_dynamic_workflow_accuracy": 0.0,
         }
 
@@ -71,6 +82,9 @@ def summarize_dynamic_workflow_metrics(
             1.0 if item.docs_citation_present else 0.0 for item in metrics
         ),
         "mean_concept_coverage": mean(item.concept_coverage for item in metrics),
+        "exact_orchestration_accuracy": mean(
+            1.0 if item.exact_orchestration_match else 0.0 for item in metrics
+        ),
         "exact_dynamic_workflow_accuracy": mean(
             1.0 if item.exact_dynamic_workflow_match else 0.0 for item in metrics
         ),

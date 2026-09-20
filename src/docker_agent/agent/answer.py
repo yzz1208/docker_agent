@@ -4,6 +4,7 @@ import re
 from dataclasses import dataclass
 
 from docker_agent.agent.evidence import RuntimeEvidenceContext, RuntimeEvidenceSource
+from docker_agent.core.evidence import EvidenceBundle, EvidenceKind
 from docker_agent.rag.answer import CitationValidationError, select_cited_sources
 from docker_agent.rag.context import CitationSource, RagContext
 from docker_agent.rag.llm import ChatModel
@@ -22,6 +23,14 @@ Rules:
 - Cite Docker behavior, configuration guidance, and commands with documentation citations.
 - Clearly distinguish observed runtime facts from interpretation or general guidance.
 - Never invent container state, logs, resource usage, commands, flags, configuration, or citations.
+- If you offer remediation, only use command syntax, flags, configuration keys, and values
+  that are explicitly supported by the supplied evidence. Do not synthesize CLI syntax.
+- For direct factual or measurement questions, state the requested value or its
+  unavailability first, then give only the minimum evidence-backed explanation.
+- Do not speculate about operational consequences, production risk, resource exhaustion,
+  or tuning effects unless the supplied evidence explicitly supports those claims.
+- Do not recommend changing retry counts, restart limits, policy parameters, or other
+  operational settings unless the supplied evidence explicitly recommends that change.
 - A successful tool result reports an observation, not automatically the root cause.
 - If the evidence is insufficient to identify a root cause, say what remains uncertain.
 - If a runtime tool failed, report the failure instead of pretending that evidence was obtained.
@@ -81,31 +90,26 @@ def select_runtime_sources(
     return indices, cited
 
 
-def build_agent_user_prompt(
+def build_agent_user_prompt_from_evidence(
     question: str,
-    docs_context: RagContext,
-    runtime_context: RuntimeEvidenceContext,
+    docs_evidence: EvidenceBundle,
+    runtime_evidence: EvidenceBundle,
 ) -> str:
-    """Build one prompt containing documentation and local runtime evidence."""
+    """Build the answer prompt from normalized evidence bundles."""
 
     question = question.strip()
     if not question:
         raise ValueError("question must not be empty")
-    if not docs_context.text.strip() and not runtime_context.text.strip():
+    if not docs_evidence.text.strip() and not runtime_evidence.text.strip():
         raise ValueError("at least one evidence context must be non-empty")
 
-    docs_text = docs_context.text or "<no Docker documentation evidence>"
-    runtime_text = runtime_context.text or "<no local runtime evidence>"
-    doc_labels = (
-        ", ".join(f"[{source.index}]" for source in docs_context.sources)
-        if docs_context.sources
-        else "<none>"
-    )
-    runtime_labels = (
-        ", ".join(f"[R{source.index}]" for source in runtime_context.sources)
-        if runtime_context.sources
-        else "<none>"
-    )
+    _validate_evidence_kind(docs_evidence, EvidenceKind.KNOWLEDGE)
+    _validate_evidence_kind(runtime_evidence, EvidenceKind.RUNTIME)
+
+    docs_text = docs_evidence.text or "<no Docker documentation evidence>"
+    runtime_text = runtime_evidence.text or "<no local runtime evidence>"
+    doc_labels = _bundle_labels(docs_evidence)
+    runtime_labels = _bundle_labels(runtime_evidence)
 
     return (
         "User question:\n"
@@ -126,6 +130,14 @@ def build_agent_user_prompt(
         "- If Docker Docs labels are <none>, do not use numeric citations such as [1].\n"
         "- If Runtime labels are <none>, do not use runtime citations such as [R1].\n"
         "- Do not cite a source that does not support the nearby claim.\n"
+        "- If you suggest a fix, only use commands, flags, configuration keys, and values "
+        "that are explicitly present in the evidence; do not synthesize CLI syntax.\n"
+        "- For direct factual or measurement questions, lead with the requested value or "
+        "state that it is unavailable, then keep the explanation brief.\n"
+        "- Do not speculate about production impact, resource exhaustion, retry behavior, "
+        "or tuning consequences unless the evidence explicitly states them.\n"
+        "- Do not recommend changing retry counts, restart limits, or policy parameters "
+        "unless the evidence explicitly recommends that change.\n"
         "- Separate observed facts from possible explanations.\n"
         "- If the root cause cannot be proven from the evidence, say so explicitly.\n"
         "- Raw exit codes are observations; do not explain what an exit code generally means "
@@ -135,22 +147,61 @@ def build_agent_user_prompt(
     )
 
 
+def build_agent_user_prompt(
+    question: str,
+    docs_context: RagContext,
+    runtime_context: RuntimeEvidenceContext,
+) -> str:
+    """Compatibility wrapper that adapts legacy contexts to unified evidence."""
+
+    from docker_agent.agent.core_adapters import (
+        rag_context_to_evidence_bundle,
+        runtime_context_to_evidence_bundle,
+    )
+
+    return build_agent_user_prompt_from_evidence(
+        question,
+        rag_context_to_evidence_bundle(docs_context),
+        runtime_context_to_evidence_bundle(runtime_context),
+    )
+
+
+def _bundle_labels(bundle: EvidenceBundle) -> str:
+    labels = [
+        item.citation_label
+        for item in bundle.items
+        if item.citation_label is not None
+    ]
+    return ", ".join(labels) if labels else "<none>"
+
+
+def _validate_evidence_kind(
+    bundle: EvidenceBundle,
+    expected: EvidenceKind,
+) -> None:
+    invalid = [item.kind.value for item in bundle.items if item.kind is not expected]
+    if invalid:
+        raise ValueError(
+            f"evidence bundle expected kind={expected.value}, got {invalid}"
+        )
+
+
 
 def _repair_invalid_citations(
     *,
     question: str,
     invalid_answer: str,
     validation_error: str,
-    docs_context: RagContext,
-    runtime_context: RuntimeEvidenceContext,
+    docs_evidence: EvidenceBundle,
+    runtime_evidence: EvidenceBundle,
     model: ChatModel,
 ) -> str:
     """Ask the model once to repair an otherwise useful answer's citation labels."""
 
-    base_prompt = build_agent_user_prompt(
+    base_prompt = build_agent_user_prompt_from_evidence(
         question,
-        docs_context,
-        runtime_context,
+        docs_evidence,
+        runtime_evidence,
     )
     repair_prompt = (
         f"{base_prompt}\n\n"
@@ -167,52 +218,76 @@ def _repair_invalid_citations(
     )
 
 
-def generate_agent_answer(
+def generate_agent_answer_from_evidence(
     question: str,
-    docs_context: RagContext,
-    runtime_context: RuntimeEvidenceContext,
+    docs_evidence: EvidenceBundle,
+    runtime_evidence: EvidenceBundle,
     model: ChatModel,
+    *,
+    doc_sources: tuple[CitationSource, ...] = (),
+    runtime_sources: tuple[RuntimeEvidenceSource, ...] = (),
 ) -> AgentAnswer:
-    """Generate and validate a combined docs + runtime grounded answer."""
+    """Generate an answer from unified evidence while preserving legacy source output."""
 
-    prompt = build_agent_user_prompt(question, docs_context, runtime_context)
+    prompt = build_agent_user_prompt_from_evidence(
+        question,
+        docs_evidence,
+        runtime_evidence,
+    )
     answer = model.complete(system_prompt=AGENT_SYSTEM_PROMPT, user_prompt=prompt)
 
     try:
-        doc_indices, cited_docs = select_cited_sources(
-            answer,
-            docs_context.sources,
-        )
+        doc_indices, cited_docs = select_cited_sources(answer, doc_sources)
         runtime_indices, cited_runtime = select_runtime_sources(
             answer,
-            runtime_context.sources,
+            runtime_sources,
         )
     except CitationValidationError as exc:
         answer = _repair_invalid_citations(
             question=question,
             invalid_answer=answer,
             validation_error=str(exc),
-            docs_context=docs_context,
-            runtime_context=runtime_context,
+            docs_evidence=docs_evidence,
+            runtime_evidence=runtime_evidence,
             model=model,
         )
-        doc_indices, cited_docs = select_cited_sources(
-            answer,
-            docs_context.sources,
-        )
+        doc_indices, cited_docs = select_cited_sources(answer, doc_sources)
         runtime_indices, cited_runtime = select_runtime_sources(
             answer,
-            runtime_context.sources,
+            runtime_sources,
         )
 
     return AgentAnswer(
         answer=answer,
-        doc_sources=docs_context.sources,
+        doc_sources=doc_sources,
         cited_doc_sources=cited_docs,
         doc_citation_indices=doc_indices,
-        runtime_sources=runtime_context.sources,
+        runtime_sources=runtime_sources,
         cited_runtime_sources=cited_runtime,
         runtime_citation_indices=runtime_indices,
-        docs_context_truncated=docs_context.truncated,
-        runtime_context_truncated=runtime_context.truncated,
+        docs_context_truncated=docs_evidence.truncated,
+        runtime_context_truncated=runtime_evidence.truncated,
+    )
+
+
+def generate_agent_answer(
+    question: str,
+    docs_context: RagContext,
+    runtime_context: RuntimeEvidenceContext,
+    model: ChatModel,
+) -> AgentAnswer:
+    """Compatibility entrypoint backed by the unified evidence answer path."""
+
+    from docker_agent.agent.core_adapters import (
+        rag_context_to_evidence_bundle,
+        runtime_context_to_evidence_bundle,
+    )
+
+    return generate_agent_answer_from_evidence(
+        question,
+        rag_context_to_evidence_bundle(docs_context),
+        runtime_context_to_evidence_bundle(runtime_context),
+        model,
+        doc_sources=docs_context.sources,
+        runtime_sources=runtime_context.sources,
     )
