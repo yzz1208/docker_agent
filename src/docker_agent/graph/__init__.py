@@ -5,10 +5,17 @@ transport state and node wiring.
 """
 
 from docker_agent.graph.state import GraphState
-from docker_agent.graph.workflow import build_route_graph, run_route_graph
+from docker_agent.graph.workflow import (
+    build_docs_only_graph,
+    build_route_graph,
+    run_docs_only_graph,
+    run_route_graph,
+)
 
 __all__ = [
     "GraphState",
+    "build_docs_only_graph",
     "build_route_graph",
+    "run_docs_only_graph",
     "run_route_graph",
 ]
