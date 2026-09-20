@@ -1,8 +1,13 @@
 import pytest
 
 from docker_agent.core.evidence import EvidenceKind
-from docker_agent.graph.workflow import run_docs_only_graph, run_route_graph
+from docker_agent.graph.workflow import (
+    run_docs_only_graph,
+    run_route_graph,
+    run_runtime_graph,
+)
 from docker_agent.rag.context import CitationSource, RagContext
+from docker_agent.tools.docker_cli import DockerToolResult
 
 
 class FakeRouterModel:
@@ -269,4 +274,219 @@ def test_docs_only_graph_requires_documentation_citation() -> None:
             router_model=router,
             answer_model=answer,
             docs_retriever=docs,
+        )
+
+
+
+class SequencePlannerModel:
+    def __init__(self, responses: list[str]) -> None:
+        self.responses = list(responses)
+        self.calls = 0
+
+    def complete(self, *, system_prompt: str, user_prompt: str) -> str:
+        self.calls += 1
+        assert "Docker runtime diagnostic planner" in system_prompt
+        return self.responses.pop(0)
+
+
+class FakeRuntimeDockerTools:
+    def __init__(self) -> None:
+        self.calls: list[str] = []
+
+    def stats(self, container: str) -> DockerToolResult:
+        self.calls.append("docker_stats")
+        return DockerToolResult(
+            tool="docker_stats",
+            command=("docker", "stats", "--no-stream", container),
+            returncode=0,
+            stdout='{"MemUsage":"128MiB / 2GiB"}',
+            stderr="",
+        )
+
+    def inspect(self, container: str) -> DockerToolResult:
+        raise AssertionError("unexpected docker_inspect")
+
+    def logs(self, container: str, *, tail: int = 100) -> DockerToolResult:
+        raise AssertionError("unexpected docker_logs")
+
+    def info(self) -> DockerToolResult:
+        raise AssertionError("unexpected docker_info")
+
+    def ps(self, *, include_stopped: bool = True) -> DockerToolResult:
+        raise AssertionError("unexpected docker_ps")
+
+
+def test_runtime_graph_reuses_dynamic_runtime_loop_and_updates_agent_state() -> None:
+    router = FakeRouterModel(
+        """
+        {
+          "route": "runtime_tools",
+          "reason": "Current memory requires runtime evidence.",
+          "container_ref": "web",
+          "tools": ["docker_logs"],
+          "clarification": null,
+          "use_docs": false
+        }
+        """
+    )
+    planner = SequencePlannerModel(
+        [
+            (
+                '{"action":"tool","tool":"docker_stats",'
+                '"reason":"measure current memory"}'
+            ),
+            (
+                '{"action":"finish","tool":null,'
+                '"reason":"measurement answers the question"}'
+            ),
+        ]
+    )
+    answer = FakeAnswerModel("web 当前使用 128MiB 内存。[R1]")
+    tools = FakeRuntimeDockerTools()
+
+    result = run_runtime_graph(
+        "web 现在用了多少内存？",
+        router_model=router,
+        planner_model=planner,
+        answer_model=answer,
+        docker_tools=tools,  # type: ignore[arg-type]
+    )
+
+    assert router.calls == 1
+    assert planner.calls == 2
+    assert tools.calls == ["docker_stats"]
+    assert answer.calls == 1
+    assert result["decision"] is not None
+    assert result["decision"].route == "runtime_tools"
+    assert result["runtime_context"] is not None
+    assert result["answer"] is not None
+    assert result["answer"].runtime_citation_indices == (1,)
+    assert len(result["runtime_trace"]) == 2
+
+    state = result["agent_state"]
+    assert state.route == "runtime_tools"
+    assert state.container_ref == "web"
+    assert len(state.tool_results) == 1
+    assert state.tool_results[0].tool_name == "docker_stats"
+    assert len(state.evidence) == 1
+    assert state.evidence[0].kind is EvidenceKind.RUNTIME
+    assert state.evidence[0].citation_label == "[R1]"
+    assert [step.action for step in state.runtime_steps] == ["tool", "finish"]
+    assert state.answer == "web 当前使用 128MiB 内存。[R1]"
+
+
+@pytest.mark.parametrize(
+    ("router_response", "question", "expected_route"),
+    [
+        (
+            """
+            {
+              "route": "docs_only",
+              "reason": "Documentation is sufficient.",
+              "container_ref": null,
+              "tools": [],
+              "clarification": null,
+              "use_docs": true
+            }
+            """,
+            "Docker volume 是什么？",
+            "docs_only",
+        ),
+        (
+            """
+            {
+              "route": "clarify",
+              "reason": "A container name is required.",
+              "container_ref": null,
+              "tools": ["docker_inspect"],
+              "clarification": "请提供容器名称或 ID。",
+              "use_docs": false
+            }
+            """,
+            "我的容器为什么退出了？",
+            "clarify",
+        ),
+        (
+            """
+            {
+              "route": "runtime_tools",
+              "reason": "Runtime evidence and docs are needed.",
+              "container_ref": "web",
+              "tools": ["docker_inspect"],
+              "clarification": null,
+              "use_docs": true
+            }
+            """,
+            "web 为什么重启，官方建议怎么处理？",
+            "runtime_tools",
+        ),
+    ],
+)
+def test_runtime_graph_skips_paths_not_owned_by_step_3(
+    router_response: str,
+    question: str,
+    expected_route: str,
+) -> None:
+    router = FakeRouterModel(router_response)
+    planner = SequencePlannerModel(
+        ['{"action":"finish","tool":null,"reason":"should not run"}']
+    )
+    answer = FakeAnswerModel("should not run")
+    tools = FakeRuntimeDockerTools()
+
+    result = run_runtime_graph(
+        question,
+        router_model=router,
+        planner_model=planner,
+        answer_model=answer,
+        docker_tools=tools,  # type: ignore[arg-type]
+    )
+
+    assert result["decision"] is not None
+    assert result["decision"].route == expected_route
+    assert planner.calls == 0
+    assert tools.calls == []
+    assert answer.calls == 0
+    assert result["runtime_trace"] == ()
+    assert result["answer"] is None
+
+
+def test_runtime_graph_requires_runtime_citation() -> None:
+    router = FakeRouterModel(
+        """
+        {
+          "route": "runtime_tools",
+          "reason": "Current memory requires runtime evidence.",
+          "container_ref": "web",
+          "tools": ["docker_stats"],
+          "clarification": null,
+          "use_docs": false
+        }
+        """
+    )
+    planner = SequencePlannerModel(
+        [
+            (
+                '{"action":"tool","tool":"docker_stats",'
+                '"reason":"measure current memory"}'
+            ),
+            (
+                '{"action":"finish","tool":null,'
+                '"reason":"measurement answers the question"}'
+            ),
+        ]
+    )
+    answer = FakeAnswerModel("web 当前使用 128MiB 内存。")
+    tools = FakeRuntimeDockerTools()
+
+    with pytest.raises(
+        ValueError,
+        match="did not cite requested runtime evidence",
+    ):
+        run_runtime_graph(
+            "web 现在用了多少内存？",
+            router_model=router,
+            planner_model=planner,
+            answer_model=answer,
+            docker_tools=tools,  # type: ignore[arg-type]
         )
