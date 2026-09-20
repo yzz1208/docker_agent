@@ -1,4 +1,9 @@
-from docker_agent.agent.dynamic_workflow import run_dynamic_runtime_workflow
+import pytest
+
+from docker_agent.agent.dynamic_workflow import (
+    DynamicWorkflowError,
+    run_dynamic_runtime_workflow,
+)
 from docker_agent.agent.router import AgentRouteDecision
 from docker_agent.graph.runtime_loop import run_runtime_loop_graph
 from docker_agent.tools.docker_cli import DockerToolResult, DockerToolTimeout
@@ -183,3 +188,60 @@ def test_runtime_loop_graph_matches_legacy_direct_stats_flow() -> None:
     )
 
     assert _signature(graph) == _signature(legacy)
+
+
+
+def test_runtime_loop_graph_matches_finish_before_evidence_guard() -> None:
+    response = ['{"action":"finish","tool":null,"reason":"done"}']
+
+    with pytest.raises(
+        DynamicWorkflowError,
+        match="finished before collecting any runtime evidence",
+    ):
+        run_dynamic_runtime_workflow(
+            question="web 为什么退出了？",
+            route=_route(),
+            planner_model=SequenceModel(list(response)),
+            docker_tools=FakeDockerTools(),  # type: ignore[arg-type]
+        )
+
+    with pytest.raises(
+        DynamicWorkflowError,
+        match="finished before collecting any runtime evidence",
+    ):
+        run_runtime_loop_graph(
+            question="web 为什么退出了？",
+            route=_route(),
+            planner_model=SequenceModel(list(response)),
+            docker_tools=FakeDockerTools(),  # type: ignore[arg-type]
+        )
+
+
+def test_runtime_loop_graph_matches_max_step_exhaustion() -> None:
+    response = [
+        '{"action":"tool","tool":"docker_inspect","reason":"check state"}',
+    ]
+
+    with pytest.raises(
+        DynamicWorkflowError,
+        match="exceeded max_steps=1",
+    ):
+        run_dynamic_runtime_workflow(
+            question="web 为什么退出了？",
+            route=_route(),
+            planner_model=SequenceModel(list(response)),
+            docker_tools=FakeDockerTools(),  # type: ignore[arg-type]
+            max_steps=1,
+        )
+
+    with pytest.raises(
+        DynamicWorkflowError,
+        match="exceeded max_steps=1",
+    ):
+        run_runtime_loop_graph(
+            question="web 为什么退出了？",
+            route=_route(),
+            planner_model=SequenceModel(list(response)),
+            docker_tools=FakeDockerTools(),  # type: ignore[arg-type]
+            max_steps=1,
+        )
