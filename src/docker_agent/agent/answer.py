@@ -27,6 +27,10 @@ Rules:
   that are explicitly supported by the supplied evidence. Do not synthesize CLI syntax.
 - For direct factual or measurement questions, state the requested value or its
   unavailability first, then give only the minimum evidence-backed explanation.
+- Do not speculate about operational consequences, production risk, resource exhaustion,
+  or tuning effects unless the supplied evidence explicitly supports those claims.
+- Do not recommend changing retry counts, restart limits, policy parameters, or other
+  operational settings unless the supplied evidence explicitly recommends that change.
 - A successful tool result reports an observation, not automatically the root cause.
 - If the evidence is insufficient to identify a root cause, say what remains uncertain.
 - If a runtime tool failed, report the failure instead of pretending that evidence was obtained.
@@ -130,6 +134,10 @@ def build_agent_user_prompt_from_evidence(
         "that are explicitly present in the evidence; do not synthesize CLI syntax.\n"
         "- For direct factual or measurement questions, lead with the requested value or "
         "state that it is unavailable, then keep the explanation brief.\n"
+        "- Do not speculate about production impact, resource exhaustion, retry behavior, "
+        "or tuning consequences unless the evidence explicitly states them.\n"
+        "- Do not recommend changing retry counts, restart limits, or policy parameters "
+        "unless the evidence explicitly recommends that change.\n"
         "- Separate observed facts from possible explanations.\n"
         "- If the root cause cannot be proven from the evidence, say so explicitly.\n"
         "- Raw exit codes are observations; do not explain what an exit code generally means "
