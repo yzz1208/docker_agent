@@ -172,3 +172,155 @@ Phase 2 完成后应同时存在 Domain Core（ToolResult/Evidence/AgentState）
 ## 14. 下一步
 
 现在只进入 Phase 2 / Step 1：LangGraph dependency + minimal graph skeleton，不直接做完整 workflow。
+
+
+## 15. Phase 2A 当前实现状态
+
+当前 coarse-grained graph 已完成：
+
+~~~text
+Step 1  START -> route -> END                         ✅
+Step 2  route -> docs -> answer                      ✅
+Step 3  route -> runtime(existing loop) -> answer    ✅
+Step 4  unified coarse graph                         ✅
+Step 5  clarification service parity                 ✅
+Step 6  legacy-vs-graph parity evaluator             ✅（待本地完整回归）
+~~~
+
+统一 Graph 当前支持：
+
+~~~text
+docs_only:
+route -> docs -> answer
+
+runtime_only:
+route -> runtime -> answer
+
+runtime + docs:
+route -> runtime -> docs -> answer
+
+clarify:
+route -> END
+~~~
+
+### LangGraph service compatibility
+
+新增：
+
+~~~text
+LangGraphDockerSupportAgent
+~~~
+
+它保留现有 agent service contract：
+
+~~~python
+handle(question) -> DynamicAgentTurnResult
+~~~
+
+因此当前：
+
+- AgentConversation；
+- ChatSessionManager；
+- FastAPI ChatResponse；
+
+不需要因为 Phase 2A 迁移立即改变接口。
+
+另外提供：
+
+~~~python
+handle_graph(question) -> GraphState
+~~~
+
+用于测试和 parity evaluation。
+
+### Clarification parity
+
+已验证两轮流程：
+
+~~~text
+用户：这个容器现在用了多少内存？
+        ↓
+Graph route = clarify
+        ↓
+AgentConversation 保存 pending_question
+        ↓
+用户：api-prod
+        ↓
+original question + User clarification
+        ↓
+Graph route = runtime_tools
+        ↓
+runtime -> answer
+        ↓
+pending_question 清空
+~~~
+
+首轮 clarify 不允许误执行 planner / Docker tools / answer。
+
+### Legacy vs LangGraph parity evaluation
+
+新增：
+
+~~~powershell
+uv run python scripts/eval_langgraph_parity.py
+~~~
+
+默认使用：
+
+~~~text
+data/eval/dynamic_workflow_v1.jsonl
+~~~
+
+Docker runtime 使用 synthetic evidence，因此不会执行本机 Docker 命令。
+
+Parity 指标：
+
+~~~text
+route_parity_rate
+container_ref_parity_rate
+use_docs_parity_rate
+tool_sequence_parity_rate
+trace_parity_rate
+citation_parity_rate
+clarification_parity_rate
+graph_evidence_labels_match_rate
+legacy_expected_accuracy
+graph_expected_accuracy
+exact_parity_rate
+~~~
+
+其中 expected accuracy 与 parity 分开：
+
+> parity=1 只表示两个实现一致，不代表两个实现都正确。
+
+因此 Phase 2A gate 要同时要求：
+
+~~~text
+exact_parity_rate       = 1.0
+legacy_expected_accuracy= 1.0
+graph_expected_accuracy = 1.0
+~~~
+
+### 本地验证顺序
+
+先运行：
+
+~~~powershell
+git pull --ff-only
+uv run ruff check .
+uv run pytest -v
+~~~
+
+然后快速 smoke：
+
+~~~powershell
+uv run python scripts/eval_langgraph_parity.py --limit 2
+~~~
+
+最后完整：
+
+~~~powershell
+uv run python scripts/eval_langgraph_parity.py
+~~~
+
+完整 parity 通过后，再为 Graph path 增加 Judge 回归并关闭 Phase 2A。
