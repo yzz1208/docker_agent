@@ -157,3 +157,23 @@ It does not execute Docker tools or retrieval.
 The existing support graph currently contains these responsibilities inside node closures.
 Phase 3A extracts them as reusable services first. The next step is to make LangGraph nodes
 delegate to these workers, then let SupervisorPlan drive worker sequencing.
+
+
+## Phase 3A Step 3 — LangGraph Nodes Delegate to Workers
+
+The stable unified support graph now delegates its three execution responsibilities:
+
+~~~text
+docs node      -> KnowledgeWorker
+runtime node   -> RuntimeWorker
+answer node    -> DiagnosisWorker
+~~~
+
+The route node is intentionally unchanged.
+
+This is a structural refactor only. Worker order is still controlled by the existing graph
+edges, so current runtime behavior, retrieval behavior, citation guards, and answer output
+contracts remain unchanged.
+
+The next step is to add SupervisorPlan to graph state and let the supervisor plan, rather
+than route-specific hard-coded edges, determine the worker sequence.
