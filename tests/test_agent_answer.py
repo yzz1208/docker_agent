@@ -241,3 +241,14 @@ def test_agent_prompt_prioritizes_direct_factual_answer() -> None:
 
     assert "lead with the requested value" in prompt
     assert "keep the explanation brief" in prompt
+
+
+def test_agent_prompt_forbids_unsupported_operational_tuning_advice() -> None:
+    prompt = build_agent_user_prompt(
+        "web-1 为什么一直重启？",
+        _docs_context(),
+        _runtime_context(),
+    )
+
+    assert "Do not speculate about production impact" in prompt
+    assert "Do not recommend changing retry counts" in prompt
