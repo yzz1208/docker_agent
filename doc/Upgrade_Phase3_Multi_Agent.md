@@ -80,3 +80,80 @@ Phase 3 will not repeat the Phase 2 full matrix after every small edit.
 - routine commits: Ruff + targeted unit tests;
 - completed worker integration: one representative integration eval;
 - Phase 3 closeout: full normal/failure/timeout/permission + Judge.
+
+
+## Phase 3A Step 2 — Worker Service Boundaries
+
+The first concrete worker services are now defined:
+
+~~~text
+KnowledgeWorker
+RuntimeWorker
+DiagnosisWorker
+~~~
+
+Their boundaries are intentionally narrow.
+
+### KnowledgeWorker
+
+Input:
+
+~~~text
+AgentState
+~~~
+
+Action:
+
+~~~text
+docs_retriever(question)
+→ RagContext
+→ normalized Knowledge Evidence
+→ AgentState
+~~~
+
+It does not call the answer model and does not touch Docker runtime tools.
+
+### RuntimeWorker
+
+Input:
+
+~~~text
+AgentState + AgentRouteDecision
+~~~
+
+Action:
+
+~~~text
+run_runtime_loop_graph(...)
+→ ToolResult
+→ Runtime Evidence
+→ AgentStep trace
+→ AgentState
+~~~
+
+It does not retrieve documentation and does not generate the final answer.
+
+### DiagnosisWorker
+
+Input:
+
+~~~text
+AgentState + decision + available docs/runtime contexts
+~~~
+
+Action:
+
+~~~text
+generate_agent_answer_from_evidence(...)
+→ citation validation
+→ AgentAnswer
+→ AgentState.answer
+~~~
+
+It does not execute Docker tools or retrieval.
+
+### Why this is useful
+
+The existing support graph currently contains these responsibilities inside node closures.
+Phase 3A extracts them as reusable services first. The next step is to make LangGraph nodes
+delegate to these workers, then let SupervisorPlan drive worker sequencing.
