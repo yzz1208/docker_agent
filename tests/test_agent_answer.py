@@ -252,3 +252,15 @@ def test_agent_prompt_forbids_unsupported_operational_tuning_advice() -> None:
 
     assert "Do not speculate about production impact" in prompt
     assert "Do not recommend changing retry counts" in prompt
+
+
+def test_agent_prompt_keeps_comparisons_within_evidence_boundary() -> None:
+    prompt = build_agent_user_prompt(
+        "Docker volume 和 bind mount 有什么区别？",
+        _docs_context(),
+        RuntimeEvidenceContext(text="", sources=(), truncated=False),
+    )
+
+    assert "entailment boundary" in prompt
+    assert "does not imply storage paths" in prompt
+    assert "keep the comparison narrow" in prompt
