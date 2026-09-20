@@ -10,6 +10,10 @@ from docker_agent.agent.dynamic_service import DynamicDockerSupportAgent
 from docker_agent.agent.dynamic_workflow import DynamicRuntimeStep, DynamicWorkflowError
 from docker_agent.agent.router import AgentRoutingError
 from docker_agent.agent.workflow_evaluation import concept_coverage
+from docker_agent.agent.workflow_judge import (
+    judge_workflow_answer,
+    summarize_workflow_judges,
+)
 from docker_agent.config import get_settings
 from docker_agent.graph.evaluation import GraphParityMetrics, summarize_graph_parity
 from docker_agent.graph.service import LangGraphDockerSupportAgent
@@ -89,6 +93,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--input", type=Path, default=DEFAULT_INPUT)
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
     parser.add_argument("--limit", type=int, default=None)
+    parser.add_argument(
+        "--judge",
+        action="store_true",
+        help="Judge LangGraph answers against the evidence actually supplied to the graph.",
+    )
     return parser.parse_args()
 
 
@@ -241,8 +250,12 @@ def main() -> None:
     router_model = _model(temperature=0.0)
     planner_model = _model(temperature=0.0)
     answer_model = _model(temperature=0.0)
+    judge_model = _model(temperature=0.0) if args.judge else None
 
     metrics: list[GraphParityMetrics] = []
+    judge_results = []
+    judge_issue_cases: list[dict[str, Any]] = []
+    judge_error_cases: list[dict[str, str]] = []
     output_rows: list[dict[str, Any]] = []
 
     handled_errors = (
@@ -411,63 +424,129 @@ def main() -> None:
         )
         metrics.append(case_metrics)
 
-        output_rows.append(
-            {
-                "id": case_id,
-                "question": question,
-                "expected": {
-                    "route": expected_route,
-                    "tool_sequence": expected_sequence,
-                    "use_docs": expected_use_docs,
-                },
-                "legacy": {
-                    "route": legacy_decision.route if legacy_decision else None,
-                    "container_ref": (
-                        legacy_decision.container_ref if legacy_decision else None
+        output_row: dict[str, Any] = {
+            "id": case_id,
+            "question": question,
+            "expected": {
+                "route": expected_route,
+                "tool_sequence": expected_sequence,
+                "use_docs": expected_use_docs,
+            },
+            "legacy": {
+                "route": legacy_decision.route if legacy_decision else None,
+                "container_ref": (
+                    legacy_decision.container_ref if legacy_decision else None
+                ),
+                "use_docs": legacy_decision.use_docs if legacy_decision else None,
+                "tool_sequence": legacy_tools.calls,
+                "trace": _trace_signature(legacy_trace),
+                "runtime_citations": list(legacy_runtime_citations),
+                "doc_citations": list(legacy_doc_citations),
+                "concept_coverage": concept_coverage(
+                    legacy_answer_text,
+                    required,
+                ),
+                "error": legacy_error,
+            },
+            "graph": {
+                "route": graph_decision.route if graph_decision else None,
+                "container_ref": (
+                    graph_decision.container_ref if graph_decision else None
+                ),
+                "use_docs": graph_decision.use_docs if graph_decision else None,
+                "tool_sequence": graph_tools.calls,
+                "trace": _trace_signature(graph_trace),
+                "runtime_citations": list(graph_runtime_citations),
+                "doc_citations": list(graph_doc_citations),
+                "concept_coverage": concept_coverage(
+                    graph_answer_text,
+                    required,
+                ),
+                "evidence_labels": graph_labels,
+                "error": graph_error,
+            },
+            "parity": {
+                "route": case_metrics.route_parity,
+                "container_ref": case_metrics.container_ref_parity,
+                "use_docs": case_metrics.use_docs_parity,
+                "tool_sequence": case_metrics.tool_sequence_parity,
+                "trace": case_metrics.trace_parity,
+                "citation": case_metrics.citation_parity,
+                "clarification": case_metrics.clarification_parity,
+                "evidence_labels": case_metrics.graph_evidence_labels_match,
+                "legacy_expected": case_metrics.legacy_expected_match,
+                "graph_expected": case_metrics.graph_expected_match,
+                "exact": case_metrics.exact_parity,
+            },
+        }
+
+        if judge_model is not None and graph_answer is not None and graph_state is not None:
+            runtime_context = graph_state["runtime_context"]
+            graph_docs_context = graph_state["docs_context"]
+            runtime_evidence = (
+                runtime_context.text if runtime_context is not None else ""
+            )
+            docs_evidence = (
+                graph_docs_context.text if graph_docs_context is not None else ""
+            )
+            try:
+                judged = judge_workflow_answer(
+                    question=question,
+                    answer=graph_answer_text,
+                    runtime_evidence=runtime_evidence,
+                    docs_evidence=docs_evidence,
+                    model=judge_model,
+                )
+            except (ModelRequestError, json.JSONDecodeError, TypeError, ValueError) as exc:
+                judge_error = str(exc)
+                output_row["graph_judge_error"] = judge_error
+                judge_error_cases.append(
+                    {
+                        "id": case_id,
+                        "error": judge_error,
+                    }
+                )
+                print(f"  graph judge error={judge_error}")
+            else:
+                judge_results.append(judged)
+                output_row["graph_judge"] = {
+                    "groundedness": judged.groundedness,
+                    "runtime_citation_correctness": (
+                        judged.runtime_citation_correctness
                     ),
-                    "use_docs": legacy_decision.use_docs if legacy_decision else None,
-                    "tool_sequence": legacy_tools.calls,
-                    "trace": _trace_signature(legacy_trace),
-                    "runtime_citations": list(legacy_runtime_citations),
-                    "doc_citations": list(legacy_doc_citations),
-                    "concept_coverage": concept_coverage(
-                        legacy_answer_text,
-                        required,
-                    ),
-                    "error": legacy_error,
-                },
-                "graph": {
-                    "route": graph_decision.route if graph_decision else None,
-                    "container_ref": (
-                        graph_decision.container_ref if graph_decision else None
-                    ),
-                    "use_docs": graph_decision.use_docs if graph_decision else None,
-                    "tool_sequence": graph_tools.calls,
-                    "trace": _trace_signature(graph_trace),
-                    "runtime_citations": list(graph_runtime_citations),
-                    "doc_citations": list(graph_doc_citations),
-                    "concept_coverage": concept_coverage(
-                        graph_answer_text,
-                        required,
-                    ),
-                    "evidence_labels": graph_labels,
-                    "error": graph_error,
-                },
-                "parity": {
-                    "route": case_metrics.route_parity,
-                    "container_ref": case_metrics.container_ref_parity,
-                    "use_docs": case_metrics.use_docs_parity,
-                    "tool_sequence": case_metrics.tool_sequence_parity,
-                    "trace": case_metrics.trace_parity,
-                    "citation": case_metrics.citation_parity,
-                    "clarification": case_metrics.clarification_parity,
-                    "evidence_labels": case_metrics.graph_evidence_labels_match,
-                    "legacy_expected": case_metrics.legacy_expected_match,
-                    "graph_expected": case_metrics.graph_expected_match,
-                    "exact": case_metrics.exact_parity,
-                },
-            }
-        )
+                    "docs_citation_correctness": judged.docs_citation_correctness,
+                    "diagnosis_quality": judged.diagnosis_quality,
+                    "unsupported_claims": list(judged.unsupported_claims),
+                    "rationale": judged.rationale,
+                }
+                has_issue = (
+                    judged.groundedness < 5
+                    or judged.runtime_citation_correctness < 5
+                    or judged.docs_citation_correctness < 5
+                    or judged.diagnosis_quality < 5
+                    or bool(judged.unsupported_claims)
+                )
+                if has_issue:
+                    issue = {
+                        "id": case_id,
+                        "groundedness": judged.groundedness,
+                        "runtime_citation_correctness": (
+                            judged.runtime_citation_correctness
+                        ),
+                        "docs_citation_correctness": (
+                            judged.docs_citation_correctness
+                        ),
+                        "diagnosis_quality": judged.diagnosis_quality,
+                        "unsupported_claims": list(judged.unsupported_claims),
+                        "rationale": judged.rationale,
+                    }
+                    judge_issue_cases.append(issue)
+                    print(
+                        "  graph judge issue="
+                        f"{json.dumps(issue, ensure_ascii=False)}"
+                    )
+
+        output_rows.append(output_row)
 
         print(
             f"[{case_id}] parity={case_metrics.exact_parity} "
@@ -488,7 +567,7 @@ def main() -> None:
         for row in output_rows:
             handle.write(json.dumps(row, ensure_ascii=False) + "\n")
 
-    summary = {
+    summary: dict[str, Any] = {
         "cases": len(rows),
         "parity": summarize_graph_parity(metrics),
         "output": str(args.output),
@@ -497,6 +576,11 @@ def main() -> None:
             "evidence. No local Docker command is executed."
         ),
     }
+    if judge_model is not None:
+        summary["graph_judge"] = summarize_workflow_judges(judge_results)
+        summary["graph_judge_errors"] = len(judge_error_cases)
+        summary["graph_judge_error_cases"] = judge_error_cases
+        summary["graph_judge_issue_cases"] = judge_issue_cases
 
     print("\nSummary")
     print(json.dumps(summary, ensure_ascii=False, indent=2))
