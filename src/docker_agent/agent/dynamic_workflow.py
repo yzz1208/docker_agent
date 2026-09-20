@@ -84,13 +84,13 @@ def run_dynamic_runtime_workflow(
 
         assert decision.tool is not None
         try:
-            result = _execute_one(
+            result = execute_runtime_tool(
                 decision.tool,
                 container_ref=route.container_ref,
                 docker_tools=docker_tools,
             )
         except DockerToolTimeout as exc:
-            result = _timeout_result(
+            result = runtime_timeout_result(
                 decision.tool,
                 container_ref=route.container_ref,
                 message=str(exc),
@@ -114,7 +114,7 @@ def run_dynamic_runtime_workflow(
     )
 
 
-def _execute_one(
+def execute_runtime_tool(
     tool: DockerToolName,
     *,
     container_ref: str | None,
@@ -138,7 +138,7 @@ def _execute_one(
 
 
 
-def _timeout_result(
+def runtime_timeout_result(
     tool: DockerToolName,
     *,
     container_ref: str | None,
