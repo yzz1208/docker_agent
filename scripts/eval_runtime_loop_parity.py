@@ -12,7 +12,7 @@ from docker_agent.agent.dynamic_workflow import (
     DynamicWorkflowError,
     run_dynamic_runtime_workflow,
 )
-from docker_agent.agent.router import AgentRoutingError, route_question
+from docker_agent.agent.router import route_question
 from docker_agent.config import get_settings
 from docker_agent.graph.runtime_loop import run_runtime_loop_graph
 from docker_agent.rag.llm import ModelRequestError, OpenAICompatibleChatClient
