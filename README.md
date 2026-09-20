@@ -11,7 +11,9 @@
 - Milestone 4：Grounded Answer + Docs Citation + Runtime Tools + Router ✅
 - Milestone 5：Dynamic Workflow + Failure/Timeout/Permission Recovery + Agent Eval ✅
 - Upgrade Phase 1：Unified ToolResult + Evidence + AgentState + Shadow Migration ✅
-- Upgrade Phase 2：LangGraph Migration（下一阶段）
+- Upgrade Phase 2A：Coarse-Grained LangGraph Migration ✅
+- Upgrade Phase 2B：Runtime Loop LangGraph Migration ✅
+- Upgrade Phase 3：Role Separation / Multi-Agent Architecture（下一阶段）
 
 ## 本地环境
 
