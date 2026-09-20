@@ -11,7 +11,7 @@ from docker_agent.agent.core_adapters import (
     rag_context_to_evidence_bundle,
     runtime_context_to_evidence_bundle,
 )
-from docker_agent.agent.dynamic_workflow import run_dynamic_runtime_workflow
+from docker_agent.graph.runtime_loop import run_runtime_loop_graph
 from docker_agent.agent.evidence import RuntimeEvidenceContext
 from docker_agent.agent.router import route_question
 from docker_agent.core.state import AgentState
@@ -242,7 +242,7 @@ def build_runtime_graph(
         if decision.route != "runtime_tools":
             raise ValueError("runtime node requires runtime_tools route")
 
-        dynamic = run_dynamic_runtime_workflow(
+        dynamic = run_runtime_loop_graph(
             question=current.question,
             route=decision,
             planner_model=planner_model,
@@ -391,7 +391,7 @@ def build_support_graph(
         if decision.route != "runtime_tools":
             raise ValueError("runtime node requires runtime_tools route")
 
-        dynamic = run_dynamic_runtime_workflow(
+        dynamic = run_runtime_loop_graph(
             question=current.question,
             route=decision,
             planner_model=planner_model,
