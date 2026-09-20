@@ -245,3 +245,171 @@ def test_runtime_loop_graph_matches_max_step_exhaustion() -> None:
             docker_tools=FakeDockerTools(),  # type: ignore[arg-type]
             max_steps=1,
         )
+
+
+
+class FailureScenarioDockerTools:
+    def __init__(self, scenario: str) -> None:
+        self.scenario = scenario
+        self.calls: list[str] = []
+
+    def inspect(self, container: str) -> DockerToolResult:
+        self.calls.append("docker_inspect")
+        if self.scenario == "not_found":
+            return DockerToolResult(
+                tool="docker_inspect",
+                command=("docker", "inspect", container),
+                returncode=1,
+                stdout="",
+                stderr=f"Error: No such object: {container}",
+            )
+        if self.scenario == "permission":
+            return DockerToolResult(
+                tool="docker_inspect",
+                command=("docker", "inspect", container),
+                returncode=1,
+                stdout="",
+                stderr=(
+                    "permission denied while trying to connect to the "
+                    "Docker daemon socket"
+                ),
+            )
+        return DockerToolResult(
+            tool="docker_inspect",
+            command=("docker", "inspect", container),
+            returncode=0,
+            stdout='{"State":{"Status":"exited","ExitCode":1}}',
+            stderr="",
+        )
+
+    def logs(self, container: str, *, tail: int = 100) -> DockerToolResult:
+        self.calls.append("docker_logs")
+        return DockerToolResult(
+            tool="docker_logs",
+            command=("docker", "logs", "--tail", str(tail), container),
+            returncode=1,
+            stdout="",
+            stderr=(
+                "Error response from daemon: configured logging driver "
+                "does not support reading"
+            ),
+        )
+
+    def stats(self, container: str) -> DockerToolResult:
+        self.calls.append("docker_stats")
+        return DockerToolResult(
+            tool="docker_stats",
+            command=("docker", "stats", "--no-stream", container),
+            returncode=1,
+            stdout="",
+            stderr=f"Error response from daemon: container {container} is not running",
+        )
+
+    def info(self) -> DockerToolResult:
+        self.calls.append("docker_info")
+        return DockerToolResult(
+            tool="docker_info",
+            command=("docker", "info"),
+            returncode=1,
+            stdout="",
+            stderr=(
+                "permission denied while trying to connect to the "
+                "Docker daemon socket"
+            ),
+        )
+
+    def ps(self, *, include_stopped: bool = True) -> DockerToolResult:
+        self.calls.append("docker_ps")
+        return DockerToolResult(
+            tool="docker_ps",
+            command=("docker", "ps", "--all"),
+            returncode=0,
+            stdout=(
+                '{"Names":"web-prod-old","State":"exited"}\n'
+                '{"Names":"web-1","State":"running"}'
+            ),
+            stderr="",
+        )
+
+
+def test_runtime_loop_graph_matches_container_not_found_recovery() -> None:
+    responses = [
+        '{"action":"tool","tool":"docker_inspect","reason":"inspect target"}',
+        '{"action":"tool","tool":"docker_ps","reason":"list candidates"}',
+        '{"action":"finish","tool":null,"reason":"target not found"}',
+    ]
+    legacy_tools = FailureScenarioDockerTools("not_found")
+    graph_tools = FailureScenarioDockerTools("not_found")
+
+    legacy = run_dynamic_runtime_workflow(
+        question="web-prod 为什么退出了？",
+        route=_route("web-prod"),
+        planner_model=SequenceModel(list(responses)),
+        docker_tools=legacy_tools,  # type: ignore[arg-type]
+    )
+    graph = run_runtime_loop_graph(
+        question="web-prod 为什么退出了？",
+        route=_route("web-prod"),
+        planner_model=SequenceModel(list(responses)),
+        docker_tools=graph_tools,  # type: ignore[arg-type]
+    )
+
+    assert legacy_tools.calls == graph_tools.calls == [
+        "docker_inspect",
+        "docker_ps",
+    ]
+    assert _signature(graph) == _signature(legacy)
+
+
+def test_runtime_loop_graph_matches_unavailable_logs_failure() -> None:
+    responses = [
+        '{"action":"tool","tool":"docker_inspect","reason":"inspect state"}',
+        '{"action":"tool","tool":"docker_logs","reason":"read failure logs"}',
+        '{"action":"finish","tool":null,"reason":"logs unavailable"}',
+    ]
+    legacy_tools = FailureScenarioDockerTools("logs_unavailable")
+    graph_tools = FailureScenarioDockerTools("logs_unavailable")
+
+    legacy = run_dynamic_runtime_workflow(
+        question="web 为什么退出了？",
+        route=_route(),
+        planner_model=SequenceModel(list(responses)),
+        docker_tools=legacy_tools,  # type: ignore[arg-type]
+    )
+    graph = run_runtime_loop_graph(
+        question="web 为什么退出了？",
+        route=_route(),
+        planner_model=SequenceModel(list(responses)),
+        docker_tools=graph_tools,  # type: ignore[arg-type]
+    )
+
+    assert legacy_tools.calls == graph_tools.calls == [
+        "docker_inspect",
+        "docker_logs",
+    ]
+    assert _signature(graph) == _signature(legacy)
+
+
+def test_runtime_loop_graph_matches_permission_denied_failure() -> None:
+    responses = [
+        '{"action":"tool","tool":"docker_inspect","reason":"inspect target"}',
+        '{"action":"finish","tool":null,"reason":"permission denied"}',
+    ]
+    legacy_tools = FailureScenarioDockerTools("permission")
+    graph_tools = FailureScenarioDockerTools("permission")
+
+    legacy = run_dynamic_runtime_workflow(
+        question="web 为什么退出了？",
+        route=_route(),
+        planner_model=SequenceModel(list(responses)),
+        docker_tools=legacy_tools,  # type: ignore[arg-type]
+    )
+    graph = run_runtime_loop_graph(
+        question="web 为什么退出了？",
+        route=_route(),
+        planner_model=SequenceModel(list(responses)),
+        docker_tools=graph_tools,  # type: ignore[arg-type]
+    )
+
+    assert legacy_tools.calls == graph_tools.calls == ["docker_inspect"]
+    assert _signature(graph) == _signature(legacy)
