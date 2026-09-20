@@ -23,6 +23,10 @@ Rules:
 - Cite Docker behavior, configuration guidance, and commands with documentation citations.
 - Clearly distinguish observed runtime facts from interpretation or general guidance.
 - Never invent container state, logs, resource usage, commands, flags, configuration, or citations.
+- If you offer remediation, only use command syntax, flags, configuration keys, and values
+  that are explicitly supported by the supplied evidence. Do not synthesize CLI syntax.
+- For direct factual or measurement questions, state the requested value or its
+  unavailability first, then give only the minimum evidence-backed explanation.
 - A successful tool result reports an observation, not automatically the root cause.
 - If the evidence is insufficient to identify a root cause, say what remains uncertain.
 - If a runtime tool failed, report the failure instead of pretending that evidence was obtained.
@@ -122,6 +126,10 @@ def build_agent_user_prompt_from_evidence(
         "- If Docker Docs labels are <none>, do not use numeric citations such as [1].\n"
         "- If Runtime labels are <none>, do not use runtime citations such as [R1].\n"
         "- Do not cite a source that does not support the nearby claim.\n"
+        "- If you suggest a fix, only use commands, flags, configuration keys, and values "
+        "that are explicitly present in the evidence; do not synthesize CLI syntax.\n"
+        "- For direct factual or measurement questions, lead with the requested value or "
+        "state that it is unavailable, then keep the explanation brief.\n"
         "- Separate observed facts from possible explanations.\n"
         "- If the root cause cannot be proven from the evidence, say so explicitly.\n"
         "- Raw exit codes are observations; do not explain what an exit code generally means "
