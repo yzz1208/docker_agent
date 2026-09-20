@@ -9,9 +9,11 @@ from docker_agent.graph.workflow import (
     build_docs_only_graph,
     build_route_graph,
     build_runtime_graph,
+    build_support_graph,
     run_docs_only_graph,
     run_route_graph,
     run_runtime_graph,
+    run_support_graph,
 )
 
 __all__ = [
@@ -19,7 +21,9 @@ __all__ = [
     "build_docs_only_graph",
     "build_route_graph",
     "build_runtime_graph",
+    "build_support_graph",
     "run_docs_only_graph",
     "run_route_graph",
     "run_runtime_graph",
+    "run_support_graph",
 ]
