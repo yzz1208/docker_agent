@@ -219,3 +219,25 @@ def test_unified_evidence_prompt_rejects_wrong_bundle_kind() -> None:
             docs_bundle,
             runtime_bundle,
         )
+
+
+def test_agent_prompt_forbids_synthesized_remediation_syntax() -> None:
+    prompt = build_agent_user_prompt(
+        "db-test 为什么退出了？",
+        RagContext(text="", sources=(), truncated=False),
+        _runtime_context(),
+    )
+
+    assert "do not synthesize CLI syntax" in prompt
+    assert "explicitly present in the evidence" in prompt
+
+
+def test_agent_prompt_prioritizes_direct_factual_answer() -> None:
+    prompt = build_agent_user_prompt(
+        "我本机 Docker Server 现在是什么版本？",
+        RagContext(text="", sources=(), truncated=False),
+        _runtime_context(),
+    )
+
+    assert "lead with the requested value" in prompt
+    assert "keep the explanation brief" in prompt
