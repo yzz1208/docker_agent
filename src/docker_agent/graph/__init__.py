@@ -4,6 +4,7 @@ The domain models remain in docker_agent.core. This package only owns graph
 transport state and node wiring.
 """
 
+from docker_agent.graph.service import LangGraphDockerSupportAgent
 from docker_agent.graph.state import GraphState
 from docker_agent.graph.workflow import (
     build_docs_only_graph,
@@ -18,6 +19,7 @@ from docker_agent.graph.workflow import (
 
 __all__ = [
     "GraphState",
+    "LangGraphDockerSupportAgent",
     "build_docs_only_graph",
     "build_route_graph",
     "build_runtime_graph",
