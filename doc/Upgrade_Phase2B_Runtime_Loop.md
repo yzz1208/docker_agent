@@ -157,3 +157,78 @@ After cutover:
 3. rerun normal Graph Judge;
 4. rerun Legacy-vs-LangGraph parity on failure / timeout / permission;
 5. close Phase 2B only if end-to-end parity and answer grounding remain stable.
+
+## Cutover End-to-End Regression Result
+
+After switching the unified support graph to `run_runtime_loop_graph(...)`, the complete
+Legacy-vs-LangGraph agent parity was rerun.
+
+### Normal
+
+~~~text
+cases                              8
+route_parity_rate                  1.0
+container_ref_parity_rate          1.0
+use_docs_parity_rate               1.0
+tool_sequence_parity_rate          1.0
+trace_parity_rate                  1.0
+citation_parity_rate               1.0
+clarification_parity_rate          1.0
+graph_evidence_labels_match_rate   1.0
+legacy_expected_accuracy           1.0
+graph_expected_accuracy            1.0
+exact_parity_rate                  1.0
+~~~
+
+Graph Judge:
+
+~~~text
+mean_groundedness                  5.0
+mean_runtime_citation_correctness  5.0
+mean_docs_citation_correctness     5.0
+mean_diagnosis_quality             5.0
+unsupported_claim_case_rate        0.0
+graph_judge_errors                 0
+~~~
+
+### Failure / Timeout / Permission
+
+All three abnormal suites preserved exact structural parity:
+
+~~~text
+failure     exact_parity_rate = 1.0
+timeout     exact_parity_rate = 1.0
+permission  exact_parity_rate = 1.0
+~~~
+
+Timeout also retained expected-answer accuracy at 1.0 for both implementations.
+
+Failure and permission still show occasional lexical expected-answer misses in one or both
+implementations while structural parity remains exact. These are not treated as migration
+failures by themselves because the same routing, tools, trace, citations, clarification,
+and evidence labels are preserved.
+
+The final Phase 2B gate therefore requires abnormal Graph Judge runs before closeout.
+
+## Final Abnormal Judge Gate
+
+Run the parity evaluator with `--judge` for:
+
+- `data/eval/dynamic_failure_v1.jsonl`
+- `data/eval/dynamic_timeout_v1.jsonl`
+- `data/eval/dynamic_permission_v1.jsonl`
+
+Close Phase 2B if each Graph Judge reports:
+
+~~~text
+mean_groundedness                  = 5.0
+mean_runtime_citation_correctness  = 5.0
+mean_docs_citation_correctness     = 5.0
+mean_diagnosis_quality             = 5.0
+unsupported_claim_case_rate        = 0.0
+graph_judge_errors                 = 0
+~~~
+
+The deterministic expected-answer metric remains diagnostic for lexical coverage; it is
+not allowed to override a failing grounding/citation Judge, but it is also not used alone
+to classify a framework migration as failed.
