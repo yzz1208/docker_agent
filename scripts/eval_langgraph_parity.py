@@ -256,6 +256,7 @@ def main() -> None:
     judge_results = []
     judge_issue_cases: list[dict[str, Any]] = []
     judge_error_cases: list[dict[str, str]] = []
+    expected_issue_cases: list[dict[str, Any]] = []
     output_rows: list[dict[str, Any]] = []
 
     handled_errors = (
@@ -387,6 +388,26 @@ def main() -> None:
             expected_sequence=expected_sequence,
             required=required,
         )
+
+        if not legacy_expected or not graph_expected:
+            expected_issue_cases.append(
+                {
+                    "id": case_id,
+                    "legacy_expected": legacy_expected,
+                    "graph_expected": graph_expected,
+                    "legacy_concept_coverage": concept_coverage(
+                        legacy_answer_text,
+                        required,
+                    ),
+                    "graph_concept_coverage": concept_coverage(
+                        graph_answer_text,
+                        required,
+                    ),
+                    "legacy_tool_sequence": legacy_tools.calls,
+                    "graph_tool_sequence": graph_tools.calls,
+                    "required_concepts": [list(group) for group in required],
+                }
+            )
 
         case_metrics = GraphParityMetrics(
             case_id=case_id,
@@ -570,6 +591,7 @@ def main() -> None:
     summary: dict[str, Any] = {
         "cases": len(rows),
         "parity": summarize_graph_parity(metrics),
+        "expected_issue_cases": expected_issue_cases,
         "output": str(args.output),
         "note": (
             "Legacy and LangGraph agents use the same models and synthetic Docker/docs "
