@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import TypedDict
 
 from docker_agent.agent.answer import AgentAnswer
+from docker_agent.agent.dynamic_workflow import DynamicRuntimeStep
 from docker_agent.agent.evidence import RuntimeEvidenceContext
 from docker_agent.agent.router import AgentRouteDecision
 from docker_agent.core.state import AgentState
@@ -20,4 +21,5 @@ class GraphState(TypedDict):
     decision: AgentRouteDecision | None
     docs_context: RagContext | None
     runtime_context: RuntimeEvidenceContext | None
+    runtime_trace: tuple[DynamicRuntimeStep, ...]
     answer: AgentAnswer | None
