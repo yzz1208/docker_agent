@@ -2,7 +2,7 @@
 
 ## Status
 
-**Step 1 / Step 2 implemented; abnormal-scenario parity gate pending local run.**
+**Step 1 / Step 2 complete; abnormal parity gate passed; support-graph cutover implemented.**
 
 ## Objective
 
@@ -32,7 +32,8 @@ plan
      └─ yes → error
 ~~~
 
-The unified support graph still uses the legacy loop. No production cutover has happened.
+The unified LangGraph support workflow now calls the node-level runtime loop graph.
+The legacy loop remains in the codebase as the comparison baseline.
 
 ## Shared Runtime Primitives
 
@@ -116,13 +117,43 @@ graph_expected_tool_accuracy       = 1.0
 exact_runtime_loop_parity_rate     = 1.0
 ~~~
 
-## Cutover Rule
+## Abnormal Scenario Gate Result
 
-Only after normal + failure + timeout + permission all pass:
+All required abnormal datasets passed with every runtime-loop parity metric equal to 1.0:
 
-1. replace the coarse support graph runtime node implementation with
-   `run_runtime_loop_graph(...)`;
-2. keep `run_dynamic_runtime_workflow(...)` as a baseline;
-3. rerun full Legacy-vs-LangGraph agent parity;
-4. rerun Graph Judge;
-5. close Phase 2B only if end-to-end behavior remains stable.
+~~~text
+failure     4 cases  ✅
+timeout     2 cases  ✅
+permission  2 cases  ✅
+~~~
+
+Together with the normal 7-case result, the node-level runtime loop passed the cutover gate.
+
+## Cutover
+
+The LangGraph workflows now use:
+
+~~~python
+run_runtime_loop_graph(...)
+~~~
+
+instead of:
+
+~~~python
+run_dynamic_runtime_workflow(...)
+~~~
+
+for runtime execution.
+
+The legacy implementation remains available as the baseline and is still used by the
+legacy `DynamicDockerSupportAgent`.
+
+## Final Phase 2B Gate
+
+After cutover:
+
+1. run Ruff and the full unit-test suite;
+2. rerun Legacy-vs-LangGraph agent parity on normal;
+3. rerun normal Graph Judge;
+4. rerun Legacy-vs-LangGraph parity on failure / timeout / permission;
+5. close Phase 2B only if end-to-end parity and answer grounding remain stable.
