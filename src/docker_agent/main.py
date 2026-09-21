@@ -25,8 +25,12 @@ from docker_agent.agent.factory import (
     AgentProtocol,
     validate_factory_registration,
 )
+from docker_agent.agent.infrastructure import (
+    InfrastructureTroubleshooterAgent,
+)
 from docker_agent.agent.registry import (
     DOCKER_SUPPORT_DESCRIPTOR,
+    INFRASTRUCTURE_TROUBLESHOOTER_DESCRIPTOR,
     AgentNotRegistered,
     AgentRegistryError,
     build_agent_registry,
@@ -152,6 +156,35 @@ def _build_docker_support_agent() -> AgentProtocol:
 runtime_agent_factory.register(
     DOCKER_SUPPORT_DESCRIPTOR.agent_type,
     _build_docker_support_agent,
+)
+
+
+def _build_infrastructure_troubleshooter() -> AgentProtocol:
+    descriptor = INFRASTRUCTURE_TROUBLESHOOTER_DESCRIPTOR
+    base_settings = get_settings()
+    try:
+        record = get_agent_configuration(
+            get_persistence_engine(),
+            descriptor.agent_type,
+        )
+    except AgentConfigurationNotFound:
+        record = None
+
+    effective = require_enabled(
+        resolve_agent_configuration(
+            descriptor,
+            base_settings,
+            record,
+        )
+    )
+    return InfrastructureTroubleshooterAgent(
+        settings=effective.settings
+    )
+
+
+runtime_agent_factory.register(
+    INFRASTRUCTURE_TROUBLESHOOTER_DESCRIPTOR.agent_type,
+    _build_infrastructure_troubleshooter,
 )
 validate_factory_registration(
     registry=agent_registry,
