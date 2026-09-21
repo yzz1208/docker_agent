@@ -5,6 +5,9 @@ from sqlalchemy.pool import StaticPool
 
 from docker_agent.agent.answer import AgentAnswer
 from docker_agent.agent.evidence import RuntimeEvidenceSource
+from docker_agent.agent.infrastructure import (
+    InfrastructureTroubleshooterAgent,
+)
 from docker_agent.agent.registry import (
     DOCKER_SUPPORT_DESCRIPTOR,
     AgentDescriptor,
@@ -13,6 +16,7 @@ from docker_agent.agent.registry import (
 from docker_agent.agent.router import AgentRouteDecision
 from docker_agent.api.chat import ChatSessionManager
 from docker_agent.graph.service import LangGraphAgentTurnResult
+from docker_agent.config import Settings
 from docker_agent.main import app
 from docker_agent.multi_agent.execution import WorkerExecutionRecord
 from docker_agent.multi_agent.supervisor import SupervisorPlan
@@ -22,6 +26,19 @@ from docker_agent.persistence import (
     list_conversations,
     load_conversation,
 )
+
+
+class SequenceModel:
+    def __init__(self, responses: list[str]) -> None:
+        self.responses = list(responses)
+
+    def complete(
+        self,
+        *,
+        system_prompt: str,
+        user_prompt: str,
+    ) -> str:
+        return self.responses.pop(0)
 
 
 class FakeLangGraphAgent:
@@ -437,3 +454,86 @@ def test_delete_chat_session_routes_reset_by_agent_type(
 
     assert response.status_code == 204
     assert future_coordinator.sessions.active_sessions() == 0
+
+
+
+def test_chat_endpoint_runs_real_infrastructure_agent_contract(
+    monkeypatch,
+) -> None:
+    engine = _engine()
+    agent = InfrastructureTroubleshooterAgent(
+        settings=Settings(),
+        router_model=SequenceModel(
+            [
+                (
+                    '{"route":"triage","reason":"concrete service incident",'
+                    '"clarification":null}'
+                )
+            ]
+        ),
+        answer_model=SequenceModel(
+            [
+                (
+                    "已知事实：checkout-api 返回 503。"
+                    "可能原因：依赖异常。"
+                    "下一步：检查依赖健康度。"
+                )
+            ]
+        ),
+    )
+    coordinator = PersistentChatCoordinator(
+        engine=engine,
+        sessions=ChatSessionManager(
+            agent_factory=lambda: agent,
+            agent_type="infrastructure_troubleshooter",
+        ),
+        agent_type="infrastructure_troubleshooter",
+    )
+    _install_chat_runtime(
+        monkeypatch,
+        engine=engine,
+        coordinators={
+            "infrastructure_troubleshooter": coordinator,
+        },
+    )
+    client = TestClient(app)
+
+    response = client.post(
+        "/chat",
+        json={
+            "message": (
+                "checkout-api 从 10:20 开始持续返回 503，"
+                "依赖请求超时明显增加。"
+            ),
+            "agent_type": "infrastructure_troubleshooter",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["agent_type"] == "infrastructure_troubleshooter"
+    assert payload["route"] == "triage"
+    assert payload["use_docs"] is False
+    assert payload["runtime_sources"] == []
+    assert payload["doc_sources"] == []
+    assert payload["execution"]["planned_workers"] == [
+        "triage",
+        "diagnosis",
+    ]
+    assert payload["execution"]["completed_workers"] == [
+        "triage",
+        "diagnosis",
+    ]
+
+    snapshot = load_conversation(
+        engine,
+        payload["conversation_id"],
+    )
+    assert snapshot.conversation.agent_type == (
+        "infrastructure_troubleshooter"
+    )
+    assert snapshot.messages[1].route == "triage"
+    assert snapshot.executions[0].planned_workers == (
+        "triage",
+        "diagnosis",
+    )
