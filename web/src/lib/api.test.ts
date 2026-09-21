@@ -9,6 +9,7 @@ import {
   listAgentRuns,
   listAgents,
   listEvaluationRuns,
+  resetChatSession,
   sendChat,
   updateAgentConfiguration,
 } from "./api";
@@ -96,6 +97,22 @@ describe("API client", () => {
       conversation_id: null,
       session_id: null,
     });
+  });
+
+  it("serializes Agent-aware clarification reset", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(null, { status: 204 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await resetChatSession("session-1", "future_agent");
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/chat/session-1?agent_type=future_agent",
+      expect.objectContaining({
+        method: "DELETE",
+      }),
+    );
   });
 
   it("serializes agent configuration create and update payloads", async () => {
