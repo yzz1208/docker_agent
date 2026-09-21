@@ -24,6 +24,11 @@ on:
         required: false
         default: ""
         type: string
+      repeats:
+        description: Router repeat count; must match the baseline case shape
+        required: true
+        default: "1"
+        type: string
       judge:
         description: Enable LLM judge for agent_workflow
         required: true
@@ -54,6 +59,7 @@ jobs:
       BASELINE_RUN_ID: ${{ inputs.baseline_run_id }}
       MAX_REGRESSION: ${{ inputs.max_regression }}
       CASE_LIMIT: ${{ inputs.limit }}
+      ROUTER_REPEATS: ${{ inputs.repeats }}
       ENABLE_JUDGE: ${{ inputs.judge }}
     steps:
       - name: Checkout
@@ -80,6 +86,10 @@ jobs:
               if value <= 0:
                   raise SystemExit('limit must be a positive integer')
 
+          repeats = int(os.environ['ROUTER_REPEATS'])
+          if repeats <= 0:
+              raise SystemExit('repeats must be a positive integer')
+
           threshold = float(os.environ['MAX_REGRESSION'])
           if threshold < 0:
               raise SystemExit('max_regression must not be negative')
@@ -99,6 +109,7 @@ jobs:
           fi
 
           if [[ "$EVAL_SUITE" == "agent_router" ]]; then
+            args+=(--repeats "$ROUTER_REPEATS")
             uv run python scripts/eval_agent_router.py "${args[@]}"
           else
             if [[ "$ENABLE_JUDGE" == "true" ]]; then
