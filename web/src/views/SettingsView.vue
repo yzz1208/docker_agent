@@ -156,7 +156,7 @@ onMounted(loadPage);
           class="button button--ghost"
           type="button"
           :disabled="settings.loading.value || settings.saving.value"
-          @click="settings.load"
+          @click="settings.load()"
         >
           {{ settings.dirty.value ? "Discard changes" : "Refresh" }}
         </button>
@@ -396,8 +396,8 @@ onMounted(loadPage);
                 v-model="field.input"
                 :type="inputType(field)"
                 :step="inputStep(field)"
-                :min="field.minimum"
-                :max="field.maximum"
+                :min="field.minimum ?? undefined"
+                :max="field.maximum ?? undefined"
                 :disabled="!field.override || settings.saving.value"
                 :aria-invalid="Boolean(field.error)"
               />
