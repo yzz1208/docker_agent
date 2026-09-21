@@ -270,9 +270,32 @@ Production 首次准备：
 
 ~~~powershell
 Copy-Item .env.production.example .env.production
+notepad .env.production
 ~~~
 
-然后修改数据库密码、`DATABASE_URL` 和模型配置。真实 `.env.production` 不会提交 Git。
+至少替换以下 placeholder：
+
+~~~text
+POSTGRES_PASSWORD
+DATABASE_URL 中对应的数据库密码
+MODEL_NAME
+MODEL_BASE_URL
+MODEL_API_KEY（模型服务要求时）
+~~~
+
+先运行 production preflight：
+
+~~~powershell
+uv run python scripts/production_preflight.py
+~~~
+
+只有 preflight 返回 `"status": "ok"` 后，再运行：
+
+~~~powershell
+docker compose --env-file .env.production -f compose.prod.yaml config
+~~~
+
+真实 `.env.production` 已在 `.gitignore` 中，不会提交 Git。
 
 Production 会拒绝默认 PostgreSQL 密码、SQLite 数据库和未替换的数据库 placeholder。
 FastAPI serving 启动时还会校验 `MODEL_NAME` / `MODEL_BASE_URL`。
