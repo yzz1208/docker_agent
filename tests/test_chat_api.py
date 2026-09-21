@@ -272,7 +272,6 @@ def test_delete_chat_session_keeps_persisted_conversation_history(
     assert snapshot.messages[1].content == "请提供容器名称或 ID。"
 
 
-
 def test_chat_endpoint_routes_new_and_existing_conversation_by_agent_type(
     monkeypatch,
 ) -> None:
@@ -384,3 +383,58 @@ def test_chat_endpoint_rejects_unregistered_agent_without_creating_conversation(
         "Agent type is not registered."
     )
     assert list_conversations(engine) == []
+
+
+
+def test_delete_chat_session_routes_reset_by_agent_type(
+    monkeypatch,
+) -> None:
+    engine = _engine()
+    future_coordinator, _ = _coordinator(
+        engine=engine,
+        agent_type="future_agent",
+    )
+    registry = AgentRegistry(
+        (
+            DOCKER_SUPPORT_DESCRIPTOR,
+            AgentDescriptor(
+                agent_type="future_agent",
+                display_name="Future Agent",
+                description="Test-only future Agent.",
+                capabilities=("chat",),
+                knowledge_sources=(),
+                toolsets=(),
+                worker_roles=(),
+                configuration_groups=(),
+            ),
+        )
+    )
+    monkeypatch.setattr(
+        "docker_agent.main.agent_registry",
+        registry,
+    )
+    _install_chat_runtime(
+        monkeypatch,
+        engine=engine,
+        coordinators={
+            "future_agent": future_coordinator,
+        },
+    )
+    client = TestClient(app)
+
+    first = client.post(
+        "/chat",
+        json={
+            "message": "我的服务怎么了？",
+            "agent_type": "future_agent",
+        },
+    )
+    session_id = first.json()["session_id"]
+
+    response = client.delete(
+        f"/chat/{session_id}",
+        params={"agent_type": "future_agent"},
+    )
+
+    assert response.status_code == 204
+    assert future_coordinator.sessions.active_sessions() == 0
