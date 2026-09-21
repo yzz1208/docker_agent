@@ -57,7 +57,6 @@ from docker_agent.api.operations import (
 )
 from docker_agent.config import get_settings
 from docker_agent.db import (
-    DatabaseSchemaNotReady,
     check_database,
     create_db_engine,
     get_database_readiness,
