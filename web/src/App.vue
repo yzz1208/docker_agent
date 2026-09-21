@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted } from "vue";
+import { onBeforeUnmount, onMounted } from "vue";
 import { RouterLink, RouterView } from "vue-router";
 
 import AppErrorBoundary from "./components/AppErrorBoundary.vue";
@@ -9,6 +9,10 @@ const backend = useBackendHealth();
 
 onMounted(() => {
   backend.start();
+});
+
+onBeforeUnmount(() => {
+  backend.stop();
 });
 </script>
 
