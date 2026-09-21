@@ -10,6 +10,7 @@ from sqlalchemy import Engine
 from sqlalchemy.orm import Session
 
 from docker_agent.persistence.models import AgentRun, Conversation, utc_now
+from docker_agent.persistence.store import ConversationNotFound
 
 AgentRunStatus = Literal["running", "succeeded", "failed"]
 
@@ -62,9 +63,7 @@ def create_agent_run(
 
     with Session(engine) as session:
         if session.get(Conversation, normalized_conversation_id) is None:
-            raise ValueError(
-                f"conversation {normalized_conversation_id!r} does not exist"
-            )
+            raise ConversationNotFound(normalized_conversation_id)
 
         row = AgentRun(
             id=run_id or uuid4().hex,
