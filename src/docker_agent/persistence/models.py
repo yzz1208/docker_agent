@@ -21,6 +21,35 @@ class PersistenceBase(DeclarativeBase):
     """Metadata root for product-facing persistence tables."""
 
 
+class AgentConfiguration(PersistenceBase):
+    __tablename__ = "agent_configurations"
+
+    agent_type: Mapped[str] = mapped_column(String(64), primary_key=True)
+    display_name: Mapped[str] = mapped_column(String(120))
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    model_settings: Mapped[dict[str, object]] = mapped_column(
+        JSON,
+        default=dict,
+    )
+    retrieval_settings: Mapped[dict[str, object]] = mapped_column(
+        JSON,
+        default=dict,
+    )
+    runtime_settings: Mapped[dict[str, object]] = mapped_column(
+        JSON,
+        default=dict,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utc_now,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utc_now,
+        onupdate=utc_now,
+    )
+
+
 class Conversation(PersistenceBase):
     __tablename__ = "conversations"
 
