@@ -187,6 +187,23 @@ describe("API client", () => {
       toolsets: ["docker_read_only"],
       worker_roles: ["knowledge"],
       configuration_groups: ["model_settings"],
+      configuration_schema: [
+        {
+          key: "model_settings",
+          label: "Model",
+          fields: [
+            {
+              key: "temperature",
+              label: "Temperature",
+              description: "Sampling temperature",
+              kind: "number",
+              minimum: 0,
+              maximum: 2,
+            },
+          ],
+        },
+      ],
+      configuration_rules: [],
       default_enabled: true,
     };
     const fetchMock = vi
