@@ -6,6 +6,7 @@ from docker_agent.agent.factory import (
     AgentFactory,
     validate_factory_registration,
 )
+from docker_agent.agent.protocol import AgentTurnProtocol
 from docker_agent.agent.registry import (
     AgentDescriptor,
     AgentRegistry,
@@ -16,7 +17,7 @@ class DummyAgent:
     def __init__(self, name: str) -> None:
         self.name = name
 
-    def handle(self, question: str) -> None:
+    def handle(self, question: str) -> AgentTurnProtocol:
         raise NotImplementedError(question)
 
 
