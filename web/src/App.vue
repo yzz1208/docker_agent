@@ -30,7 +30,7 @@ onBeforeUnmount(() => {
           :data-state="backend.state.value"
           type="button"
           :title="backend.detail.value"
-          @click="backend.check"
+          @click="backend.check()"
         >
           <span class="backend-status__dot" />
           <span>{{ backend.label.value }}</span>
