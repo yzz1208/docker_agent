@@ -67,7 +67,10 @@ class MessageNotFound(KeyError):
 
 
 def init_persistence_store(engine: Engine) -> None:
-    """Create product-facing persistence tables."""
+    """Create product tables for isolated tests and ephemeral local schemas.
+
+    Deployment and long-lived databases must use Alembic migrations instead.
+    """
 
     PersistenceBase.metadata.create_all(engine)
 
