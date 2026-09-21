@@ -1,4 +1,5 @@
 from sqlalchemy import create_engine
+from sqlalchemy.exc import OperationalError
 
 from docker_agent.agent.answer import AgentAnswer
 from docker_agent.agent.router import AgentRouteDecision
@@ -318,3 +319,63 @@ def test_persistent_chat_records_failed_run_and_reraises_original_error() -> Non
     assert "super-secret" not in run.error_message
     assert "[REDACTED]" in run.error_message
     assert run.completed_at is not None
+
+
+
+def _telemetry_database_error() -> OperationalError:
+    return OperationalError(
+        "UPDATE agent_runs",
+        {},
+        RuntimeError("telemetry database unavailable"),
+    )
+
+
+def test_failed_turn_keeps_original_error_when_telemetry_finalize_fails(
+    monkeypatch,
+) -> None:
+    engine = _engine()
+    coordinator = PersistentChatCoordinator(
+        engine=engine,
+        sessions=ChatSessionManager(agent_factory=FailingAgent),
+    )
+
+    def fail_telemetry(*args, **kwargs):
+        raise _telemetry_database_error()
+
+    monkeypatch.setattr(
+        "docker_agent.persistence.chat.finalize_agent_run_failure",
+        fail_telemetry,
+    )
+
+    try:
+        coordinator.chat(message="触发失败")
+    except RuntimeError as exc:
+        assert str(exc) == "model failed api_key=super-secret"
+    else:
+        raise AssertionError("original RuntimeError was not raised")
+
+
+def test_successful_turn_survives_telemetry_finalize_failure(
+    monkeypatch,
+) -> None:
+    engine = _engine()
+    coordinator = PersistentChatCoordinator(
+        engine=engine,
+        sessions=ChatSessionManager(agent_factory=ImmediateAnswerAgent),
+    )
+
+    def fail_telemetry(*args, **kwargs):
+        raise _telemetry_database_error()
+
+    monkeypatch.setattr(
+        "docker_agent.persistence.chat.finalize_agent_run_success",
+        fail_telemetry,
+    )
+
+    turn = coordinator.chat(message="Docker volume 是什么？")
+
+    assert turn.result.answer is not None
+    assert turn.result.answer.answer == "收到：Docker volume 是什么？ [1]"
+    snapshot = load_conversation(engine, turn.conversation.id)
+    assert len(snapshot.messages) == 2
+    assert len(snapshot.executions) == 1
