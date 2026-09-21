@@ -55,6 +55,7 @@ from docker_agent.persistence import (
     load_conversation,
     rename_conversation,
     update_agent_configuration,
+    validate_agent_configuration_settings,
 )
 from docker_agent.rag.answer import CitationValidationError
 from docker_agent.tools.docker_cli import DockerToolTimeout
@@ -265,6 +266,12 @@ def create_agent_configuration_endpoint(
     """Create a product-facing agent configuration."""
 
     try:
+        validate_agent_configuration_settings(
+            model_settings=request.model_settings,
+            retrieval_settings=request.retrieval_settings,
+            runtime_settings=request.runtime_settings,
+        )
+
         if request.agent_type.strip() == "docker_support":
             resolve_docker_support_settings(
                 get_settings(),
@@ -316,6 +323,12 @@ def update_agent_configuration_endpoint(
     """Partially update persisted agent preferences."""
 
     try:
+        validate_agent_configuration_settings(
+            model_settings=request.model_settings,
+            retrieval_settings=request.retrieval_settings,
+            runtime_settings=request.runtime_settings,
+        )
+
         if agent_type.strip() == "docker_support":
             current = get_agent_configuration(
                 get_persistence_engine(),
