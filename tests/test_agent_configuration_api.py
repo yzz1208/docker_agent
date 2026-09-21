@@ -209,7 +209,9 @@ def test_unknown_agent_configuration_returns_404(monkeypatch) -> None:
     )
 
 
-def test_agent_configuration_api_allows_token_budget(monkeypatch) -> None:
+def test_agent_configuration_api_rejects_unsupported_runtime_fields(
+    monkeypatch,
+) -> None:
     engine = _engine()
     monkeypatch.setattr(
         "docker_agent.main.get_persistence_engine",
@@ -229,8 +231,47 @@ def test_agent_configuration_api_allows_token_budget(monkeypatch) -> None:
         },
     )
 
-    assert response.status_code == 201
-    assert response.json()["model_settings"] == {
-        "max_tokens": 4096,
-        "token_budget": 12000,
+    assert response.status_code == 400
+    assert "unsupported fields: token_budget" in response.json()["detail"]
+
+    missing = client.get("/agent-configurations/docker_support")
+    assert missing.status_code == 404
+
+
+
+def test_patch_invalid_effective_config_does_not_persist(monkeypatch) -> None:
+    engine = _engine()
+    create_agent_configuration(
+        engine,
+        agent_type="docker_support",
+        display_name="Docker Support",
+        retrieval_settings={
+            "top_k": 10,
+            "rerank_top_k": 5,
+        },
+    )
+    monkeypatch.setattr(
+        "docker_agent.main.get_persistence_engine",
+        lambda: engine,
+    )
+    client = TestClient(app)
+
+    response = client.patch(
+        "/agent-configurations/docker_support",
+        json={
+            "retrieval_settings": {
+                "top_k": 3,
+                "rerank_top_k": 5,
+            }
+        },
+    )
+
+    assert response.status_code == 400
+    assert "rerank_top_k must not exceed top_k" in response.json()["detail"]
+
+    loaded = client.get("/agent-configurations/docker_support")
+    assert loaded.status_code == 200
+    assert loaded.json()["retrieval_settings"] == {
+        "top_k": 10,
+        "rerank_top_k": 5,
     }
