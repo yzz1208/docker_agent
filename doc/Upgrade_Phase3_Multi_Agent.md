@@ -221,3 +221,38 @@ advances the index and records itself in completed_workers.
 
 This removes route-specific worker sequencing from LangGraph edges while keeping the
 existing validated Router as the source of the deterministic supervisor plan.
+
+
+## Phase 3A Step 5 — Observable Worker Execution Trace
+
+The supervisor-driven graph now records a compact worker trace.
+
+Each completed worker appends a `WorkerExecutionRecord` containing:
+
+~~~text
+index
+role
+tool_results_added
+evidence_added
+runtime_steps_added
+answer_created
+~~~
+
+Example:
+
+~~~text
+1  runtime    tools +1  evidence +1  runtime steps +2  answer false
+2  knowledge  tools +0  evidence +1  runtime steps +0  answer false
+3  diagnosis  tools +0  evidence +0  runtime steps +0  answer true
+~~~
+
+The trace intentionally stores counts and role metadata instead of copying raw runtime
+output or document evidence. This keeps the orchestration trace lightweight and suitable
+for later:
+
+- API serialization;
+- frontend progress visualization;
+- persisted chat execution history;
+- debugging and audit views.
+
+Raw evidence continues to live only in the existing canonical state/context structures.
