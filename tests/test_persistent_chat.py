@@ -12,6 +12,8 @@ from docker_agent.persistence import (
     PersistentChatCoordinator,
     create_conversation,
     init_persistence_store,
+    list_agent_runs,
+    list_conversations,
     load_conversation,
 )
 
@@ -72,6 +74,11 @@ class FakeLangGraphAgent:
                 ),
             ),
         )
+
+
+class FailingAgent:
+    def handle(self, question: str) -> LangGraphAgentTurnResult:
+        raise RuntimeError("model failed api_key=super-secret")
 
 
 class ImmediateAnswerAgent:
@@ -173,6 +180,17 @@ def test_persistent_chat_keeps_conversation_id_across_clarification() -> None:
     ]
     assert len(snapshot.executions) == 2
 
+    runs = list_agent_runs(
+        engine,
+        conversation_id=first.conversation.id,
+    )
+    assert len(runs) == 2
+    assert {run.status for run in runs} == {"succeeded"}
+    assert {run.route for run in runs} == {
+        "clarify",
+        "runtime_tools",
+    }
+
 
 def test_existing_conversation_can_receive_independent_completed_turn() -> None:
     engine = _engine()
@@ -269,3 +287,35 @@ def test_conversation_agent_type_must_match_coordinator() -> None:
         assert "docker_support" in str(exc)
     else:
         raise AssertionError("ConversationAgentTypeMismatch was not raised")
+
+
+
+def test_persistent_chat_records_failed_run_and_reraises_original_error() -> None:
+    engine = _engine()
+    coordinator = PersistentChatCoordinator(
+        engine=engine,
+        sessions=ChatSessionManager(agent_factory=FailingAgent),
+    )
+
+    try:
+        coordinator.chat(message="触发一次失败")
+    except RuntimeError as exc:
+        assert str(exc) == "model failed api_key=super-secret"
+    else:
+        raise AssertionError("RuntimeError was not raised")
+
+    conversations = list_conversations(engine)
+    assert len(conversations) == 1
+
+    runs = list_agent_runs(
+        engine,
+        conversation_id=conversations[0].id,
+    )
+    assert len(runs) == 1
+    run = runs[0]
+    assert run.status == "failed"
+    assert run.error_type == "RuntimeError"
+    assert run.error_message is not None
+    assert "super-secret" not in run.error_message
+    assert "[REDACTED]" in run.error_message
+    assert run.completed_at is not None
