@@ -1253,6 +1253,196 @@ Finish:
 - backup/restore considerations;
 - final production smoke procedure.
 
+### Step 7 implementation status
+
+**IMPLEMENTED pending final production gate**
+
+Phase 6 now includes a complete production runbook:
+
+~~~text
+doc/Production_Runbook.md
+~~~
+
+covering:
+
+- production environment preparation;
+- preflight;
+- image build;
+- first deployment;
+- liveness/readiness;
+- final smoke;
+- Prometheus monitoring;
+- PostgreSQL backup;
+- PostgreSQL restore;
+- upgrade procedure;
+- application/schema rollback;
+- knowledge-base operational boundaries;
+- incident checklist;
+- safe shutdown and data retention.
+
+### Monitoring closeout
+
+An optional Compose profile now provides:
+
+~~~text
+prometheus
+~~~
+
+using:
+
+~~~text
+docker/prometheus/prometheus.yml
+~~~
+
+Start it with:
+
+~~~powershell
+docker compose --env-file .env.production -f compose.prod.yaml --profile monitoring up -d
+~~~
+
+Prometheus scrapes:
+
+~~~text
+backend:8000/metrics
+~~~
+
+over the private Compose network.
+
+Public Nginx now deliberately returns 404 for:
+
+~~~text
+/metrics
+~~~
+
+so application metrics are not exposed through the user-facing Web endpoint by default.
+
+The default Prometheus UI port is:
+
+~~~text
+9090
+~~~
+
+and can be overridden with:
+
+~~~text
+PROMETHEUS_PORT
+~~~
+
+### Final production smoke contract
+
+Public application smoke through Nginx uses:
+
+~~~powershell
+cd web
+$env:BACKEND_URL="http://127.0.0.1:8080"
+$env:SMOKE_CHECK_METRICS="false"
+npm run smoke
+~~~
+
+Metrics are checked separately inside the backend network because Nginx no longer exposes
+them publicly.
+
+### Backup and restore policy
+
+The runbook uses PostgreSQL custom-format logical backups:
+
+~~~text
+pg_dump -Fc
+pg_restore --clean --if-exists --no-owner
+~~~
+
+A backup is required before schema-changing production upgrades.
+
+The PostgreSQL backup covers:
+
+- product persistence tables;
+- evaluation history;
+- pgvector/document_chunks knowledge data.
+
+Model caches are reproducible and are not considered backup data.
+
+### Rollback policy
+
+Rollback decisions distinguish:
+
+~~~text
+application-only rollback
+    previous app remains compatible with current schema
+
+safe Alembic downgrade
+    revision downgrade explicitly preserves required data
+
+backup restore
+    destructive/irreversible migration or unsafe downgrade
+~~~
+
+The runbook explicitly avoids assuming that every future migration can be safely downgraded.
+
+### Step 7 coverage
+
+Tests verify:
+
+- required production runbook sections;
+- backup/restore commands;
+- migration upgrade/downgrade procedures;
+- optional Prometheus profile;
+- persistent Prometheus storage;
+- internal backend scrape target;
+- public Nginx metrics denial;
+- destructive volume-reset warning.
+
+Final Phase 6 gate:
+
+~~~powershell
+uv run ruff check .
+uv run pytest -v
+~~~
+
+Frontend:
+
+~~~powershell
+cd web
+npm run typecheck
+npm test
+npm run build
+cd ..
+~~~
+
+Production configuration:
+
+~~~powershell
+docker compose --env-file .env.production -f compose.prod.yaml config
+docker compose --env-file .env.production -f compose.prod.yaml --profile monitoring config
+~~~
+
+Production build/start:
+
+~~~powershell
+docker compose --env-file .env.production -f compose.prod.yaml build
+docker compose --env-file .env.production -f compose.prod.yaml --profile monitoring up -d
+docker compose --env-file .env.production -f compose.prod.yaml ps
+~~~
+
+Run the final smoke from `doc/Production_Runbook.md` before declaring the release-ready
+stack validated.
+
+## Phase 6 Status
+
+**Phase 6 — Production / Deployment Hardening: COMPLETE pending final production gate**
+
+Phase 6 now provides:
+
+- Alembic versioned migrations;
+- schema readiness and FastAPI lifespan ownership;
+- production backend/Web images;
+- production Compose startup ordering;
+- explicit environment profiles;
+- production configuration safety checks;
+- deterministic GitHub Actions quality CI;
+- manual live-model evaluation regression gate;
+- optional internal Prometheus monitoring;
+- production deployment/backup/restore/rollback runbook.
+
 ## Phase 6 Completion Criteria
 
 Phase 6 is complete when:
