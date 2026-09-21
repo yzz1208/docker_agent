@@ -1,4 +1,4 @@
-import { computed, onBeforeUnmount, ref } from "vue";
+import { computed, ref } from "vue";
 
 import { ApiError, getDatabaseHealth, getSystemHealth } from "../lib/api";
 
@@ -99,7 +99,6 @@ export function useBackendHealth() {
     requestVersion += 1;
   }
 
-  onBeforeUnmount(stop);
 
   return {
     state,
