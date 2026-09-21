@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 from sqlalchemy.engine import Engine
 
+from docker_agent.agent.protocol import PersistableAgentTurnProtocol
 from docker_agent.graph.service import LangGraphAgentTurnResult
 from docker_agent.persistence.store import (
     ExecutionRecord,
@@ -15,21 +16,21 @@ from docker_agent.persistence.store import (
 
 @dataclass(frozen=True, slots=True)
 class PersistedAgentTurn:
-    """Durable records created for one completed LangGraph chat turn."""
+    """Durable records created for one completed Agent chat turn."""
 
     user_message: MessageRecord
     assistant_message: MessageRecord
     execution: ExecutionRecord
 
 
-def persist_langgraph_turn(
+def persist_agent_turn(
     engine: Engine,
     *,
     conversation_id: str,
     user_message: str,
-    result: LangGraphAgentTurnResult,
+    result: PersistableAgentTurnProtocol,
 ) -> PersistedAgentTurn:
-    """Persist user/assistant messages and safe orchestration metadata."""
+    """Persist one generic Agent turn plus safe orchestration metadata."""
 
     assistant_content = _assistant_content(result)
 
@@ -56,7 +57,10 @@ def persist_langgraph_turn(
         engine,
         message_id=assistant_record.id,
         planned_workers=result.supervisor_plan.workers,
-        completed_workers=tuple(record.role for record in result.worker_trace),
+        completed_workers=tuple(
+            record.role
+            for record in result.worker_trace
+        ),
         worker_trace=tuple(
             {
                 "index": record.index,
@@ -77,7 +81,26 @@ def persist_langgraph_turn(
     )
 
 
-def _assistant_content(result: LangGraphAgentTurnResult) -> str:
+def persist_langgraph_turn(
+    engine: Engine,
+    *,
+    conversation_id: str,
+    user_message: str,
+    result: LangGraphAgentTurnResult,
+) -> PersistedAgentTurn:
+    """Compatibility wrapper for the Docker LangGraph Agent."""
+
+    return persist_agent_turn(
+        engine,
+        conversation_id=conversation_id,
+        user_message=user_message,
+        result=result,
+    )
+
+
+def _assistant_content(
+    result: PersistableAgentTurnProtocol,
+) -> str:
     if result.answer is not None:
         return result.answer.answer
 
@@ -87,4 +110,6 @@ def _assistant_content(result: LangGraphAgentTurnResult) -> str:
         if normalized:
             return normalized
 
-    raise ValueError("LangGraph turn has neither answer nor clarification content")
+    raise ValueError(
+        "Agent turn has neither answer nor clarification content"
+    )
