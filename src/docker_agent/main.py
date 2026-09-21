@@ -13,6 +13,7 @@ from docker_agent.agent.configuration import (
     AgentConfigurationResolutionError,
     AgentDisabledError,
     require_enabled,
+    resolve_agent_configuration,
     resolve_docker_support_configuration,
 )
 from docker_agent.agent.configuration_schema import (
@@ -478,7 +479,8 @@ def effective_agent_configuration(
         ) from exc
 
     try:
-        effective = resolve_docker_support_configuration(
+        effective = resolve_agent_configuration(
+            descriptor,
             base_settings,
             record,
         )
