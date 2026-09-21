@@ -59,6 +59,7 @@ function chatTurn(
   overrides: Partial<ChatResponse> = {},
 ): ChatResponse {
   return {
+    agent_type: "docker_support",
     conversation_id: "conversation-1",
     session_id: "session-1",
     session_active: false,
