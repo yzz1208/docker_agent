@@ -8,8 +8,11 @@ from uuid import uuid4
 from pydantic import BaseModel, Field
 
 from docker_agent.agent.conversation import AgentConversation
-from docker_agent.agent.protocol import AgentProtocol, AgentTurnProtocol
-from docker_agent.graph.service import LangGraphAgentTurnResult
+from docker_agent.agent.protocol import (
+    AgentProtocol,
+    AgentTurnProtocol,
+    PersistableAgentTurnProtocol,
+)
 
 
 class ChatRequest(BaseModel):
@@ -139,7 +142,7 @@ def build_chat_response(
     answer_text: str | None = None
     execution: AgentExecutionResponse | None = None
 
-    if isinstance(result, LangGraphAgentTurnResult):
+    if isinstance(result, PersistableAgentTurnProtocol):
         execution = AgentExecutionResponse(
             planned_workers=list(result.supervisor_plan.workers),
             completed_workers=[record.role for record in result.worker_trace],
