@@ -12,6 +12,7 @@ from docker_agent.persistence.agent_config import (
     get_agent_configuration,
     list_agent_configurations,
     update_agent_configuration,
+    validate_agent_configuration_settings,
 )
 from docker_agent.persistence.chat import (
     ChatConversationMismatch,
@@ -66,4 +67,5 @@ __all__ = [
     "rename_conversation",
     "save_execution",
     "update_agent_configuration",
+    "validate_agent_configuration_settings",
 ]
