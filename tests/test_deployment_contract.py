@@ -4,7 +4,7 @@ from pathlib import Path
 import yaml
 
 from docker_agent.config import get_settings
-from scripts.production_preflight import main as production_preflight
+from docker_agent.deployment import production_preflight
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -124,7 +124,7 @@ def test_deployment_runbook_covers_backup_rollback_and_restore() -> None:
 
 
 def test_production_preflight_never_prints_full_database_url() -> None:
-    script = (ROOT / "scripts/production_preflight.py").read_text(
+    script = (ROOT / "src/docker_agent/deployment.py").read_text(
         encoding="utf-8"
     )
 
