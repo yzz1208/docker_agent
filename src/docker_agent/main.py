@@ -1,4 +1,5 @@
 import logging
+from contextlib import asynccontextmanager
 from functools import lru_cache
 from time import perf_counter
 from typing import Annotated
@@ -55,7 +56,13 @@ from docker_agent.api.operations import (
     build_agent_run_summary_response,
 )
 from docker_agent.config import get_settings
-from docker_agent.db import check_database, create_db_engine
+from docker_agent.db import (
+    DatabaseSchemaNotReady,
+    check_database,
+    create_db_engine,
+    get_database_readiness,
+    require_database_ready,
+)
 from docker_agent.evaluation_comparison import (
     EvaluationComparisonError,
     compare_evaluation_runs,
@@ -99,10 +106,35 @@ settings = get_settings()
 configure_structured_logging(settings.app_log_level)
 logger = logging.getLogger(__name__)
 
+@asynccontextmanager
+async def app_lifespan(_app: FastAPI):
+    """Own database readiness and engine disposal for the API process."""
+
+    engine = get_persistence_engine()
+    try:
+        readiness = require_database_ready(engine)
+        logger.info(
+            "Application database is ready",
+            extra={
+                "database_schema_current": readiness.schema_current,
+                "database_revision": ",".join(
+                    readiness.current_revisions
+                ),
+            },
+        )
+        yield
+    finally:
+        get_chat_coordinator.cache_clear()
+        get_agent.cache_clear()
+        engine.dispose()
+        get_persistence_engine.cache_clear()
+
+
 app = FastAPI(
     title=settings.app_name,
     version="0.1.0",
     description="Docker technical support agent backend.",
+    lifespan=app_lifespan,
 )
 
 
@@ -212,19 +244,73 @@ def health() -> dict[str, str]:
 
 @app.get("/health/db", tags=["system"])
 def database_health() -> JSONResponse:
-    """Check whether the configured PostgreSQL instance is reachable."""
+    """Check whether the configured database is reachable."""
 
     try:
-        healthy = check_database()
-    except SQLAlchemyError as exc:
+        healthy = check_database(get_persistence_engine())
+    except SQLAlchemyError:
         return JSONResponse(
-            status_code=503,
-            content={"status": "error", "database": "unreachable", "detail": str(exc)},
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            content={
+                "status": "error",
+                "database": "unreachable",
+            },
         )
 
     return JSONResponse(
-        status_code=200 if healthy else 503,
-        content={"status": "ok" if healthy else "error", "database": "reachable"},
+        status_code=(
+            status.HTTP_200_OK
+            if healthy
+            else status.HTTP_503_SERVICE_UNAVAILABLE
+        ),
+        content={
+            "status": "ok" if healthy else "error",
+            "database": "reachable" if healthy else "unreachable",
+        },
+    )
+
+
+@app.get("/health/ready", tags=["system"])
+def readiness_health() -> JSONResponse:
+    """Check database connectivity and Alembic schema readiness."""
+
+    try:
+        readiness = get_database_readiness(
+            get_persistence_engine()
+        )
+    except SQLAlchemyError:
+        return JSONResponse(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            content={
+                "status": "error",
+                "database": "unreachable",
+                "schema": "unknown",
+            },
+        )
+
+    if not readiness.schema_current:
+        return JSONResponse(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            content={
+                "status": "error",
+                "database": "reachable",
+                "schema": "outdated",
+                "current_revisions": list(
+                    readiness.current_revisions
+                ),
+                "head_revisions": list(readiness.head_revisions),
+            },
+        )
+
+    return JSONResponse(
+        status_code=status.HTTP_200_OK,
+        content={
+            "status": "ok",
+            "database": "reachable",
+            "schema": "current",
+            "current_revisions": list(readiness.current_revisions),
+            "head_revisions": list(readiness.head_revisions),
+        },
     )
 
 
