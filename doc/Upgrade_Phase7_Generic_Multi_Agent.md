@@ -72,6 +72,150 @@ The Registry becomes the authority for runtime-supported Agent types. Persistenc
 contain configuration records that are not runtime-registered, so stored configuration and
 runtime capability remain separate concepts.
 
+### Step 1 implementation status
+
+**IMPLEMENTED pending local gate**
+
+Added runtime registry primitives:
+
+~~~text
+AgentDescriptor
+AgentRegistry
+AgentAlreadyRegistered
+AgentNotRegistered
+AgentRegistryError
+DOCKER_SUPPORT_DESCRIPTOR
+build_agent_registry()
+~~~
+
+The Docker Support descriptor currently declares:
+
+~~~text
+agent_type
+    docker_support
+
+capabilities
+    chat
+    documentation_qa
+    runtime_diagnostics
+    multi_agent_supervision
+
+knowledge_sources
+    docker_docs
+
+toolsets
+    docker_read_only
+
+worker_roles
+    knowledge
+    runtime
+    diagnosis
+
+configuration_groups
+    model_settings
+    retrieval_settings
+    runtime_settings
+~~~
+
+The registry normalizes external lookup values such as:
+
+~~~text
+Docker-Support
+docker_support
+  docker-support
+~~~
+
+to the canonical:
+
+~~~text
+docker_support
+~~~
+
+while descriptor registration itself requires an already canonical Agent type.
+
+### Runtime catalog API
+
+Read-only Agent catalog endpoints:
+
+~~~text
+GET /agents
+GET /agents/{agent_type}
+~~~
+
+Unknown runtime Agent types return HTTP 404 from the catalog.
+
+The existing effective-configuration endpoint now asks the Registry whether an Agent type is
+runtime-supported before resolving it.
+
+Persisted configuration remains a separate concept: the persistence layer may contain a
+future/unregistered Agent configuration without implying that the current process can run
+that Agent.
+
+### Shared identity
+
+The Docker Support default display name is now sourced from:
+
+~~~text
+DOCKER_SUPPORT_DESCRIPTOR
+~~~
+
+rather than duplicated inside the configuration resolver.
+
+The existing Chat flow still defaults to Docker Support in Step 1. Dynamic Agent selection
+is intentionally deferred to Step 2/3.
+
+### Web contract preparation
+
+The Web API layer now contains:
+
+~~~text
+AgentDescriptor
+listAgents()
+getAgentDescriptor()
+~~~
+
+Development Vite and production Nginx both proxy:
+
+~~~text
+/agents
+/agents/{agent_type}
+~~~
+
+No Agent Selector UI is added in Step 1.
+
+### Step 1 coverage
+
+Tests cover:
+
+- default Docker Support descriptor metadata;
+- normalized registry lookup;
+- deterministic registry listing;
+- duplicate registration rejection;
+- unknown Agent lookup;
+- descriptor canonical-type validation;
+- duplicate descriptor metadata rejection;
+- `GET /agents`;
+- normalized `GET /agents/{agent_type}`;
+- unknown Agent HTTP 404;
+- Web Agent API serialization;
+- production Nginx Agent API proxy contract.
+
+Focused gate:
+
+~~~powershell
+uv run ruff check .
+uv run pytest -v tests/test_agent_registry.py tests/test_agents_api.py tests/test_agent_effective_configuration_api.py tests/test_agent_configuration_api.py tests/test_production_containers.py
+~~~
+
+Frontend:
+
+~~~powershell
+cd web
+npm run typecheck
+npm test
+cd ..
+~~~
+
 ## Step 2 — Agent Factory and Runtime Sessions
 
 Replace the single cached `get_agent()` path with an Agent Factory keyed by `agent_type`.
