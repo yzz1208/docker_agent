@@ -39,6 +39,7 @@ def test_sanitize_evaluation_payload_redacts_nested_secrets() -> None:
     sanitized = sanitize_evaluation_payload(
         {
             "model_name": "demo-model",
+            "max_tokens": 1024,
             "provider": {
                 "api_key": "super-secret",
                 "token": "",
@@ -53,6 +54,7 @@ def test_sanitize_evaluation_payload_redacts_nested_secrets() -> None:
 
     assert sanitized == {
         "model_name": "demo-model",
+        "max_tokens": 1024,
         "provider": {
             "api_key": {
                 "configured": True,
