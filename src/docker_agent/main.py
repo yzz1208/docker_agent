@@ -55,7 +55,10 @@ from docker_agent.api.operations import (
     build_agent_run_response,
     build_agent_run_summary_response,
 )
-from docker_agent.config import get_settings
+from docker_agent.config import (
+    get_settings,
+    require_application_runtime_settings,
+)
 from docker_agent.db import (
     check_database,
     create_db_engine,
@@ -107,8 +110,9 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def app_lifespan(_app: FastAPI):
-    """Own database readiness and engine disposal for the API process."""
+    """Own runtime validation, database readiness, and engine disposal."""
 
+    require_application_runtime_settings(settings)
     engine = get_persistence_engine()
     try:
         readiness = require_database_ready(engine)
