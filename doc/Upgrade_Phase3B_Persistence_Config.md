@@ -358,3 +358,74 @@ DELETE /conversations/{conversation_id}
 
 The first mutation scope will be intentionally small: rename a conversation and delete
 its persisted history. Agent configuration persistence remains the following step.
+
+
+## Step 6 — Conversation Mutation API
+
+The conversation sidebar backend now supports the two basic mutations needed by a product UI:
+
+~~~text
+PATCH  /conversations/{conversation_id}
+DELETE /conversations/{conversation_id}
+~~~
+
+### Rename
+
+The PATCH endpoint accepts:
+
+~~~json
+{
+  "title": "New conversation title"
+}
+~~~
+
+Titles are trimmed, must not be empty, and are limited to 240 characters. Renaming also
+updates the conversation activity timestamp.
+
+### Delete
+
+Deleting a conversation removes:
+
+~~~text
+agent_executions
+messages
+conversation
+~~~
+
+in explicit repository order. This avoids depending on SQLite foreign-key cascade settings
+during tests while remaining compatible with PostgreSQL.
+
+Before durable history is deleted, the coordinator clears any active clarification sessions
+bound to that conversation. This prevents an in-memory session from surviving after its
+durable conversation has been removed.
+
+### Sidebar capability after Step 6
+
+The backend now supports:
+
+~~~text
+list conversations
+open conversation
+rename conversation
+delete conversation
+continue conversation
+show per-message execution metadata
+~~~
+
+This completes the first backend CRUD foundation for a future conversation sidebar.
+
+## Next
+
+Step 7 begins Agent Configuration persistence. The first configuration model will remain
+small and reusable across future agent types:
+
+~~~text
+agent_type
+display_name
+model settings
+retrieval/runtime preferences
+enabled flag
+updated_at
+~~~
+
+Secrets such as API keys will not be stored in the general JSON configuration payload.
