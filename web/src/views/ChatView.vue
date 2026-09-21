@@ -331,8 +331,9 @@ onMounted(workspace.refreshConversations);
           <h3>Workers</h3>
           <div class="chip-row">
             <span
-              v-for="worker in workspace.latestTurn.value.execution
-                .completed_workers"
+              v-for="worker in (
+                workspace.latestTurn.value.execution?.completed_workers ?? []
+              )"
               :key="worker"
               class="chip"
             >
