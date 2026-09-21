@@ -79,6 +79,21 @@ class JsonLogFormatter(logging.Formatter):
             if value is not None:
                 payload[key] = value
 
+        for field_name in (
+            "http_method",
+            "http_route",
+            "http_status",
+            "duration_ms",
+            "agent_type",
+            "agent_status",
+            "agent_route",
+            "error_type",
+            "worker_count",
+        ):
+            value = getattr(record, field_name, None)
+            if value is not None:
+                payload[field_name] = value
+
         if record.exc_info:
             payload["exception"] = self.formatException(record.exc_info)
 
