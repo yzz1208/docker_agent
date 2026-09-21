@@ -368,6 +368,7 @@ def main() -> None:
             aggregate_metrics=summary,
         )
         summary["evaluation_run_id"] = evaluation_run.id
+        engine.dispose()
 
     if args.summary_output is not None:
         args.summary_output.parent.mkdir(parents=True, exist_ok=True)
