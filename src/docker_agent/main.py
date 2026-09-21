@@ -17,9 +17,9 @@ from docker_agent.agent.configuration import (
     resolve_docker_support_settings,
 )
 from docker_agent.agent.registry import (
+    DOCKER_SUPPORT_DESCRIPTOR,
     AgentNotRegistered,
     AgentRegistryError,
-    DOCKER_SUPPORT_DESCRIPTOR,
     build_agent_registry,
 )
 from docker_agent.agent.router import AgentRoutingError
