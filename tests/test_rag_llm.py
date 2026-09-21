@@ -26,6 +26,7 @@ def test_openai_compatible_client_sends_chat_completion_request() -> None:
             model="test-model",
             base_url="https://example.test/v1",
             api_key="secret",
+            max_tokens=1536,
             client=http_client,
         )
         answer = client.complete(system_prompt="system", user_prompt="user")
@@ -34,6 +35,7 @@ def test_openai_compatible_client_sends_chat_completion_request() -> None:
     assert captured["url"] == "https://example.test/v1/chat/completions"
     assert captured["authorization"] == "Bearer secret"
     assert '"model":"test-model"' in str(captured["body"])
+    assert '"max_tokens":1536' in str(captured["body"])
 
 
 def test_openai_compatible_client_rejects_malformed_response() -> None:
