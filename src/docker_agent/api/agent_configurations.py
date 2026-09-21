@@ -6,7 +6,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from docker_agent.agent.configuration import (
-    EffectiveDockerSupportConfiguration,
+    EffectiveAgentConfiguration,
 )
 from docker_agent.agent.configuration_schema import (
     ConfigurationGroupDescriptor,
@@ -102,7 +102,7 @@ def build_agent_configuration_response(
 def build_effective_agent_configuration_response(
     *,
     base: Settings,
-    effective: EffectiveDockerSupportConfiguration,
+    effective: EffectiveAgentConfiguration,
     record: AgentConfigurationRecord | None,
     descriptor: AgentDescriptor,
 ) -> EffectiveAgentConfigurationResponse:
