@@ -18,7 +18,9 @@ from docker_agent.api.agent_configurations import (
     AgentConfigurationCreateRequest,
     AgentConfigurationResponse,
     AgentConfigurationUpdateRequest,
+    EffectiveAgentConfigurationResponse,
     build_agent_configuration_response,
+    build_effective_agent_configuration_response,
 )
 from docker_agent.api.chat import (
     ChatRequest,
@@ -158,6 +160,63 @@ def agent_configurations() -> list[AgentConfigurationResponse]:
         build_agent_configuration_response(record)
         for record in records
     ]
+
+
+@app.get(
+    "/agent-configurations/{agent_type}/effective",
+    response_model=EffectiveAgentConfigurationResponse,
+    tags=["agent-configurations"],
+)
+def effective_agent_configuration(
+    agent_type: str,
+) -> EffectiveAgentConfigurationResponse:
+    """Resolve one agent's safe product preferences into runtime values."""
+
+    normalized_agent_type = agent_type.strip()
+    if normalized_agent_type != "docker_support":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "Effective configuration is not supported for agent type "
+                f"{normalized_agent_type!r}."
+            ),
+        )
+
+    base_settings = get_settings()
+    try:
+        record = get_agent_configuration(
+            get_persistence_engine(),
+            normalized_agent_type,
+        )
+    except AgentConfigurationNotFound:
+        record = None
+    except SQLAlchemyError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="PostgreSQL is unavailable.",
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+    try:
+        effective = resolve_docker_support_configuration(
+            base_settings,
+            record,
+        )
+    except AgentConfigurationResolutionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Invalid effective agent configuration: {exc}",
+        ) from exc
+
+    return build_effective_agent_configuration_response(
+        base=base_settings,
+        effective=effective,
+        record=record,
+    )
 
 
 @app.get(
