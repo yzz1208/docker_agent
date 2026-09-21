@@ -1,5 +1,7 @@
 import type {
   AgentConfiguration,
+  AgentConfigurationCreate,
+  AgentConfigurationMutation,
   ChatResponse,
   ConversationDetail,
   ConversationSummary,
@@ -143,9 +145,18 @@ export function getEffectiveAgentConfiguration(
   );
 }
 
+export function createAgentConfiguration(
+  body: AgentConfigurationCreate,
+): Promise<AgentConfiguration> {
+  return request<AgentConfiguration>("/agent-configurations", {
+    method: "POST",
+    body: jsonBody(body),
+  });
+}
+
 export function updateAgentConfiguration(
   agentType: string,
-  body: JsonBody,
+  body: AgentConfigurationMutation,
 ): Promise<AgentConfiguration> {
   return request<AgentConfiguration>(
     `/agent-configurations/${encodeURIComponent(agentType)}`,
