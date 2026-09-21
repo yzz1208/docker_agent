@@ -1,8 +1,9 @@
 import { createRouter, createWebHistory } from "vue-router";
 
 import ChatView from "./views/ChatView.vue";
-import SettingsView from "./views/SettingsView.vue";
 import NotFoundView from "./views/NotFoundView.vue";
+import OperationsView from "./views/OperationsView.vue";
+import SettingsView from "./views/SettingsView.vue";
 
 const router = createRouter({
   history: createWebHistory(),
@@ -11,6 +12,11 @@ const router = createRouter({
       path: "/",
       name: "chat",
       component: ChatView,
+    },
+    {
+      path: "/operations",
+      name: "operations",
+      component: OperationsView,
     },
     {
       path: "/settings",
