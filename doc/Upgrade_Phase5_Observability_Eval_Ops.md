@@ -604,13 +604,7 @@ Focused local gate:
 
 ~~~powershell
 uv run ruff check .
-uv run pytest -v \
-  tests/test_observability.py \
-  tests/test_observability_api.py \
-  tests/test_agent_run_telemetry.py \
-  tests/test_operations_api.py \
-  tests/test_persistent_chat.py \
-  tests/test_chat_api.py
+uv run pytest -v tests/test_observability.py tests/test_observability_api.py tests/test_agent_run_telemetry.py tests/test_operations_api.py tests/test_persistent_chat.py tests/test_chat_api.py
 ~~~
 
 With FastAPI + PostgreSQL running:
