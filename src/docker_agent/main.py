@@ -14,7 +14,10 @@ from docker_agent.agent.configuration import (
     AgentDisabledError,
     require_enabled,
     resolve_docker_support_configuration,
-    resolve_docker_support_settings,
+)
+from docker_agent.agent.configuration_schema import (
+    ConfigurationSchemaError,
+    resolve_settings_from_schema,
 )
 from docker_agent.agent.factory import (
     AgentFactory,
@@ -489,6 +492,7 @@ def effective_agent_configuration(
         base=base_settings,
         effective=effective,
         record=record,
+        descriptor=descriptor,
     )
 
 
@@ -526,6 +530,31 @@ def agent_configuration_detail(
     return build_agent_configuration_response(record)
 
 
+def _validate_registered_agent_preferences(
+    *,
+    agent_type: str,
+    model_settings: dict[str, object],
+    retrieval_settings: dict[str, object],
+    runtime_settings: dict[str, object],
+) -> None:
+    try:
+        descriptor = agent_registry.get(agent_type)
+    except AgentNotRegistered:
+        return
+
+    try:
+        resolve_settings_from_schema(
+            get_settings(),
+            schema=descriptor.configuration_schema,
+            rules=descriptor.configuration_rules,
+            model_settings=model_settings,
+            retrieval_settings=retrieval_settings,
+            runtime_settings=runtime_settings,
+        )
+    except ConfigurationSchemaError as exc:
+        raise ValueError(str(exc)) from exc
+
+
 @app.post(
     "/agent-configurations",
     response_model=AgentConfigurationResponse,
@@ -544,16 +573,12 @@ def create_agent_configuration_endpoint(
             runtime_settings=request.runtime_settings,
         )
 
-        if (
-            request.agent_type.strip()
-            == DOCKER_SUPPORT_DESCRIPTOR.agent_type
-        ):
-            resolve_docker_support_settings(
-                get_settings(),
-                model_settings=request.model_settings,
-                retrieval_settings=request.retrieval_settings,
-                runtime_settings=request.runtime_settings,
-            )
+        _validate_registered_agent_preferences(
+            agent_type=request.agent_type,
+            model_settings=request.model_settings,
+            retrieval_settings=request.retrieval_settings,
+            runtime_settings=request.runtime_settings,
+        )
 
         record = create_agent_configuration(
             get_persistence_engine(),
@@ -607,16 +632,18 @@ def update_agent_configuration_endpoint(
             runtime_settings=request.runtime_settings,
         )
 
-        if (
-            agent_type.strip()
-            == DOCKER_SUPPORT_DESCRIPTOR.agent_type
-        ):
+        try:
+            descriptor = agent_registry.get(agent_type)
+        except AgentNotRegistered:
+            descriptor = None
+
+        if descriptor is not None:
             current = get_agent_configuration(
                 get_persistence_engine(),
                 agent_type,
             )
-            resolve_docker_support_settings(
-                get_settings(),
+            _validate_registered_agent_preferences(
+                agent_type=descriptor.agent_type,
                 model_settings=(
                     request.model_settings
                     if request.model_settings is not None
