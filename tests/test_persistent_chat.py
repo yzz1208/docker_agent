@@ -289,7 +289,6 @@ def test_conversation_agent_type_must_match_coordinator() -> None:
         raise AssertionError("ConversationAgentTypeMismatch was not raised")
 
 
-
 def test_persistent_chat_records_failed_run_and_reraises_original_error() -> None:
     engine = _engine()
     coordinator = PersistentChatCoordinator(
