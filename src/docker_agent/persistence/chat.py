@@ -10,6 +10,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from docker_agent.api.chat import ChatSessionManager
 from docker_agent.graph.service import LangGraphAgentTurnResult
+from docker_agent.observability import correlation_context, metrics
 from docker_agent.persistence.adapter import (
     PersistedAgentTurn,
     persist_langgraph_turn,
@@ -93,8 +94,35 @@ class PersistentChatCoordinator:
             conversation_id=conversation.id,
             agent_type=self.agent_type,
         )
+        with correlation_context(
+            run_id=run.id,
+            conversation_id=conversation.id,
+        ):
+            return self._execute_run(
+                run=run,
+                conversation=conversation,
+                normalized_message=normalized_message,
+                session_id=session_id,
+            )
+
+    def _execute_run(
+        self,
+        *,
+        run: AgentRunRecord,
+        conversation: ConversationRecord,
+        normalized_message: str,
+        session_id: str | None,
+    ) -> PersistentChatTurn:
         started = perf_counter()
         result: LangGraphAgentTurnResult | None = None
+
+        logger.info(
+            "Agent run started",
+            extra={
+                "agent_type": self.agent_type,
+                "agent_status": "running",
+            },
+        )
 
         try:
             resolved_session_id, active, raw_result = self.sessions.chat(
@@ -114,17 +142,24 @@ class PersistentChatCoordinator:
                 result=result,
             )
         except Exception as exc:
+            duration_ms = _duration_ms(started)
+            route = (
+                result.decision.route
+                if result is not None
+                else None
+            )
+            completed_workers = (
+                tuple(record.role for record in result.worker_trace)
+                if result is not None
+                else ()
+            )
             try:
                 run = finalize_agent_run_failure(
                     self.engine,
                     run.id,
-                    duration_ms=_duration_ms(started),
+                    duration_ms=duration_ms,
                     error=exc,
-                    route=(
-                        result.decision.route
-                        if result is not None
-                        else None
-                    ),
+                    route=route,
                     use_docs=(
                         result.decision.use_docs
                         if result is not None
@@ -135,25 +170,37 @@ class PersistentChatCoordinator:
                         if result is not None
                         else ()
                     ),
-                    completed_workers=(
-                        tuple(
-                            record.role
-                            for record in result.worker_trace
-                        )
-                        if result is not None
-                        else ()
-                    ),
+                    completed_workers=completed_workers,
                 )
             except _TELEMETRY_FINALIZATION_ERRORS:
                 logger.exception(
-                    "Failed to finalize failed agent run telemetry",
-                    extra={
-                        "run_id": run.id,
-                        "conversation_id": conversation.id,
-                    },
+                    "Failed to finalize failed agent run telemetry"
                 )
+
+            metrics.record_agent_run(
+                status="failed",
+                duration_ms=duration_ms,
+                route=route,
+                workers=completed_workers,
+                error_type=type(exc).__name__,
+            )
+            logger.exception(
+                "Agent run failed",
+                extra={
+                    "agent_type": self.agent_type,
+                    "agent_status": "failed",
+                    "agent_route": route,
+                    "error_type": type(exc).__name__,
+                    "worker_count": len(completed_workers),
+                    "duration_ms": duration_ms,
+                },
+            )
             raise
 
+        duration_ms = _duration_ms(started)
+        completed_workers = tuple(
+            record.role for record in result.worker_trace
+        )
         try:
             run = finalize_agent_run_success(
                 self.engine,
@@ -161,19 +208,30 @@ class PersistentChatCoordinator:
                 route=result.decision.route,
                 use_docs=result.decision.use_docs,
                 planned_workers=result.supervisor_plan.workers,
-                completed_workers=tuple(
-                    record.role for record in result.worker_trace
-                ),
-                duration_ms=_duration_ms(started),
+                completed_workers=completed_workers,
+                duration_ms=duration_ms,
             )
         except _TELEMETRY_FINALIZATION_ERRORS:
             logger.exception(
-                "Failed to finalize successful agent run telemetry",
-                extra={
-                    "run_id": run.id,
-                    "conversation_id": conversation.id,
-                },
+                "Failed to finalize successful agent run telemetry"
             )
+
+        metrics.record_agent_run(
+            status="succeeded",
+            duration_ms=duration_ms,
+            route=result.decision.route,
+            workers=completed_workers,
+        )
+        logger.info(
+            "Agent run completed",
+            extra={
+                "agent_type": self.agent_type,
+                "agent_status": "succeeded",
+                "agent_route": result.decision.route,
+                "worker_count": len(completed_workers),
+                "duration_ms": duration_ms,
+            },
+        )
 
         with self._lock:
             if active:
