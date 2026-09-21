@@ -13,6 +13,7 @@ from docker_agent.persistence.models import (
     Conversation,
     Message,
     PersistenceBase,
+    utc_now,
 )
 
 MessageRole = Literal["user", "assistant", "system"]
@@ -135,7 +136,7 @@ def append_message(
         conversation = session.get(Conversation, normalized_conversation_id)
         if conversation is None:
             raise ConversationNotFound(normalized_conversation_id)
-        conversation.updated_at = row.created_at
+        conversation.updated_at = utc_now()
 
         session.commit()
         session.refresh(row)
