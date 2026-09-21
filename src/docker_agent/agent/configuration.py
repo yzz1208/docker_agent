@@ -94,6 +94,17 @@ def resolve_docker_support_configuration(
     _apply_retrieval_settings(record.retrieval_settings, updates)
     _apply_runtime_settings(record.runtime_settings, updates)
 
+    dense_weight = float(
+        updates.get("retrieval_dense_weight", base.retrieval_dense_weight)
+    )
+    keyword_weight = float(
+        updates.get("retrieval_keyword_weight", base.retrieval_keyword_weight)
+    )
+    if dense_weight == 0 and keyword_weight == 0:
+        raise AgentConfigurationResolutionError(
+            "retrieval dense_weight and keyword_weight cannot both be zero"
+        )
+
     candidate_k = int(
         updates.get("retrieval_candidate_k", base.retrieval_candidate_k)
     )
@@ -196,17 +207,6 @@ def _apply_retrieval_settings(
         updates["rag_context_max_chars"] = _positive_int(
             source["context_max_chars"],
             field="retrieval_settings.context_max_chars",
-        )
-
-    dense = float(
-        updates.get("retrieval_dense_weight", 1.0)
-    )
-    keyword = float(
-        updates.get("retrieval_keyword_weight", 1.0)
-    )
-    if dense == 0 and keyword == 0:
-        raise AgentConfigurationResolutionError(
-            "retrieval dense_weight and keyword_weight cannot both be zero"
         )
 
 
