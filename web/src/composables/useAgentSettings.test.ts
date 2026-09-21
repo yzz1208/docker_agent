@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type {
+  AgentDescriptor,
   EffectiveAgentConfiguration,
   EffectiveConfigurationField,
 } from "../lib/types";
@@ -17,12 +18,14 @@ vi.mock("../lib/api", () => ({
     }
   },
   createAgentConfiguration: vi.fn(),
+  getAgentDescriptor: vi.fn(),
   getEffectiveAgentConfiguration: vi.fn(),
   updateAgentConfiguration: vi.fn(),
 }));
 
 import {
   createAgentConfiguration,
+  getAgentDescriptor,
   getEffectiveAgentConfiguration,
   updateAgentConfiguration,
 } from "../lib/api";
@@ -39,6 +42,188 @@ function field(
     editable: true,
     secure: false,
     configured: value !== null && value !== "",
+  };
+}
+
+function agentDescriptor(): AgentDescriptor {
+  return {
+    agent_type: "docker_support",
+    display_name: "Docker Support",
+    description: "Docker support",
+    capabilities: ["chat"],
+    knowledge_sources: ["docker_docs"],
+    toolsets: ["docker_read_only"],
+    worker_roles: ["knowledge"],
+    configuration_groups: [
+      "model_settings",
+      "retrieval_settings",
+      "runtime_settings",
+    ],
+    configuration_schema: [
+      {
+        key: "model_settings",
+        label: "Model",
+        fields: [
+          {
+            key: "model_name",
+            label: "Model name",
+            description: "Model identifier",
+            kind: "string",
+            minimum: null,
+            maximum: null,
+          },
+          {
+            key: "temperature",
+            label: "Sampling temperature",
+            description: "Model sampling temperature",
+            kind: "number",
+            minimum: 0,
+            maximum: 2,
+          },
+          {
+            key: "max_tokens",
+            label: "Max tokens",
+            description: "Maximum output tokens",
+            kind: "integer",
+            minimum: 1,
+            maximum: null,
+          },
+          {
+            key: "timeout_seconds",
+            label: "Model timeout",
+            description: "Model request timeout",
+            kind: "number",
+            minimum: 0.001,
+            maximum: null,
+          },
+          {
+            key: "max_retries",
+            label: "Model retries",
+            description: "Model retry count",
+            kind: "integer",
+            minimum: 0,
+            maximum: null,
+          },
+          {
+            key: "retry_backoff_seconds",
+            label: "Retry backoff",
+            description: "Retry delay",
+            kind: "number",
+            minimum: 0,
+            maximum: null,
+          },
+        ],
+      },
+      {
+        key: "retrieval_settings",
+        label: "Search",
+        fields: [
+          {
+            key: "top_k",
+            label: "Candidate count",
+            description: "Candidate retrieval count",
+            kind: "integer",
+            minimum: 1,
+            maximum: null,
+          },
+          {
+            key: "rrf_k",
+            label: "RRF K",
+            description: "Fusion smoothing",
+            kind: "integer",
+            minimum: 0,
+            maximum: null,
+          },
+          {
+            key: "dense_weight",
+            label: "Dense weight",
+            description: "Dense ranking weight",
+            kind: "number",
+            minimum: 0,
+            maximum: null,
+          },
+          {
+            key: "keyword_weight",
+            label: "Keyword weight",
+            description: "Keyword ranking weight",
+            kind: "number",
+            minimum: 0,
+            maximum: null,
+          },
+          {
+            key: "rerank_top_k",
+            label: "Rerank count",
+            description: "Reranked result count",
+            kind: "integer",
+            minimum: 1,
+            maximum: null,
+          },
+          {
+            key: "context_max_chars",
+            label: "Context size",
+            description: "Maximum context characters",
+            kind: "integer",
+            minimum: 1,
+            maximum: null,
+          },
+        ],
+      },
+      {
+        key: "runtime_settings",
+        label: "Runtime",
+        fields: [
+          {
+            key: "max_steps",
+            label: "Runtime max steps",
+            description: "Maximum runtime steps",
+            kind: "integer",
+            minimum: 1,
+            maximum: null,
+          },
+          {
+            key: "tool_timeout_seconds",
+            label: "Tool timeout",
+            description: "Tool request timeout",
+            kind: "number",
+            minimum: 0.001,
+            maximum: null,
+          },
+          {
+            key: "logs_max_lines",
+            label: "Log line limit",
+            description: "Maximum log lines",
+            kind: "integer",
+            minimum: 1,
+            maximum: null,
+          },
+          {
+            key: "evidence_max_chars",
+            label: "Evidence size",
+            description: "Maximum evidence characters",
+            kind: "integer",
+            minimum: 1,
+            maximum: null,
+          },
+        ],
+      },
+    ],
+    configuration_rules: [
+      {
+        kind: "less_equal",
+        group: "retrieval_settings",
+        fields: ["rerank_top_k", "top_k"],
+        target_field: "rerank_top_k",
+        message: "Rerank count must not exceed candidate count.",
+      },
+      {
+        kind: "not_all_zero",
+        group: "retrieval_settings",
+        fields: ["dense_weight", "keyword_weight"],
+        target_field: "keyword_weight",
+        message: "Retrieval weights cannot both be zero.",
+      },
+    ],
+    default_enabled: true,
   };
 }
 
@@ -129,9 +314,32 @@ function findField(
 
 beforeEach(() => {
   vi.resetAllMocks();
+  vi.mocked(getAgentDescriptor).mockResolvedValue(agentDescriptor());
 });
 
 describe("editable agent settings", () => {
+  it("hydrates field metadata from the Agent descriptor", async () => {
+    vi.mocked(getEffectiveAgentConfiguration).mockResolvedValue(
+      effectiveConfiguration(),
+    );
+
+    const settings = useAgentSettings();
+    await settings.load();
+
+    const temperature = findField(
+      settings,
+      "model_settings",
+      "temperature",
+    );
+    expect(temperature.label).toBe("Sampling temperature");
+    expect(temperature.minimum).toBe(0);
+    expect(temperature.maximum).toBe(2);
+
+    expect(
+      settings.descriptor.value?.configuration_schema[1]?.label,
+    ).toBe("Search");
+  });
+
   it("creates the first persisted config with explicit overrides only", async () => {
     vi.mocked(getEffectiveAgentConfiguration)
       .mockResolvedValueOnce(effectiveConfiguration())
@@ -228,7 +436,7 @@ describe("editable agent settings", () => {
     );
   });
 
-  it("blocks invalid cross-field retrieval settings before saving", async () => {
+  it("applies descriptor cross-field ordering rules before saving", async () => {
     vi.mocked(getEffectiveAgentConfiguration).mockResolvedValue(
       effectiveConfiguration(),
     );
@@ -253,12 +461,12 @@ describe("editable agent settings", () => {
       "retrieval_settings",
       "rerank_top_k",
     );
-    expect(rerankTopK.error).toContain(
-      "must not exceed candidate top K",
+    expect(rerankTopK.error).toBe(
+      "Rerank count must not exceed candidate count.",
     );
   });
 
-  it("blocks zero dense and keyword weights together", async () => {
+  it("applies descriptor not-all-zero rules before saving", async () => {
     vi.mocked(getEffectiveAgentConfiguration).mockResolvedValue(
       effectiveConfiguration(),
     );
@@ -282,7 +490,9 @@ describe("editable agent settings", () => {
     keyword.input = "0";
 
     expect(await settings.save()).toBe(false);
-    expect(keyword.error).toContain("cannot both be zero");
+    expect(keyword.error).toBe(
+      "Retrieval weights cannot both be zero.",
+    );
     expect(createAgentConfiguration).not.toHaveBeenCalled();
   });
 });
