@@ -11,8 +11,6 @@ x-backend-common: &backend-common
     APP_ENV: production
     APP_HOST: 0.0.0.0
     APP_PORT: 8000
-    DATABASE_URL: >-
-      postgresql+psycopg://${POSTGRES_USER:-docker_agent}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env.production}@postgres:5432/${POSTGRES_DB:-docker_agent}
     EMBEDDING_CACHE_DIR: /app/.cache/huggingface
     EMBEDDING_DEVICE: ${CONTAINER_EMBEDDING_DEVICE:-cpu}
     RERANK_CACHE_DIR: /app/.cache/huggingface
