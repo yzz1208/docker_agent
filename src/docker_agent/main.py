@@ -212,9 +212,6 @@ def database_health() -> JSONResponse:
     )
 
 
-
-
-
 @app.get(
     "/agent-configurations",
     response_model=list[AgentConfigurationResponse],
@@ -783,7 +780,6 @@ def reset_chat_session(session_id: str) -> Response:
         )
 
     return Response(status_code=status.HTTP_204_NO_CONTENT)
-
 
 
 def _request_route_template(request: Request) -> str:
