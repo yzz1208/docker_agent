@@ -40,9 +40,11 @@ from docker_agent.api.conversations import (
     build_conversation_summary,
 )
 from docker_agent.api.evaluations import (
+    EvaluationComparisonResponse,
     EvaluationRunDetailResponse,
     EvaluationRunResponse,
     build_evaluation_case_response,
+    build_evaluation_comparison_response,
     build_evaluation_run_response,
 )
 from docker_agent.api.operations import (
@@ -54,6 +56,10 @@ from docker_agent.api.operations import (
 )
 from docker_agent.config import get_settings
 from docker_agent.db import check_database, create_db_engine
+from docker_agent.evaluation_comparison import (
+    EvaluationComparisonError,
+    compare_evaluation_runs,
+)
 from docker_agent.graph.service import LangGraphDockerSupportAgent
 from docker_agent.observability import (
     configure_structured_logging,
@@ -496,6 +502,44 @@ def evaluation_runs(
         ) from exc
 
     return [build_evaluation_run_response(record) for record in records]
+
+
+@app.get(
+    "/operations/evaluations/compare",
+    response_model=EvaluationComparisonResponse,
+    tags=["operations"],
+)
+def compare_evaluations(
+    baseline_id: str,
+    candidate_id: str,
+    max_regression: float = 0.02,
+) -> EvaluationComparisonResponse:
+    """Compare two compatible persisted evaluation runs."""
+
+    try:
+        comparison = compare_evaluation_runs(
+            get_persistence_engine(),
+            baseline_run_id=baseline_id,
+            candidate_run_id=candidate_id,
+            max_regression=max_regression,
+        )
+    except EvaluationRunNotFound as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Evaluation run was not found.",
+        ) from exc
+    except SQLAlchemyError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="PostgreSQL is unavailable.",
+        ) from exc
+    except (EvaluationComparisonError, ValueError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+    return build_evaluation_comparison_response(comparison)
 
 
 @app.get(
