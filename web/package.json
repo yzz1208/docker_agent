@@ -16,6 +16,7 @@
     "pretest": "npm run clean:generated",
     "test": "vitest run",
     "smoke": "node scripts/smoke.mjs",
+    "smoke:production": "node scripts/production-smoke.mjs",
     "preview": "vite preview"
   },
   "dependencies": {
