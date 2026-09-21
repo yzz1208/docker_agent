@@ -19,6 +19,7 @@ def test_production_compose_orders_migration_before_backend() -> None:
         "migrate",
         "rag-schema",
         "backend",
+        "prometheus",
         "web",
     }
 
@@ -41,7 +42,7 @@ def test_production_compose_orders_migration_before_backend() -> None:
     }
 
 
-def test_production_compose_uses_readiness_health_and_single_public_web_port() -> None:
+def test_production_compose_uses_readiness_health_and_bounded_public_ports() -> None:
     compose = yaml.safe_load(_read("compose.prod.yaml"))
     services = compose["services"]
 
@@ -140,3 +141,35 @@ def test_environment_secret_files_are_ignored_but_examples_are_tracked() -> None
     assert ".env.production" in gitignore
     assert (ROOT / ".env.test.example").is_file()
     assert (ROOT / ".env.production.example").is_file()
+
+
+def test_prometheus_monitoring_profile_scrapes_backend_internally() -> None:
+    compose = yaml.safe_load(_read("compose.prod.yaml"))
+    prometheus = compose["services"]["prometheus"]
+    config = yaml.safe_load(
+        _read("docker/prometheus/prometheus.yml")
+    )
+
+    assert prometheus["profiles"] == ["monitoring"]
+    assert prometheus["depends_on"]["backend"] == {
+        "condition": "service_healthy"
+    }
+    assert prometheus["ports"] == [
+        "${PROMETHEUS_PORT:-9090}:9090"
+    ]
+
+    scrape = config["scrape_configs"][0]
+    assert scrape["metrics_path"] == "/metrics"
+    assert scrape["static_configs"][0]["targets"] == [
+        "backend:8000"
+    ]
+
+
+def test_nginx_does_not_expose_metrics_publicly() -> None:
+    nginx = _read("docker/nginx/default.conf")
+
+    assert "location = /metrics" in nginx
+    metrics_block = nginx.split("location = /metrics", maxsplit=1)[1]
+    metrics_block = metrics_block.split("}", maxsplit=1)[0]
+    assert "return 404;" in metrics_block
+    assert "proxy_pass" not in metrics_block
