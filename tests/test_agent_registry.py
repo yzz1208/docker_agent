@@ -2,6 +2,7 @@ import pytest
 
 from docker_agent.agent.registry import (
     DOCKER_SUPPORT_DESCRIPTOR,
+    INFRASTRUCTURE_TROUBLESHOOTER_DESCRIPTOR,
     AgentAlreadyRegistered,
     AgentDescriptor,
     AgentNotRegistered,
@@ -43,6 +44,33 @@ def test_default_registry_contains_docker_support_descriptor() -> None:
         "knowledge",
         "runtime",
         "diagnosis",
+    )
+
+
+def test_default_registry_contains_infrastructure_troubleshooter() -> None:
+    registry = build_agent_registry()
+
+    descriptor = registry.get("infrastructure-troubleshooter")
+
+    assert descriptor is INFRASTRUCTURE_TROUBLESHOOTER_DESCRIPTOR
+    assert descriptor.display_name == "Infrastructure Troubleshooter"
+    assert descriptor.capabilities == (
+        "chat",
+        "incident_triage",
+        "hypothesis_generation",
+        "next_step_planning",
+    )
+    assert descriptor.knowledge_sources == (
+        "embedded_incident_playbook",
+    )
+    assert descriptor.toolsets == ()
+    assert descriptor.worker_roles == (
+        "triage",
+        "diagnosis",
+    )
+    assert descriptor.configuration_groups == (
+        "model_settings",
+        "runtime_settings",
     )
 
 
