@@ -607,6 +607,252 @@ Descriptor/configuration metadata should drive:
 
 Secure environment-owned values remain non-editable.
 
+### Step 4 implementation status
+
+**IMPLEMENTED pending local gate**
+
+Agent configuration metadata now has one authoritative source: the runtime Agent descriptor.
+
+### Generic configuration schema primitives
+
+Added:
+
+~~~text
+ConfigurationFieldDescriptor
+ConfigurationGroupDescriptor
+ConfigurationRuleDescriptor
+ConfigurationSchemaError
+validate_configuration_schema()
+resolve_settings_from_schema()
+~~~
+
+A field descriptor declares:
+
+~~~text
+key
+settings_name
+label
+description
+kind
+minimum
+maximum
+~~~
+
+The internal `settings_name` mapping is used by the backend but is not exposed to Web
+clients.
+
+Supported editable value kinds currently are:
+
+~~~text
+string
+integer
+number
+~~~
+
+Supported cross-field rules currently are:
+
+~~~text
+less_equal
+not_all_zero
+~~~
+
+These are sufficient for the existing Docker Support configuration while remaining reusable
+for the next Agent.
+
+### Docker Support descriptor as the schema source
+
+`DOCKER_SUPPORT_DESCRIPTOR` now owns the complete editable configuration schema for:
+
+~~~text
+Model
+Retrieval
+Runtime
+~~~
+
+including field labels, descriptions, ranges, Settings mappings, and cross-field rules.
+
+The former duplicate field maps in `agent.configuration` are removed.
+
+Docker Support still exposes the same persisted preference keys, so existing database records
+and API payloads remain compatible.
+
+### Schema integrity validation
+
+Agent registration now rejects invalid configuration metadata before runtime use.
+
+Validation includes:
+
+- duplicate configuration groups;
+- duplicate field keys;
+- unsupported group names;
+- empty field keys/labels/descriptions/settings mappings;
+- unsupported value kinds;
+- minimum greater than maximum;
+- multiple UI fields mapped to one Settings field;
+- rules referencing unknown groups or fields;
+- invalid rule arity.
+
+This prevents a newly registered Agent from publishing a malformed Settings UI/API contract.
+
+### Generic effective configuration resolver
+
+Added:
+
+~~~text
+resolve_agent_configuration(
+    descriptor,
+    base_settings,
+    persisted_record,
+)
+~~~
+
+The resolver:
+
+1. starts from secure application/environment Settings;
+2. applies only fields declared by the Agent descriptor;
+3. validates primitive ranges;
+4. validates descriptor cross-field rules;
+5. preserves secure environment-owned values;
+6. returns effective/persisted metadata.
+
+`resolve_docker_support_configuration()` remains as a compatibility wrapper.
+
+A registered descriptor can therefore resolve effective configuration even before a runtime
+Agent builder exists. Configuration metadata and runtime implementation remain separate
+platform concerns.
+
+### Registered vs persisted-only Agent configuration
+
+For a **registered Agent**:
+
+~~~text
+configuration request
+    ↓
+Registry canonical agent_type
+    ↓
+descriptor schema validation
+    ↓
+persistence
+~~~
+
+For an **unregistered persisted-only Agent**:
+
+~~~text
+configuration request
+    ↓
+secret-field rejection
+    ↓
+persistence
+~~~
+
+This preserves the earlier platform rule that stored configuration does not imply runtime
+support.
+
+Registered Agent identities are canonicalized, so:
+
+~~~text
+Docker-Support
+docker_support
+~~~
+
+refer to the same `docker_support` configuration record.
+
+Runtime invalidation after a saved configuration is also generic: any Agent with a registered
+Factory builder is invalidated by its canonical Agent type.
+
+### Agent catalog API metadata
+
+`GET /agents` and `GET /agents/{agent_type}` now include:
+
+~~~text
+configuration_schema
+configuration_rules
+~~~
+
+The public schema exposes UI-safe metadata but does not expose internal `settings_name`
+mappings.
+
+### Descriptor-driven Web Settings
+
+`useAgentSettings(agentType)` now loads in parallel:
+
+~~~text
+GET /agents/{agent_type}
+GET /agent-configurations/{agent_type}/effective
+~~~
+
+The composable builds editable fields directly from descriptor metadata.
+
+The Web layer no longer contains a Docker-specific field table for:
+
+~~~text
+model_name
+temperature
+top_k
+rerank_top_k
+dense_weight
+keyword_weight
+max_steps
+...
+~~~
+
+Labels, descriptions, input kinds, minimum/maximum values, group labels, and cross-field
+validation now come from the Agent descriptor.
+
+`SettingsView.vue` also renders group names and the Agent display name from descriptor
+metadata rather than hardcoded Docker Support labels.
+
+The page still defaults to `docker_support` until the visual Agent selector is added in
+Step 6.
+
+### Step 4 coverage
+
+Backend tests cover:
+
+- generic Settings field mapping;
+- unsupported field rejection;
+- unsupported group rejection;
+- numeric range validation;
+- generic cross-field rules;
+- schema integrity validation;
+- Docker Support effective configuration compatibility;
+- canonical registered Agent configuration identity;
+- a test-only `future_agent` with a different configuration schema;
+- effective configuration for a descriptor-only Agent;
+- Agent catalog schema/rule serialization.
+
+Frontend tests cover:
+
+- descriptor-provided labels and ranges;
+- descriptor-provided group labels;
+- requested Agent type loading;
+- explicit override serialization;
+- descriptor `less_equal` validation;
+- descriptor `not_all_zero` validation;
+- Agent descriptor API schema serialization.
+
+Focused backend gate:
+
+~~~powershell
+uv run ruff check .
+uv run pytest -v tests/test_agent_configuration_schema.py tests/test_agent_registry.py tests/test_agents_api.py tests/test_agent_effective_configuration.py tests/test_agent_effective_configuration_api.py tests/test_agent_configuration_api.py
+~~~
+
+Frontend:
+
+~~~powershell
+cd web
+npm run typecheck
+npm test
+cd ..
+~~~
+
+After the focused gate passes, run the full backend suite:
+
+~~~powershell
+uv run pytest -v
+~~~
+
 ## Step 5 — Second Real Agent
 
 Add a genuinely different Agent implementation to prove the abstraction.
