@@ -73,6 +73,17 @@ assert(
 );
 console.log("✓ Conversation listing");
 
+const operations = await request("/operations/summary?hours=24");
+assert(
+  typeof operations?.total_runs === "number",
+  "Operations summary did not return total_runs.",
+);
+assert(
+  "success_rate" in operations && "duration_p95_ms" in operations,
+  "Operations summary is missing core run metrics.",
+);
+console.log("✓ Operations summary");
+
 const smokeMessage = process.env.SMOKE_CHAT_MESSAGE?.trim();
 if (smokeMessage) {
   console.log(
