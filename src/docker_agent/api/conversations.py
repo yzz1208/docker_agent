@@ -12,6 +12,10 @@ from docker_agent.persistence.store import (
 )
 
 
+class ConversationRenameRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=240)
+
+
 class ConversationSummaryResponse(BaseModel):
     id: str
     agent_type: str
