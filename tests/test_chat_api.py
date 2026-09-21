@@ -1,5 +1,6 @@
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
+from sqlalchemy.engine import Engine
 from sqlalchemy.pool import StaticPool
 
 from docker_agent.agent.answer import AgentAnswer
@@ -92,7 +93,7 @@ class FakeLangGraphAgent:
         )
 
 
-def _coordinator() -> tuple[PersistentChatCoordinator, object]:
+def _coordinator() -> tuple[PersistentChatCoordinator, Engine]:
     engine = create_engine(
         "sqlite+pysqlite://",
         connect_args={"check_same_thread": False},
