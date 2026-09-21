@@ -25,6 +25,8 @@ EvaluationCaseStatus = Literal["passed", "failed", "error"]
 _SECRET_FRAGMENTS = (
     "api_key",
     "apikey",
+    "base_url",
+    "database_url",
     "access_token",
     "refresh_token",
     "password",
