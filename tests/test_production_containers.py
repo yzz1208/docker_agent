@@ -165,6 +165,13 @@ def test_prometheus_monitoring_profile_scrapes_backend_internally() -> None:
     ]
 
 
+def test_nginx_proxies_registered_agent_apis() -> None:
+    nginx = _read("docker/nginx/default.conf")
+
+    assert "location = /agents" in nginx
+    assert "location ^~ /agents/" in nginx
+
+
 def test_nginx_does_not_expose_metrics_publicly() -> None:
     nginx = _read("docker/nginx/default.conf")
 
