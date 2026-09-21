@@ -12,6 +12,7 @@
     "typecheck": "vue-tsc --noEmit",
     "pretest": "npm run clean:generated",
     "test": "vitest run",
+    "smoke": "node scripts/smoke.mjs",
     "preview": "vite preview"
   },
   "dependencies": {
