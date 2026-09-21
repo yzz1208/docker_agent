@@ -200,7 +200,6 @@ def test_schema_enforces_cross_field_rules() -> None:
         )
 
 
-
 def test_schema_integrity_rejects_duplicate_groups() -> None:
     duplicate = ConfigurationGroupDescriptor(
         key="model_settings",
