@@ -306,3 +306,42 @@ def test_database_health_hides_database_exception_details(
         "database": "unreachable",
     }
     assert "super-secret" not in response.text
+
+
+
+def test_app_lifespan_rejects_invalid_runtime_config_before_database(
+    monkeypatch,
+) -> None:
+    engine_created = False
+
+    def reject_runtime(_settings: object) -> None:
+        raise ValueError("production model config is invalid")
+
+    def create_engine_unexpectedly(**_kwargs: object) -> object:
+        nonlocal engine_created
+        engine_created = True
+        return object()
+
+    get_persistence_engine.cache_clear()
+    get_chat_coordinator.cache_clear()
+    get_agent.cache_clear()
+
+    monkeypatch.setattr(
+        "docker_agent.main.require_application_runtime_settings",
+        reject_runtime,
+    )
+    monkeypatch.setattr(
+        "docker_agent.main.create_db_engine",
+        create_engine_unexpectedly,
+    )
+
+    with (
+        pytest.raises(
+            ValueError,
+            match="production model config is invalid",
+        ),
+        TestClient(app),
+    ):
+        pass
+
+    assert engine_created is False
