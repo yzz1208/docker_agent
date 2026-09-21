@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from docker_agent.persistence.models import (
     AgentExecution,
+    AgentRun,
     Conversation,
     Message,
     PersistenceBase,
@@ -239,6 +240,11 @@ def delete_conversation(
                     AgentExecution.message_id.in_(message_ids)
                 )
             )
+        session.execute(
+            delete(AgentRun).where(
+                AgentRun.conversation_id == normalized_id
+            )
+        )
         session.execute(
             delete(Message).where(
                 Message.conversation_id == normalized_id
