@@ -103,6 +103,7 @@ from docker_agent.persistence import (
     delete_conversation,
     get_agent_configuration,
     get_agent_run,
+    get_conversation,
     get_evaluation_run,
     list_agent_configurations,
     list_agent_runs,
@@ -1011,6 +1012,40 @@ def delete_conversation_endpoint(conversation_id: str) -> Response:
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
+def _resolve_chat_agent_type(
+    request: ChatRequest,
+) -> str:
+    if request.conversation_id is None:
+        requested = (
+            request.agent_type
+            or DOCKER_SUPPORT_DESCRIPTOR.agent_type
+        )
+        return agent_registry.get(requested).agent_type
+
+    conversation_id = request.conversation_id.strip()
+    if not conversation_id:
+        raise ValueError("conversation_id must not be empty")
+
+    conversation = get_conversation(
+        get_persistence_engine(),
+        conversation_id,
+    )
+    descriptor = agent_registry.get(conversation.agent_type)
+
+    if request.agent_type is None:
+        return descriptor.agent_type
+
+    requested = agent_registry.get(request.agent_type)
+    if requested.agent_type != descriptor.agent_type:
+        raise ConversationAgentTypeMismatch(
+            f"conversation agent_type={descriptor.agent_type!r} "
+            f"does not match requested agent_type="
+            f"{requested.agent_type!r}"
+        )
+
+    return descriptor.agent_type
+
+
 @app.post("/chat", response_model=ChatResponse, tags=["agent"])
 def chat(
     request: ChatRequest,
@@ -1019,7 +1054,8 @@ def chat(
     """Run and persist one product chat turn."""
 
     try:
-        turn = get_chat_coordinator().chat(
+        agent_type = _resolve_chat_agent_type(request)
+        turn = get_chat_coordinator(agent_type).chat(
             message=request.message,
             conversation_id=request.conversation_id,
             session_id=request.session_id,
@@ -1032,6 +1068,16 @@ def chat(
     except (ChatConversationMismatch, ConversationAgentTypeMismatch) as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
+    except AgentNotRegistered as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Agent type is not registered.",
+        ) from exc
+    except AgentRegistryError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(exc),
         ) from exc
     except AgentDisabledError as exc:
@@ -1072,11 +1118,13 @@ def chat(
 
     response.headers["X-Run-ID"] = turn.run.id
     response.headers["X-Conversation-ID"] = turn.conversation.id
+    response.headers["X-Agent-Type"] = turn.conversation.agent_type
 
     return build_chat_response(
         turn.session_id,
         turn.session_active,
         turn.result,
+        agent_type=turn.conversation.agent_type,
         conversation_id=turn.conversation.id,
     )
 
@@ -1086,11 +1134,24 @@ def chat(
     status_code=status.HTTP_204_NO_CONTENT,
     tags=["agent"],
 )
-def reset_chat_session(session_id: str) -> Response:
-    """Discard clarification state without deleting conversation history."""
+def reset_chat_session(
+    session_id: str,
+    agent_type: str | None = None,
+) -> Response:
+    """Discard one Agent's clarification state without deleting history."""
 
     try:
-        removed = get_chat_coordinator().reset(session_id)
+        descriptor = agent_registry.get(
+            agent_type or DOCKER_SUPPORT_DESCRIPTOR.agent_type
+        )
+        removed = get_chat_coordinator(
+            descriptor.agent_type
+        ).reset(session_id)
+    except AgentRegistryError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
