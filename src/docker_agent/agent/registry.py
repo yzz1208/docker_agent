@@ -53,6 +53,7 @@ def _validate_labels(
                 f"{field} must not contain empty values"
             )
 
+
 @dataclass(frozen=True, slots=True)
 class AgentDescriptor:
     """Immutable runtime metadata for one supported Agent type."""
