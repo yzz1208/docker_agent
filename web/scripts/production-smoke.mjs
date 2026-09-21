@@ -2,15 +2,20 @@ const appUrl = (
   process.env.APP_URL ?? "http://127.0.0.1:8080"
 ).replace(/\/$/, "");
 
-async function fetchText(path) {
+async function fetchResponse(path) {
   const response = await fetch(`${appUrl}${path}`);
   const text = await response.text();
-  if (!response.ok) {
+  return { response, text };
+}
+
+async function fetchText(path) {
+  const result = await fetchResponse(path);
+  if (!result.response.ok) {
     throw new Error(
-      `GET ${path} failed with ${response.status}: ${text}`,
+      `GET ${path} failed with ${result.response.status}: ${result.text}`,
     );
   }
-  return { response, text };
+  return result;
 }
 
 function assert(condition, message) {
@@ -43,12 +48,11 @@ assert(
 );
 console.log("✓ API readiness through Nginx");
 
-const metrics = await fetchText("/metrics");
+const metrics = await fetchResponse("/metrics");
 assert(
-  metrics.text.includes("docker_agent_http_requests_total") &&
-    metrics.text.includes("docker_agent_run_duration_seconds"),
-  "Prometheus metrics are missing expected Agent metrics.",
+  metrics.response.status === 404,
+  "Public Nginx must not expose /metrics.",
 );
-console.log("✓ Prometheus metrics through Nginx");
+console.log("✓ Public metrics endpoint is closed");
 
 console.log("Production smoke test passed.");
