@@ -106,3 +106,30 @@ def test_production_smoke_checks_spa_readiness_and_metrics() -> None:
     assert "/health/ready" in smoke
     assert "/metrics" in smoke
     assert "docker_agent_run_duration_seconds" in smoke
+
+
+
+def test_deployment_runbook_covers_backup_rollback_and_restore() -> None:
+    runbook = (ROOT / "doc/Production_Deployment_Runbook.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "production_preflight.py" in runbook
+    assert "pg_dump" in runbook
+    assert "alembic downgrade <target_revision>" in runbook
+    assert "Restore from logical backup" in runbook
+    assert "smoke:production" in runbook
+    assert "Evaluation Regression Gate" in runbook
+    assert "down -v" in runbook
+
+
+def test_production_preflight_never_prints_full_database_url() -> None:
+    script = (ROOT / "scripts/production_preflight.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert '"host": database.host' in script
+    assert '"database": database.database' in script
+    assert '"api_key_configured": bool(settings.model_api_key)' in script
+    assert '"database_url": settings.database_url' not in script
+    assert '"api_key": settings.model_api_key' not in script
