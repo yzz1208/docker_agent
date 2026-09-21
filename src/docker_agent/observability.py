@@ -13,6 +13,13 @@ from typing import Iterator
 from uuid import uuid4
 
 _REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
+_LOG_SECRET_PATTERNS = (
+    re.compile(
+        r"(?i)(api[_-]?key|token|password|secret)\\s*[:=]\\s*[^\\s,;]+"
+    ),
+    re.compile(r"(?i)bearer\\s+[A-Za-z0-9._~+\\-/=]+"),
+    re.compile(r"\\bsk-[A-Za-z0-9_-]{8,}\\b"),
+)
 
 _request_id: ContextVar[str | None] = ContextVar(
     "docker_agent_request_id",
@@ -56,7 +63,7 @@ class JsonLogFormatter(logging.Formatter):
             "timestamp": datetime.now(UTC).isoformat(),
             "level": record.levelname,
             "logger": record.name,
-            "message": record.getMessage(),
+            "message": redact_log_text(record.getMessage()),
         }
 
         for key, value in (
@@ -95,9 +102,28 @@ class JsonLogFormatter(logging.Formatter):
                 payload[field_name] = value
 
         if record.exc_info:
-            payload["exception"] = self.formatException(record.exc_info)
+            payload["exception"] = redact_log_text(
+                self.formatException(record.exc_info)
+            )
 
         return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+
+
+def redact_log_text(value: str) -> str:
+    redacted = value
+    for pattern in _LOG_SECRET_PATTERNS:
+        redacted = pattern.sub(_redact_log_match, redacted)
+    return redacted
+
+
+def _redact_log_match(match: re.Match[str]) -> str:
+    text = match.group(0)
+    if text.lower().startswith("bearer "):
+        return "Bearer [REDACTED]"
+    if text.lower().startswith("sk-"):
+        return "[REDACTED]"
+    key = re.split(r"[:=]", text, maxsplit=1)[0].strip()
+    return f"{key}=[REDACTED]"
 
 
 def configure_structured_logging(level: str = "INFO") -> None:
