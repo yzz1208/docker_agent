@@ -16,7 +16,7 @@ class DummyAgent:
     def __init__(self, name: str) -> None:
         self.name = name
 
-    def handle(self, question: str):
+    def handle(self, question: str) -> None:
         raise NotImplementedError(question)
 
 
