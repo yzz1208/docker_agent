@@ -45,6 +45,25 @@ class AgentConfigurationAlreadyExists(ValueError):
     """Raised when trying to create a duplicate agent configuration."""
 
 
+def validate_agent_configuration_settings(
+    *,
+    model_settings: dict[str, object] | None = None,
+    retrieval_settings: dict[str, object] | None = None,
+    runtime_settings: dict[str, object] | None = None,
+) -> None:
+    """Reject secrets before runtime-specific validation or persistence."""
+
+    _validated_settings(model_settings, field_name="model_settings")
+    _validated_settings(
+        retrieval_settings,
+        field_name="retrieval_settings",
+    )
+    _validated_settings(
+        runtime_settings,
+        field_name="runtime_settings",
+    )
+
+
 def create_agent_configuration(
     engine: Engine,
     *,
