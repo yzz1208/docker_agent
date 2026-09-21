@@ -1,7 +1,12 @@
 import pytest
 from pydantic import ValidationError
 
-from docker_agent.config import Settings, get_settings, settings_env_file
+from docker_agent.config import (
+    Settings,
+    get_settings,
+    require_application_runtime_settings,
+    settings_env_file,
+)
 
 
 def _production_settings(**overrides: object) -> Settings:
@@ -66,22 +71,26 @@ def test_production_rejects_sqlite_database() -> None:
         )
 
 
-def test_production_requires_model_identity() -> None:
+def test_production_runtime_requires_model_identity() -> None:
+    settings = _production_settings(model_name="")
+
     with pytest.raises(
-        ValidationError,
+        ValueError,
         match="MODEL_NAME",
     ):
-        _production_settings(model_name="")
+        require_application_runtime_settings(settings)
 
 
-def test_production_rejects_placeholder_values() -> None:
+def test_production_runtime_rejects_placeholder_values() -> None:
+    settings = _production_settings(
+        model_base_url="REPLACE_WITH_MODEL_BASE_URL"
+    )
+
     with pytest.raises(
-        ValidationError,
+        ValueError,
         match="still contains a placeholder",
     ):
-        _production_settings(
-            model_base_url="REPLACE_WITH_MODEL_BASE_URL"
-        )
+        require_application_runtime_settings(settings)
 
 
 def test_production_local_docker_requires_explicit_opt_in() -> None:
@@ -124,3 +133,14 @@ def test_get_settings_loads_environment_specific_dotenv(
         assert settings.database_url == "sqlite+pysqlite:///:memory:"
     finally:
         get_settings.cache_clear()
+
+
+
+def test_non_production_runtime_does_not_require_model_configuration() -> None:
+    settings = Settings(
+        app_env="test",
+        model_name="",
+        model_base_url="",
+    )
+
+    require_application_runtime_settings(settings)
