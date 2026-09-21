@@ -8,7 +8,7 @@ from uuid import uuid4
 from pydantic import BaseModel, Field
 
 from docker_agent.agent.conversation import AgentConversation
-from docker_agent.agent.service import AgentTurnResult, DockerSupportAgent
+from docker_agent.agent.protocol import AgentProtocol, AgentTurnProtocol
 from docker_agent.graph.service import LangGraphAgentTurnResult
 
 
@@ -69,7 +69,7 @@ class ChatSessionNotFound(KeyError):
 class ChatSessionManager:
     """Keep only active clarification sessions in memory."""
 
-    agent_factory: Callable[[], DockerSupportAgent]
+    agent_factory: Callable[[], AgentProtocol]
     _sessions: dict[str, AgentConversation] = field(default_factory=dict)
     _lock: Lock = field(default_factory=Lock)
 
@@ -78,7 +78,7 @@ class ChatSessionManager:
         *,
         message: str,
         session_id: str | None = None,
-    ) -> tuple[str, bool, AgentTurnResult]:
+    ) -> tuple[str, bool, AgentTurnProtocol]:
         message = message.strip()
         if not message:
             raise ValueError("message must not be empty")
@@ -123,7 +123,7 @@ class ChatSessionManager:
 def build_chat_response(
     session_id: str,
     session_active: bool,
-    result: AgentTurnResult,
+    result: AgentTurnProtocol,
     *,
     conversation_id: str | None = None,
 ) -> ChatResponse:
