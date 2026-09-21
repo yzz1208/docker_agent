@@ -56,6 +56,16 @@ function inputStep(field: EditableSettingField): string | undefined {
   return undefined;
 }
 
+function handleOverrideChange(
+  field: EditableSettingField,
+  event: Event,
+): void {
+  const target = event.target;
+  if (target instanceof HTMLInputElement) {
+    settings.setOverride(field, target.checked);
+  }
+}
+
 onMounted(settings.load);
 </script>
 
@@ -213,12 +223,7 @@ onMounted(settings.load);
                     :checked="field.override"
                     type="checkbox"
                     :disabled="settings.saving.value"
-                    @change="
-                      settings.setOverride(
-                        field,
-                        ($event.target as HTMLInputElement).checked,
-                      )
-                    "
+                    @change="handleOverrideChange(field, $event)"
                   />
                   <span>Override</span>
                 </label>
