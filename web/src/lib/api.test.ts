@@ -149,12 +149,12 @@ describe("API client", () => {
 
     await expect(listAgents()).resolves.toEqual([descriptor]);
     await expect(
-      getAgentDescriptor("Docker Support"),
+      getAgentDescriptor("Docker-Support"),
     ).resolves.toEqual(descriptor);
 
     expect(fetchMock.mock.calls[0]?.[0]).toBe("/agents");
     expect(fetchMock.mock.calls[1]?.[0]).toBe(
-      "/agents/Docker%20Support",
+      "/agents/Docker-Support",
     );
   });
 
