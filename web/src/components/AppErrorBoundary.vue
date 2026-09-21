@@ -25,6 +25,10 @@ watch(
 function retry(): void {
   error.value = null;
 }
+
+function reloadApp(): void {
+  window.location.reload();
+}
 </script>
 
 <template>
@@ -39,7 +43,7 @@ function retry(): void {
       <button
         class="button button--ghost"
         type="button"
-        @click="window.location.reload()"
+        @click="reloadApp"
       >
         Reload app
       </button>
