@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import os
 from functools import lru_cache
-from typing import Literal
+from typing import Literal, Self
 
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.engine import make_url
+from sqlalchemy.exc import ArgumentError
 
 AppEnvironment = Literal["development", "test", "production"]
 ToolMode = Literal["mock", "local"]
@@ -108,11 +109,16 @@ class Settings(BaseSettings):
         return value
 
     @model_validator(mode="after")
-    def validate_environment_contract(self) -> "Settings":
+    def validate_environment_contract(self) -> Self:
         if self.app_env != "production":
             return self
 
-        database = make_url(self.database_url)
+        try:
+            database = make_url(self.database_url)
+        except ArgumentError as exc:
+            raise ValueError(
+                "Production DATABASE_URL is invalid"
+            ) from exc
         if database.get_backend_name() != "postgresql":
             raise ValueError(
                 "Production DATABASE_URL must use PostgreSQL"
