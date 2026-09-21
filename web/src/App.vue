@@ -1,5 +1,15 @@
 <script setup lang="ts">
+import { onMounted } from "vue";
 import { RouterLink, RouterView } from "vue-router";
+
+import AppErrorBoundary from "./components/AppErrorBoundary.vue";
+import { useBackendHealth } from "./composables/useBackendHealth";
+
+const backend = useBackendHealth();
+
+onMounted(() => {
+  backend.start();
+});
 </script>
 
 <template>
@@ -10,14 +20,31 @@ import { RouterLink, RouterView } from "vue-router";
         <h1>Support Console</h1>
       </div>
 
-      <nav class="topbar__nav" aria-label="Primary">
-        <RouterLink to="/">Chat</RouterLink>
-        <RouterLink to="/settings">Settings</RouterLink>
-      </nav>
+      <div class="topbar__actions">
+        <button
+          class="backend-status"
+          :data-state="backend.state.value"
+          type="button"
+          :title="backend.detail.value"
+          @click="backend.check"
+        >
+          <span class="backend-status__dot" />
+          <span>{{ backend.label.value }}</span>
+        </button>
+
+        <nav class="topbar__nav" aria-label="Primary">
+          <RouterLink to="/">Chat</RouterLink>
+          <RouterLink to="/settings">Settings</RouterLink>
+        </nav>
+      </div>
     </header>
 
     <main class="app-main">
-      <RouterView />
+      <RouterView v-slot="{ Component, route }">
+        <AppErrorBoundary :reset-key="route.fullPath">
+          <component :is="Component" />
+        </AppErrorBoundary>
+      </RouterView>
     </main>
   </div>
 </template>
