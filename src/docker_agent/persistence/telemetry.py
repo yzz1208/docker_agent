@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from datetime import datetime
+from collections import Counter
+from datetime import UTC, datetime, timedelta
 from typing import Literal
 from uuid import uuid4
 
@@ -36,6 +37,23 @@ class AgentRunRecord:
     error_message: str | None
     started_at: datetime
     completed_at: datetime | None
+
+
+@dataclass(frozen=True, slots=True)
+class AgentRunSummary:
+    window_started_at: datetime
+    window_ended_at: datetime
+    total_runs: int
+    running_runs: int
+    succeeded_runs: int
+    failed_runs: int
+    success_rate: float | None
+    failure_rate: float | None
+    duration_p50_ms: int | None
+    duration_p95_ms: int | None
+    route_distribution: dict[str, int]
+    worker_distribution: dict[str, int]
+    error_distribution: dict[str, int]
 
 
 class AgentRunNotFound(KeyError):
@@ -124,6 +142,99 @@ def list_agent_runs(
     with Session(engine) as session:
         rows = session.scalars(statement).all()
         return tuple(_agent_run_record(row) for row in rows)
+
+
+def summarize_agent_runs(
+    engine: Engine,
+    *,
+    hours: int = 24,
+    now: datetime | None = None,
+) -> AgentRunSummary:
+    if hours <= 0:
+        raise ValueError("hours must be positive")
+    if hours > 24 * 30:
+        raise ValueError("hours must not exceed 720")
+
+    ended_at = now or datetime.now(UTC)
+    if ended_at.tzinfo is None:
+        raise ValueError("now must be timezone-aware")
+    started_at = ended_at - timedelta(hours=hours)
+
+    statement = (
+        select(AgentRun)
+        .where(AgentRun.started_at >= started_at)
+        .where(AgentRun.started_at <= ended_at)
+        .order_by(AgentRun.started_at, AgentRun.id)
+    )
+
+    with Session(engine) as session:
+        rows = session.scalars(statement).all()
+
+    statuses = Counter(row.status for row in rows)
+    running_runs = statuses["running"]
+    succeeded_runs = statuses["succeeded"]
+    failed_runs = statuses["failed"]
+    completed_runs = succeeded_runs + failed_runs
+
+    durations = sorted(
+        int(row.duration_ms)
+        for row in rows
+        if row.status in {"succeeded", "failed"}
+        and row.duration_ms is not None
+    )
+    routes = Counter(
+        str(row.route)
+        for row in rows
+        if row.route is not None
+    )
+    workers: Counter[str] = Counter()
+    for row in rows:
+        workers.update(str(item) for item in row.completed_workers)
+    errors = Counter(
+        str(row.error_type)
+        for row in rows
+        if row.status == "failed" and row.error_type is not None
+    )
+
+    return AgentRunSummary(
+        window_started_at=started_at,
+        window_ended_at=ended_at,
+        total_runs=len(rows),
+        running_runs=running_runs,
+        succeeded_runs=succeeded_runs,
+        failed_runs=failed_runs,
+        success_rate=(
+            succeeded_runs / completed_runs
+            if completed_runs
+            else None
+        ),
+        failure_rate=(
+            failed_runs / completed_runs
+            if completed_runs
+            else None
+        ),
+        duration_p50_ms=_percentile(durations, 0.50),
+        duration_p95_ms=_percentile(durations, 0.95),
+        route_distribution=dict(sorted(routes.items())),
+        worker_distribution=dict(sorted(workers.items())),
+        error_distribution=dict(sorted(errors.items())),
+    )
+
+
+def _percentile(values: list[int], percentile: float) -> int | None:
+    if not values:
+        return None
+    if len(values) == 1:
+        return values[0]
+
+    position = (len(values) - 1) * percentile
+    lower = int(position)
+    upper = min(lower + 1, len(values) - 1)
+    fraction = position - lower
+    interpolated = values[lower] + (
+        values[upper] - values[lower]
+    ) * fraction
+    return round(interpolated)
 
 
 def finalize_agent_run_success(
