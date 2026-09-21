@@ -4,31 +4,37 @@ import {
   ApiError,
   deleteConversation,
   getConversation,
+  listAgents,
   listConversations,
   renameConversation,
   sendChat,
 } from "../lib/api";
 import type {
+  AgentDescriptor,
   ChatResponse,
   ConversationDetail,
   ConversationSummary,
 } from "../lib/types";
 
 export function useConversationWorkspace() {
+  const agents = ref<AgentDescriptor[]>([]);
   const conversations = ref<ConversationSummary[]>([]);
   const detail = ref<ConversationDetail | null>(null);
+  const selectedAgentType = ref("docker_support");
   const activeConversationId = ref<string | null>(null);
   const activeSessionId = ref<string | null>(null);
   const draft = ref("");
 
   const latestTurns = ref<Record<string, ChatResponse>>({});
 
+  const loadingAgents = ref(false);
   const loadingList = ref(false);
   const loadingConversation = ref(false);
   const sending = ref(false);
   const renaming = ref(false);
   const deleting = ref(false);
 
+  const agentError = ref("");
   const listError = ref("");
   const conversationError = ref("");
   const actionError = ref("");
@@ -44,10 +50,27 @@ export function useConversationWorkspace() {
       : "New conversation";
   });
 
+  const activeAgentType = computed(
+    () =>
+      detail.value?.conversation.agent_type ??
+      selectedAgentType.value,
+  );
+
+  const activeAgent = computed(
+    () =>
+      agents.value.find(
+        (agent) => agent.agent_type === activeAgentType.value,
+      ) ?? null,
+  );
+
   const latestTurn = computed(() => {
     const id = activeConversationId.value;
     return id ? latestTurns.value[id] ?? null : null;
   });
+
+  const canSelectAgent = computed(
+    () => !activeConversationId.value && !sending.value,
+  );
 
   const canSend = computed(
     () => draft.value.trim().length > 0 && !sending.value,
@@ -61,6 +84,44 @@ export function useConversationWorkspace() {
       return error.message;
     }
     return "Something went wrong.";
+  }
+
+  function agentDisplayName(agentType: string): string {
+    return (
+      agents.value.find((agent) => agent.agent_type === agentType)
+        ?.display_name ?? agentType
+    );
+  }
+
+  async function refreshAgents(): Promise<void> {
+    loadingAgents.value = true;
+    agentError.value = "";
+    try {
+      agents.value = await listAgents();
+      if (
+        agents.value.length > 0 &&
+        !agents.value.some(
+          (agent) => agent.agent_type === selectedAgentType.value,
+        )
+      ) {
+        selectedAgentType.value =
+          agents.value.find((agent) => agent.default_enabled)
+            ?.agent_type ??
+          agents.value[0]?.agent_type ??
+          selectedAgentType.value;
+      }
+    } catch (error) {
+      agentError.value = errorText(error);
+    } finally {
+      loadingAgents.value = false;
+    }
+  }
+
+  async function initialize(): Promise<void> {
+    await Promise.all([
+      refreshAgents(),
+      refreshConversations(),
+    ]);
   }
 
   async function refreshConversations(): Promise<void> {
@@ -87,6 +148,7 @@ export function useConversationWorkspace() {
       const loaded = await getConversation(id);
       if (requestVersion === conversationRequestVersion) {
         detail.value = loaded;
+        selectedAgentType.value = loaded.conversation.agent_type;
       }
     } catch (error) {
       if (requestVersion === conversationRequestVersion) {
@@ -122,10 +184,16 @@ export function useConversationWorkspace() {
     try {
       const result = await sendChat({
         message,
+        agentType:
+          detail.value?.conversation.agent_type ??
+          (activeConversationId.value
+            ? undefined
+            : selectedAgentType.value),
         conversationId: activeConversationId.value,
         sessionId: activeSessionId.value,
       });
 
+      selectedAgentType.value = result.agent_type;
       activeConversationId.value = result.conversation_id;
       activeSessionId.value = result.session_active
         ? result.session_id
@@ -214,22 +282,32 @@ export function useConversationWorkspace() {
   }
 
   return {
+    agents,
     conversations,
     detail,
+    selectedAgentType,
     activeConversationId,
     activeSessionId,
     draft,
+    activeAgentType,
+    activeAgent,
     latestTurn,
+    loadingAgents,
     loadingList,
     loadingConversation,
     sending,
     renaming,
     deleting,
+    agentError,
     listError,
     conversationError,
     actionError,
     activeTitle,
+    canSelectAgent,
     canSend,
+    agentDisplayName,
+    initialize,
+    refreshAgents,
     refreshConversations,
     openConversation,
     startNewConversation,

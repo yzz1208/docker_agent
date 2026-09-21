@@ -1740,3 +1740,124 @@ a {
     grid-template-columns: 1fr;
   }
 }
+
+
+/* Phase 7: Agent-aware chat and settings */
+.chat-header-controls {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.agent-picker,
+.agent-lock {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 190px;
+  color: #6d798c;
+  font-size: 11px;
+}
+
+.agent-picker select {
+  min-height: 36px;
+  padding: 0 10px;
+  border: 1px solid #cfd8e5;
+  border-radius: 8px;
+  background: white;
+  color: #26354c;
+  outline: none;
+}
+
+.agent-picker select:focus {
+  border-color: #4aa3bf;
+  box-shadow: 0 0 0 3px rgba(8, 126, 164, 0.1);
+}
+
+.agent-picker select:disabled {
+  background: #f4f7fb;
+  color: #8491a5;
+}
+
+.agent-lock {
+  min-width: 0;
+  padding: 5px 9px;
+  border: 1px solid #dfe6ef;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.agent-lock strong {
+  color: #26354c;
+  font-size: 12px;
+}
+
+.conversation-item__meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.conversation-item__agent {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-capability-summary {
+  max-width: 680px;
+  margin-top: 8px;
+}
+
+.agent-capability-panel {
+  padding: 18px;
+  display: grid;
+  gap: 16px;
+}
+
+.agent-capability-panel h2 {
+  margin: 4px 0 0;
+  font-size: 17px;
+}
+
+.agent-capability-panel p:not(.section-label) {
+  margin: 7px 0 0;
+  color: #667388;
+  line-height: 1.55;
+}
+
+.agent-capability-groups {
+  display: grid;
+  gap: 12px;
+}
+
+.agent-capability-groups > div {
+  display: grid;
+  gap: 6px;
+}
+
+.agent-capability-groups strong {
+  color: #40506a;
+  font-size: 12px;
+}
+
+.muted {
+  color: #8491a5;
+  font-size: 12px;
+}
+
+@media (max-width: 820px) {
+  .chat-header-controls {
+    width: 100%;
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .agent-picker,
+  .agent-lock {
+    width: 100%;
+  }
+}

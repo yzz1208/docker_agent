@@ -63,7 +63,7 @@ async function confirmDelete(): Promise<void> {
   }
 }
 
-onMounted(workspace.refreshConversations);
+onMounted(workspace.initialize);
 </script>
 
 <template>
@@ -125,7 +125,12 @@ onMounted(workspace.refreshConversations);
           @click="workspace.openConversation(conversation.id)"
         >
           <strong>{{ conversation.title || "Untitled conversation" }}</strong>
-          <span>{{ formatDate(conversation.updated_at) }}</span>
+          <div class="conversation-item__meta">
+            <span class="conversation-item__agent">
+              {{ workspace.agentDisplayName(conversation.agent_type) }}
+            </span>
+            <span>{{ formatDate(conversation.updated_at) }}</span>
+          </div>
         </button>
       </div>
     </aside>
@@ -133,34 +138,87 @@ onMounted(workspace.refreshConversations);
     <section class="chat-panel panel">
       <div class="panel__header chat-panel__header">
         <div>
-          <p class="section-label">Docker Support</p>
+          <p class="section-label">
+            {{
+              workspace.activeAgent.value?.display_name ??
+              workspace.activeAgentType.value
+            }}
+          </p>
           <h2>{{ workspace.activeTitle.value }}</h2>
         </div>
 
-        <div v-if="workspace.detail.value" class="header-actions">
-          <button
-            class="button button--ghost"
-            :disabled="
-              workspace.sending.value ||
-              workspace.renaming.value ||
-              workspace.deleting.value
-            "
-            @click="openRenameDialog"
+        <div class="chat-header-controls">
+          <label
+            v-if="!workspace.activeConversationId.value"
+            class="agent-picker"
           >
-            Rename
-          </button>
-          <button
-            class="button button--danger"
-            :disabled="
-              workspace.sending.value ||
-              workspace.renaming.value ||
-              workspace.deleting.value
-            "
-            @click="openDeleteDialog"
-          >
-            Delete
-          </button>
+            <span>Agent</span>
+            <select
+              v-model="workspace.selectedAgentType.value"
+              :disabled="
+                workspace.loadingAgents.value ||
+                !workspace.canSelectAgent.value
+              "
+            >
+              <option
+                v-for="agent in workspace.agents.value"
+                :key="agent.agent_type"
+                :value="agent.agent_type"
+              >
+                {{ agent.display_name }}
+              </option>
+            </select>
+          </label>
+
+          <div v-else class="agent-lock">
+            <span>Agent</span>
+            <strong>
+              {{
+                workspace.activeAgent.value?.display_name ??
+                workspace.activeAgentType.value
+              }}
+            </strong>
+          </div>
+
+          <div v-if="workspace.detail.value" class="header-actions">
+            <button
+              class="button button--ghost"
+              :disabled="
+                workspace.sending.value ||
+                workspace.renaming.value ||
+                workspace.deleting.value
+              "
+              @click="openRenameDialog"
+            >
+              Rename
+            </button>
+            <button
+              class="button button--danger"
+              :disabled="
+                workspace.sending.value ||
+                workspace.renaming.value ||
+                workspace.deleting.value
+              "
+              @click="openDeleteDialog"
+            >
+              Delete
+            </button>
+          </div>
         </div>
+      </div>
+
+      <div
+        v-if="workspace.agentError.value"
+        class="alert alert--error"
+      >
+        <span>{{ workspace.agentError.value }}</span>
+        <button
+          class="button button--ghost"
+          type="button"
+          @click="workspace.refreshAgents"
+        >
+          Retry Agent catalog
+        </button>
       </div>
 
       <div
@@ -237,11 +295,47 @@ onMounted(workspace.refreshConversations);
 
         <div v-else class="empty-state">
           <div class="empty-state__badge">Agent</div>
-          <h3>Start a Docker support conversation</h3>
+          <h3>
+            Start a conversation with
+            {{
+              workspace.activeAgent.value?.display_name ??
+              workspace.activeAgentType.value
+            }}
+          </h3>
           <p>
-            Ask about Docker runtime failures, configuration, networking,
-            images, containers, or documentation-backed troubleshooting.
+            {{
+              workspace.activeAgent.value?.description ??
+              "Choose a registered Agent and describe the task."
+            }}
           </p>
+          <div
+            v-if="workspace.activeAgent.value"
+            class="agent-capability-summary"
+          >
+            <div class="chip-row">
+              <span
+                v-for="capability in workspace.activeAgent.value.capabilities"
+                :key="`capability-${capability}`"
+                class="chip"
+              >
+                {{ capability }}
+              </span>
+              <span
+                v-for="toolset in workspace.activeAgent.value.toolsets"
+                :key="`toolset-${toolset}`"
+                class="chip"
+              >
+                tool: {{ toolset }}
+              </span>
+              <span
+                v-for="role in workspace.activeAgent.value.worker_roles"
+                :key="`worker-${role}`"
+                class="chip"
+              >
+                worker: {{ role }}
+              </span>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -258,7 +352,7 @@ onMounted(workspace.refreshConversations);
           <textarea
             v-model="workspace.draft.value"
             rows="3"
-            placeholder="Describe the Docker issue…"
+            :placeholder="`Ask ${workspace.activeAgent.value?.display_name ?? workspace.activeAgentType.value}…`"
             :disabled="workspace.sending.value"
             @keydown.ctrl.enter.prevent="workspace.submitMessage"
           />
@@ -294,6 +388,15 @@ onMounted(workspace.refreshConversations);
       <template v-else>
         <dl class="fact-list">
           <div>
+            <dt>Agent</dt>
+            <dd>
+              {{
+                workspace.activeAgent.value?.display_name ??
+                workspace.activeAgentType.value
+              }}
+            </dd>
+          </div>
+          <div>
             <dt>Route</dt>
             <dd>{{ workspace.latestTurn.value.route }}</dd>
           </div>
@@ -322,6 +425,23 @@ onMounted(workspace.refreshConversations);
         <section class="trace-section">
           <h3>Reason</h3>
           <p>{{ workspace.latestTurn.value.reason }}</p>
+        </section>
+
+        <section
+          v-if="workspace.activeAgent.value"
+          class="trace-section"
+        >
+          <h3>Agent capabilities</h3>
+          <p>{{ workspace.activeAgent.value.description }}</p>
+          <div class="chip-row">
+            <span
+              v-for="capability in workspace.activeAgent.value.capabilities"
+              :key="`trace-capability-${capability}`"
+              class="chip"
+            >
+              {{ capability }}
+            </span>
+          </div>
         </section>
 
         <section

@@ -93,8 +93,9 @@ function parseField(field: EditableSettingField): ConfigurationScalar {
 }
 
 export function useAgentSettings(
-  agentType = "docker_support",
+  initialAgentType = "docker_support",
 ) {
+  const agentType = ref(initialAgentType);
   const descriptor = ref<AgentDescriptor | null>(null);
   const configuration = ref<EffectiveAgentConfiguration | null>(null);
   const displayName = ref("");
@@ -167,15 +168,24 @@ export function useAgentSettings(
     baseline.value = snapshot();
   }
 
-  async function load(): Promise<void> {
+  async function load(nextAgentType?: string): Promise<void> {
+    const currentAgentType = (
+      nextAgentType ?? agentType.value
+    ).trim();
+    if (!currentAgentType) {
+      errorMessage.value = "Agent type must not be empty.";
+      return;
+    }
+
     loading.value = true;
     errorMessage.value = "";
     successMessage.value = "";
     try {
       const [nextDescriptor, next] = await Promise.all([
-        getAgentDescriptor(agentType),
-        getEffectiveAgentConfiguration(agentType),
+        getAgentDescriptor(currentAgentType),
+        getEffectiveAgentConfiguration(currentAgentType),
       ]);
+      agentType.value = currentAgentType;
       hydrate(nextDescriptor, next);
     } catch (error) {
       errorMessage.value = errorText(error);
@@ -326,14 +336,14 @@ export function useAgentSettings(
     try {
       const mutation = buildMutation();
       if (persisted.value) {
-        await updateAgentConfiguration(agentType, mutation);
+        await updateAgentConfiguration(agentType.value, mutation);
       } else {
         const createBody: AgentConfigurationCreate = {
-          agent_type: agentType,
+          agent_type: agentType.value,
           display_name:
             mutation.display_name ??
             descriptor.value?.display_name ??
-            agentType,
+            agentType.value,
           enabled:
             mutation.enabled ??
             descriptor.value?.default_enabled ??
@@ -345,7 +355,7 @@ export function useAgentSettings(
         await createAgentConfiguration(createBody);
       }
 
-      const next = await getEffectiveAgentConfiguration(agentType);
+      const next = await getEffectiveAgentConfiguration(agentType.value);
       if (!descriptor.value) {
         throw new Error("Agent descriptor is unavailable.");
       }
@@ -363,7 +373,7 @@ export function useAgentSettings(
 
   function snapshot(): string {
     return JSON.stringify({
-      agentType,
+      agentType: agentType.value,
       displayName: displayName.value,
       enabled: enabled.value,
       fields: (Object.keys(fields.value) as SettingGroupKey[]).map(
@@ -380,6 +390,7 @@ export function useAgentSettings(
   }
 
   return {
+    agentType,
     descriptor,
     configuration,
     displayName,

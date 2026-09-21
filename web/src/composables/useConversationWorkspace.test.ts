@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type {
+  AgentDescriptor,
   ChatResponse,
   ConversationDetail,
   ConversationSummary,
@@ -19,6 +20,7 @@ vi.mock("../lib/api", () => ({
   },
   deleteConversation: vi.fn(),
   getConversation: vi.fn(),
+  listAgents: vi.fn(),
   listConversations: vi.fn(),
   renameConversation: vi.fn(),
   sendChat: vi.fn(),
@@ -27,11 +29,41 @@ vi.mock("../lib/api", () => ({
 import {
   deleteConversation,
   getConversation,
+  listAgents,
   listConversations,
   renameConversation,
   sendChat,
 } from "../lib/api";
 import { useConversationWorkspace } from "./useConversationWorkspace";
+
+const agents: AgentDescriptor[] = [
+  {
+    agent_type: "docker_support",
+    display_name: "Docker Support",
+    description: "Docker troubleshooting Agent.",
+    capabilities: ["chat", "docker_troubleshooting"],
+    knowledge_sources: ["docker_docs"],
+    toolsets: ["docker_read_only"],
+    worker_roles: ["runtime", "diagnosis"],
+    configuration_groups: [],
+    configuration_schema: [],
+    configuration_rules: [],
+    default_enabled: true,
+  },
+  {
+    agent_type: "infrastructure_troubleshooter",
+    display_name: "Infrastructure Troubleshooter",
+    description: "Infrastructure incident triage Agent.",
+    capabilities: ["chat", "incident_triage"],
+    knowledge_sources: [],
+    toolsets: [],
+    worker_roles: ["triage", "diagnosis"],
+    configuration_groups: [],
+    configuration_schema: [],
+    configuration_rules: [],
+    default_enabled: true,
+  },
+];
 
 const conversation: ConversationSummary = {
   id: "conversation-1",
@@ -44,12 +76,14 @@ const conversation: ConversationSummary = {
 function detailFor(
   id: string,
   title = "Docker issue",
+  agentType = "docker_support",
 ): ConversationDetail {
   return {
     conversation: {
       ...conversation,
       id,
       title,
+      agent_type: agentType,
     },
     messages: [],
   };
@@ -77,6 +111,7 @@ function chatTurn(
 
 beforeEach(() => {
   vi.resetAllMocks();
+  vi.mocked(listAgents).mockResolvedValue(agents);
   vi.mocked(listConversations).mockResolvedValue([conversation]);
   vi.mocked(getConversation).mockResolvedValue(
     detailFor("conversation-1"),
@@ -115,10 +150,49 @@ describe("conversation workspace", () => {
     expect(await workspace.submitMessage()).toBe(true);
     expect(sendChat).toHaveBeenLastCalledWith({
       message: "container api-1",
+      agentType: "docker_support",
       conversationId: "conversation-1",
       sessionId: "session-1",
     });
     expect(workspace.activeSessionId.value).toBeNull();
+  });
+
+  it("uses the selected Agent when starting a new conversation", async () => {
+    vi.mocked(sendChat).mockResolvedValue(
+      chatTurn({
+        agent_type: "infrastructure_troubleshooter",
+        conversation_id: "conversation-infra",
+        session_id: "session-infra",
+        route: "triage",
+      }),
+    );
+    vi.mocked(getConversation).mockResolvedValueOnce(
+      detailFor(
+        "conversation-infra",
+        "API latency incident",
+        "infrastructure_troubleshooter",
+      ),
+    );
+
+    const workspace = useConversationWorkspace();
+    await workspace.refreshAgents();
+    workspace.selectedAgentType.value =
+      "infrastructure_troubleshooter";
+    workspace.draft.value = "checkout-api is returning 503";
+
+    expect(await workspace.submitMessage()).toBe(true);
+    expect(sendChat).toHaveBeenCalledWith({
+      message: "checkout-api is returning 503",
+      agentType: "infrastructure_troubleshooter",
+      conversationId: null,
+      sessionId: null,
+    });
+    expect(workspace.activeAgentType.value).toBe(
+      "infrastructure_troubleshooter",
+    );
+    expect(workspace.activeAgent.value?.display_name).toBe(
+      "Infrastructure Troubleshooter",
+    );
   });
 
   it("preserves latest-turn details while navigating conversations", async () => {

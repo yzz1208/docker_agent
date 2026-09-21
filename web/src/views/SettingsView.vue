@@ -1,14 +1,21 @@
 <script setup lang="ts">
-import { computed, onMounted } from "vue";
+import { computed, onMounted, ref } from "vue";
 
+import { listAgents } from "../lib/api";
 import {
   type EditableSettingField,
   type SettingGroupKey,
   useAgentSettings,
 } from "../composables/useAgentSettings";
-import type { EffectiveConfigurationField } from "../lib/types";
+import type {
+  AgentDescriptor,
+  EffectiveConfigurationField,
+} from "../lib/types";
 
 const settings = useAgentSettings();
+const agents = ref<AgentDescriptor[]>([]);
+const catalogLoading = ref(false);
+const catalogError = ref("");
 
 const editableGroups = computed(() =>
   (settings.descriptor.value?.configuration_schema ?? [])
@@ -64,7 +71,43 @@ function handleOverrideChange(
   }
 }
 
-onMounted(settings.load);
+async function loadPage(): Promise<void> {
+  catalogLoading.value = true;
+  catalogError.value = "";
+  try {
+    agents.value = await listAgents();
+    const selected =
+      agents.value.find(
+        (agent) => agent.agent_type === settings.agentType.value,
+      ) ??
+      agents.value.find((agent) => agent.default_enabled) ??
+      agents.value[0];
+
+    if (selected) {
+      await settings.load(selected.agent_type);
+    } else {
+      catalogError.value = "No registered Agents are available.";
+    }
+  } catch (error) {
+    catalogError.value =
+      error instanceof Error
+        ? error.message
+        : "Could not load the Agent catalog.";
+    await settings.load();
+  } finally {
+    catalogLoading.value = false;
+  }
+}
+
+function handleAgentChange(event: Event): void {
+  const target = event.target;
+  if (!(target instanceof HTMLSelectElement)) {
+    return;
+  }
+  void settings.load(target.value);
+}
+
+onMounted(loadPage);
 </script>
 
 <template>
@@ -87,6 +130,28 @@ onMounted(settings.load);
       </div>
 
       <div class="settings-actions">
+        <label class="agent-picker">
+          <span>Agent</span>
+          <select
+            :value="settings.agentType.value"
+            :disabled="
+              catalogLoading ||
+              settings.loading.value ||
+              settings.saving.value ||
+              settings.dirty.value
+            "
+            @change="handleAgentChange"
+          >
+            <option
+              v-for="agent in agents"
+              :key="agent.agent_type"
+              :value="agent.agent_type"
+            >
+              {{ agent.display_name }}
+            </option>
+          </select>
+        </label>
+
         <button
           class="button button--ghost"
           type="button"
@@ -108,6 +173,20 @@ onMounted(settings.load);
           {{ settings.saving.value ? "Saving…" : "Save settings" }}
         </button>
       </div>
+    </div>
+
+    <div
+      v-if="catalogError"
+      class="alert alert--error"
+    >
+      <span>{{ catalogError }}</span>
+      <button
+        class="button button--ghost"
+        type="button"
+        @click="loadPage"
+      >
+        Retry Agent catalog
+      </button>
     </div>
 
     <div
@@ -194,6 +273,61 @@ onMounted(settings.load);
               ).toLocaleString()
             }}
           </span>
+        </div>
+      </section>
+
+      <section
+        v-if="settings.descriptor.value"
+        class="agent-capability-panel panel"
+      >
+        <div>
+          <p class="section-label">Capabilities</p>
+          <h2>{{ settings.descriptor.value.display_name }}</h2>
+          <p>{{ settings.descriptor.value.description }}</p>
+        </div>
+        <div class="agent-capability-groups">
+          <div>
+            <strong>Capabilities</strong>
+            <div class="chip-row">
+              <span
+                v-for="item in settings.descriptor.value.capabilities"
+                :key="`settings-capability-${item}`"
+                class="chip"
+              >
+                {{ item }}
+              </span>
+            </div>
+          </div>
+          <div>
+            <strong>Toolsets</strong>
+            <div class="chip-row">
+              <span
+                v-for="item in settings.descriptor.value.toolsets"
+                :key="`settings-toolset-${item}`"
+                class="chip"
+              >
+                {{ item }}
+              </span>
+              <span
+                v-if="settings.descriptor.value.toolsets.length === 0"
+                class="muted"
+              >
+                None
+              </span>
+            </div>
+          </div>
+          <div>
+            <strong>Worker roles</strong>
+            <div class="chip-row">
+              <span
+                v-for="item in settings.descriptor.value.worker_roles"
+                :key="`settings-worker-${item}`"
+                class="chip"
+              >
+                {{ item }}
+              </span>
+            </div>
+          </div>
         </div>
       </section>
 
