@@ -234,7 +234,6 @@ def test_app_lifespan_disposes_database_engine(
     assert engine.disposed is True
 
 
-
 def test_app_lifespan_rejects_outdated_database_schema(
     monkeypatch,
 ) -> None:
@@ -306,7 +305,6 @@ def test_database_health_hides_database_exception_details(
         "database": "unreachable",
     }
     assert "super-secret" not in response.text
-
 
 
 def test_app_lifespan_rejects_invalid_runtime_config_before_database(
