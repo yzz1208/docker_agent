@@ -119,6 +119,7 @@ configure_structured_logging(settings.app_log_level)
 logger = logging.getLogger(__name__)
 agent_registry = build_agent_registry()
 
+
 @asynccontextmanager
 async def app_lifespan(_app: FastAPI):
     """Own runtime validation, database readiness, and engine disposal."""
