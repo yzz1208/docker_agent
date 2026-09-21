@@ -1,5 +1,9 @@
 """Role-oriented orchestration contracts for the multi-agent upgrade."""
 
+from docker_agent.multi_agent.execution import (
+    WorkerExecutionRecord,
+    build_worker_execution_record,
+)
 from docker_agent.multi_agent.supervisor import (
     SupervisorPlan,
     WorkerRole,
@@ -22,6 +26,8 @@ __all__ = [
     "RuntimeWorker",
     "RuntimeWorkerResult",
     "SupervisorPlan",
+    "WorkerExecutionRecord",
     "WorkerRole",
+    "build_worker_execution_record",
     "plan_workers",
 ]
