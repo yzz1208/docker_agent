@@ -152,6 +152,10 @@ if (smokeMessage) {
 
     createdConversationId = turn?.conversation_id ?? null;
     assert(
+      turn?.agent_type === "docker_support",
+      "Chat smoke did not return the default canonical Agent type.",
+    );
+    assert(
       typeof turn?.route === "string",
       "Chat smoke did not return a route.",
     );
