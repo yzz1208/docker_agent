@@ -339,7 +339,7 @@ def test_failed_turn_keeps_original_error_when_telemetry_finalize_fails(
         sessions=ChatSessionManager(agent_factory=FailingAgent),
     )
 
-    def fail_telemetry(*args, **kwargs):
+    def fail_telemetry(*_args, **_kwargs):
         raise _telemetry_database_error()
 
     monkeypatch.setattr(
@@ -364,7 +364,7 @@ def test_successful_turn_survives_telemetry_finalize_failure(
         sessions=ChatSessionManager(agent_factory=ImmediateAnswerAgent),
     )
 
-    def fail_telemetry(*args, **kwargs):
+    def fail_telemetry(*_args, **_kwargs):
         raise _telemetry_database_error()
 
     monkeypatch.setattr(
