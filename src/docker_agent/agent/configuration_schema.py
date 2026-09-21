@@ -94,6 +94,7 @@ def validate_configuration_schema(
                 "not_all_zero rule requires at least one field"
             )
 
+
 def resolve_settings_from_schema(
     base: Settings,
     *,
