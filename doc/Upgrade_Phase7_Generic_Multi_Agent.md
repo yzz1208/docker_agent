@@ -1171,6 +1171,53 @@ Targets:
 - Agent-aware Settings;
 - capability summary.
 
+### Step 6 implementation status
+
+**IMPLEMENTED and CI-verified**
+
+The Web now loads the runtime Agent catalog from `GET /agents` and treats Agent identity
+as first-class workspace state.
+
+New conversations can choose a registered Agent before the first message is sent. Once a
+durable conversation exists, the Agent identity is locked to the conversation's persisted
+`agent_type`; opening an existing conversation restores that identity instead of allowing an
+in-place Agent switch.
+
+The conversation list and chat header display the Agent identity, while the empty state and
+execution panel expose descriptor-driven capability information. The chat composer passes the
+selected `agent_type` on new conversations and preserves the persisted Agent type for
+clarification follow-ups.
+
+Settings is now Agent-aware as well. The page loads the Agent catalog, can switch between
+registered Agent configuration schemas, and keeps create/update operations scoped to the
+currently selected Agent. Unsaved settings intentionally lock the selector until the user
+saves or discards the edits.
+
+### Step 6 coverage
+
+Frontend coverage now verifies:
+
+- explicit Agent selection for a new conversation;
+- Agent identity preservation across clarification follow-ups;
+- descriptor/catalog loading;
+- dynamic Settings switching between Agent types;
+- existing conversation navigation, rename, delete, and latest-turn behavior.
+
+The full CI gate validates:
+
+~~~bash
+uv run ruff check .
+uv run pytest -v
+
+cd web
+npm run typecheck
+npm test
+npm run build
+~~~
+
+During the full gate, one stale Step 5 persistence test was also updated from the old
+`LangGraph turn` validation wording to the generic `Agent turn` contract.
+
 ## Step 7 — Cross-Agent Operations and Evaluation
 
 Ensure telemetry, Operations, configuration, and evaluation remain useful when multiple
