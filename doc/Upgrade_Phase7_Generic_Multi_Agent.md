@@ -414,6 +414,186 @@ Requirements:
 - session and conversation mismatch checks remain enforced;
 - existing clients default safely to Docker Support during migration.
 
+### Step 3 implementation status
+
+**IMPLEMENTED pending local gate**
+
+The Chat API is now Agent-aware while preserving the existing Docker Support default.
+
+### Request contract
+
+`POST /chat` now accepts:
+
+~~~json
+{
+  "message": "...",
+  "agent_type": "docker_support",
+  "conversation_id": null,
+  "session_id": null
+}
+~~~
+
+`agent_type` is optional.
+
+For a new conversation:
+
+~~~text
+agent_type omitted
+    ↓
+docker_support
+
+agent_type provided
+    ↓
+Registry normalization
+    ↓
+matching Agent coordinator
+~~~
+
+Unknown/unregistered Agent types are rejected before a conversation is created.
+
+### Persisted conversation authority
+
+For an existing conversation, the persisted:
+
+~~~text
+conversation.agent_type
+~~~
+
+is authoritative.
+
+If the client omits `agent_type`, the backend loads the conversation and automatically
+routes the turn through that Agent type.
+
+If the client explicitly sends a different registered Agent type:
+
+~~~text
+persisted future_agent
+request docker_support
+        ↓
+HTTP 409 Conflict
+~~~
+
+A conversation therefore cannot switch Agent identity after creation.
+
+### Response contract
+
+`ChatResponse` now includes:
+
+~~~text
+agent_type
+~~~
+
+and the HTTP response adds:
+
+~~~text
+X-Agent-Type
+~~~
+
+Both contain the canonical Agent type used for the turn.
+
+This lets future clients track Agent identity without inferring it from route/tool behavior.
+
+### Clarification session reset
+
+Clarification session state is already partitioned by Agent type from Step 2.
+
+The reset API now supports:
+
+~~~text
+DELETE /chat/{session_id}?agent_type={agent_type}
+~~~
+
+The query parameter is optional and defaults to `docker_support` for backward compatibility.
+
+Non-default Agent sessions must identify their Agent type when reset so one Agent's in-memory
+session namespace is never searched through another Agent coordinator.
+
+### Web API preparation
+
+The Web client now supports:
+
+~~~text
+sendChat({
+  message,
+  agentType,
+  conversationId,
+  sessionId
+})
+
+resetChatSession(
+  sessionId,
+  agentType
+)
+~~~
+
+No visual Agent selector is introduced in Step 3. Existing Web chat still omits `agentType`,
+which preserves Docker Support for new conversations and lets existing conversations route
+from their persisted Agent identity.
+
+### Step 3 compatibility
+
+Existing clients that send only:
+
+~~~json
+{
+  "message": "..."
+}
+~~~
+
+continue to create Docker Support conversations.
+
+Existing follow-up clients that send:
+
+~~~json
+{
+  "message": "...",
+  "conversation_id": "...",
+  "session_id": "..."
+}
+~~~
+
+continue to work because the Agent type is resolved from persistence.
+
+### Step 3 coverage
+
+Tests cover:
+
+- legacy new-chat default to Docker Support;
+- canonical Agent identity in response and headers;
+- explicit Agent selection for a new conversation;
+- normalized Agent type selection;
+- existing-conversation Agent inference from persistence;
+- cross-Agent conversation switch rejection with HTTP 409;
+- unregistered Agent rejection before conversation creation;
+- Agent-aware clarification-session reset;
+- Web chat request serialization;
+- Web clarification reset serialization;
+- optional integration smoke assertion of canonical `agent_type`.
+
+Focused gate:
+
+~~~powershell
+uv run ruff check .
+uv run pytest -v tests/test_chat_api.py tests/test_persistent_chat.py tests/test_agent_factory.py tests/test_agent_registry.py tests/test_conversation_api.py
+~~~
+
+Frontend:
+
+~~~powershell
+cd web
+npm run typecheck
+npm test
+cd ..
+~~~
+
+Optional integration smoke:
+
+~~~powershell
+cd web
+npm run smoke
+cd ..
+~~~
+
 ## Step 4 — Generic Configuration Schema
 
 Move frontend/backend setting-field definitions out of Docker-specific hardcoding.
