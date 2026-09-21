@@ -131,14 +131,114 @@ uv run ruff check .
 uv run pytest -v
 ~~~
 
+## Step 2 — Conversation Workspace Hardening
+
+The chat page is now split into a rendering layer and a reusable workspace state layer:
+
+~~~text
+ChatView.vue
+    ↓
+useConversationWorkspace()
+    ↓
+typed API client
+~~~
+
+This removes request/state-transition logic from the page component and gives later
+streaming, multi-agent, and frontend-test work a stable boundary.
+
+### Product dialogs
+
+Browser-native `window.prompt` and `window.confirm` are removed.
+
+Rename and delete now use a reusable:
+
+~~~text
+AppDialog.vue
+~~~
+
+The dialog supports:
+
+- explicit busy state;
+- Escape-to-close when safe;
+- backdrop dismissal;
+- destructive confirmation styling;
+- keyboard rename submission.
+
+### Conversation state hardening
+
+The workspace now tracks independent states for:
+
+~~~text
+conversation list loading/error
+conversation detail loading/error
+chat submission
+rename mutation
+delete mutation
+action-level error
+active clarification session
+latest turn by conversation
+~~~
+
+A request-version guard prevents a slower previous conversation request from overwriting a
+newer selection.
+
+Latest-turn route/source metadata remains transient, but is cached per conversation for the
+current browser session so normal navigation no longer clears it immediately.
+
+### Local mutation behavior
+
+Rename updates the active detail and sidebar summary locally after the backend succeeds.
+
+Delete removes the conversation and transient latest-turn metadata locally, then returns
+the workspace to a new-conversation state.
+
+### Error recovery
+
+The workspace now exposes local retry/dismiss paths rather than routing every failure into
+one global message:
+
+- sidebar list retry;
+- conversation detail retry;
+- action error dismissal.
+
+### Responsive shell
+
+The original three-column desktop layout now degrades to:
+
+~~~text
+wide desktop: sidebar | chat | execution
+medium:       sidebar | chat
+              execution
+small:        stacked panels
+~~~
+
+Settings tables remain horizontally inspectable on narrow screens.
+
+### Frontend tests
+
+Vitest is added with focused tests for:
+
+- chat request identity serialization;
+- backend `detail` -> `ApiError` conversion;
+- clarification session continuity;
+- latest-turn preservation across navigation;
+- stale conversation request protection;
+- rename/delete local state transitions.
+
+Updated frontend gate:
+
+~~~powershell
+cd web
+npm install
+npm run typecheck
+npm test
+npm run build
+~~~
+
 ## Next
 
-Step 2 will harden the conversation workspace:
+Step 3 will make supported Docker Support preferences editable from the settings page.
 
-1. remove browser prompt/confirm interactions in favor of product dialogs;
-2. improve optimistic/loading/error states;
-3. preserve latest-turn details across normal navigation where appropriate;
-4. add responsive behavior and empty/error boundaries;
-5. add focused frontend tests for API and conversation state transitions.
-
-After the chat workspace stabilizes, Step 3 will make supported agent settings editable.
+The form will use the persisted configuration API for writes and the effective
+configuration API for source/effective-value feedback. Secure environment-owned fields
+will remain read-only and redacted.
