@@ -118,3 +118,48 @@ After the standalone repository passes Ruff/pytest:
 
 This staged order avoids coupling the current clarification session semantics directly to
 the long-lived product conversation model.
+
+
+## Step 2 — LangGraph Turn Persistence Adapter
+
+The persistence layer now has a dedicated product adapter:
+
+~~~text
+persist_langgraph_turn(...)
+~~~
+
+Input:
+
+~~~text
+conversation_id
+user message text
+LangGraphAgentTurnResult
+~~~
+
+Output:
+
+~~~text
+PersistedAgentTurn
+├─ user_message
+├─ assistant_message
+└─ execution
+~~~
+
+Normal answer turns persist the generated answer as the assistant message.
+
+Clarification turns persist the clarification prompt as the assistant message while keeping
+the execution plan and worker trace empty.
+
+The adapter serializes only the compact execution metadata introduced in Phase 3A:
+
+~~~text
+planned_workers
+completed_workers
+worker_trace
+~~~
+
+It does not persist GraphState, raw Docker stdout, or complete evidence contexts.
+
+The adapter is still independent from the HTTP chat endpoint. Step 3 will connect durable
+conversation identity to chat handling without reusing the temporary clarification
+session id as the long-lived conversation id.
