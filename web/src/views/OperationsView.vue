@@ -9,11 +9,11 @@ const dashboard = useOperationsDashboard();
 const activeTab = ref<OperationsTab>("overview");
 const tabs: OperationsTab[] = ["overview", "runs", "evaluations"];
 
-const activeRun = computed(() => activeRun);
+const activeRun = computed(() => dashboard.activeRun.value);
 const activeEvaluation = computed(
-  () => activeEvaluation,
+  () => dashboard.activeEvaluation.value,
 );
-const comparison = computed(() => comparison);
+const comparison = computed(() => dashboard.comparison.value);
 
 const routeRows = computed(() =>
   distributionRows(dashboard.summary.value?.route_distribution ?? {}),
