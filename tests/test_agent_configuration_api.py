@@ -3,6 +3,15 @@ from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 from sqlalchemy.pool import StaticPool
 
+from docker_agent.agent.configuration_schema import (
+    ConfigurationFieldDescriptor,
+    ConfigurationGroupDescriptor,
+)
+from docker_agent.agent.registry import (
+    DOCKER_SUPPORT_DESCRIPTOR,
+    AgentDescriptor,
+    AgentRegistry,
+)
 from docker_agent.main import app
 from docker_agent.persistence import (
     create_agent_configuration,
@@ -121,6 +130,85 @@ def test_list_agent_configurations(monkeypatch) -> None:
         "docker_support",
         "future_agent",
     ]
+
+
+def test_registered_future_agent_uses_its_own_configuration_schema(
+    monkeypatch,
+) -> None:
+    engine = _engine()
+    registry = AgentRegistry(
+        (
+            DOCKER_SUPPORT_DESCRIPTOR,
+            AgentDescriptor(
+                agent_type="future_agent",
+                display_name="Future Agent",
+                description="Test-only configurable Agent.",
+                capabilities=("chat",),
+                knowledge_sources=(),
+                toolsets=(),
+                worker_roles=(),
+                configuration_schema=(
+                    ConfigurationGroupDescriptor(
+                        key="model_settings",
+                        label="Model",
+                        fields=(
+                            ConfigurationFieldDescriptor(
+                                key="temperature",
+                                settings_name="model_temperature",
+                                label="Temperature",
+                                description="Sampling temperature.",
+                                kind="number",
+                                minimum=0,
+                                maximum=1,
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        )
+    )
+    monkeypatch.setattr(
+        "docker_agent.main.agent_registry",
+        registry,
+    )
+    monkeypatch.setattr(
+        "docker_agent.main.get_persistence_engine",
+        lambda: engine,
+    )
+    client = TestClient(app)
+
+    rejected = client.post(
+        "/agent-configurations",
+        json={
+            "agent_type": "Future-Agent",
+            "display_name": "Future Agent",
+            "runtime_settings": {
+                "max_steps": 4,
+            },
+        },
+    )
+
+    assert rejected.status_code == 400
+    assert "runtime_settings is not supported" in (
+        rejected.json()["detail"]
+    )
+
+    created = client.post(
+        "/agent-configurations",
+        json={
+            "agent_type": "Future-Agent",
+            "display_name": "Future Agent",
+            "model_settings": {
+                "temperature": 0.6,
+            },
+        },
+    )
+
+    assert created.status_code == 201
+    assert created.json()["agent_type"] == "future_agent"
+    assert created.json()["model_settings"] == {
+        "temperature": 0.6,
+    }
 
 
 def test_patch_agent_configuration_is_partial(monkeypatch) -> None:
