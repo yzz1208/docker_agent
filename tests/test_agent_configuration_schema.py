@@ -6,6 +6,7 @@ from docker_agent.agent.configuration_schema import (
     ConfigurationRuleDescriptor,
     ConfigurationSchemaError,
     resolve_settings_from_schema,
+    validate_configuration_schema,
 )
 from docker_agent.config import Settings
 
@@ -196,4 +197,59 @@ def test_schema_enforces_cross_field_rules() -> None:
                 "keyword_weight": 0,
             },
             runtime_settings={},
+        )
+
+
+
+def test_schema_integrity_rejects_duplicate_groups() -> None:
+    duplicate = ConfigurationGroupDescriptor(
+        key="model_settings",
+        label="Model",
+        fields=(),
+    )
+
+    with pytest.raises(
+        ConfigurationSchemaError,
+        match="duplicate groups",
+    ):
+        validate_configuration_schema(
+            schema=(duplicate, duplicate),
+            rules=(),
+        )
+
+
+def test_schema_integrity_rejects_rules_for_unknown_fields() -> None:
+    schema = (
+        ConfigurationGroupDescriptor(
+            key="model_settings",
+            label="Model",
+            fields=(
+                ConfigurationFieldDescriptor(
+                    key="temperature",
+                    settings_name="model_temperature",
+                    label="Temperature",
+                    description="Sampling temperature.",
+                    kind="number",
+                    minimum=0,
+                    maximum=2,
+                ),
+            ),
+        ),
+    )
+
+    with pytest.raises(
+        ConfigurationSchemaError,
+        match="unknown fields: missing",
+    ):
+        validate_configuration_schema(
+            schema=schema,
+            rules=(
+                ConfigurationRuleDescriptor(
+                    kind="not_all_zero",
+                    group="model_settings",
+                    fields=("missing",),
+                    target_field="temperature",
+                    message="invalid",
+                ),
+            ),
         )
