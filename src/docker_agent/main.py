@@ -16,6 +16,11 @@ from docker_agent.agent.configuration import (
     resolve_docker_support_configuration,
     resolve_docker_support_settings,
 )
+from docker_agent.agent.factory import (
+    AgentFactory,
+    AgentProtocol,
+    validate_factory_registration,
+)
 from docker_agent.agent.registry import (
     DOCKER_SUPPORT_DESCRIPTOR,
     AgentNotRegistered,
@@ -23,7 +28,6 @@ from docker_agent.agent.registry import (
     build_agent_registry,
 )
 from docker_agent.agent.router import AgentRoutingError
-from docker_agent.agent.service import DockerSupportAgent
 from docker_agent.api.agent_configurations import (
     AgentConfigurationCreateRequest,
     AgentConfigurationResponse,
@@ -118,6 +122,36 @@ settings = get_settings()
 configure_structured_logging(settings.app_log_level)
 logger = logging.getLogger(__name__)
 agent_registry = build_agent_registry()
+runtime_agent_factory = AgentFactory(registry=agent_registry)
+
+
+def _build_docker_support_agent() -> AgentProtocol:
+    base_settings = get_settings()
+    try:
+        record = get_agent_configuration(
+            get_persistence_engine(),
+            DOCKER_SUPPORT_DESCRIPTOR.agent_type,
+        )
+    except AgentConfigurationNotFound:
+        record = None
+
+    effective = require_enabled(
+        resolve_docker_support_configuration(
+            base_settings,
+            record,
+        )
+    )
+    return LangGraphDockerSupportAgent(settings=effective.settings)
+
+
+runtime_agent_factory.register(
+    DOCKER_SUPPORT_DESCRIPTOR.agent_type,
+    _build_docker_support_agent,
+)
+validate_factory_registration(
+    registry=agent_registry,
+    factory=runtime_agent_factory,
+)
 
 
 @asynccontextmanager
@@ -140,7 +174,12 @@ async def app_lifespan(_app: FastAPI):
         yield
     finally:
         get_chat_coordinator.cache_clear()
+        get_chat_sessions.cache_clear()
+        runtime_agent_factory.invalidate(
+            DOCKER_SUPPORT_DESCRIPTOR.agent_type
+        )
         get_agent.cache_clear()
+        runtime_agent_factory.clear()
         engine.dispose()
         get_persistence_engine.cache_clear()
 
@@ -206,31 +245,27 @@ def prometheus_metrics() -> Response:
 
 
 @lru_cache
-def get_agent() -> DockerSupportAgent:
-    """Create the default registered Agent from effective product settings."""
+def get_agent(
+    agent_type: str = DOCKER_SUPPORT_DESCRIPTOR.agent_type,
+) -> AgentProtocol:
+    """Return one cached runtime Agent by registered Agent type."""
 
-    descriptor = agent_registry.get(
-        DOCKER_SUPPORT_DESCRIPTOR.agent_type
+    descriptor = agent_registry.get(agent_type)
+    return runtime_agent_factory.get(descriptor.agent_type)
+
+
+@lru_cache
+def get_chat_sessions(
+    agent_type: str = DOCKER_SUPPORT_DESCRIPTOR.agent_type,
+) -> ChatSessionManager:
+    """Return clarification-session state isolated by Agent type."""
+
+    descriptor = agent_registry.get(agent_type)
+    canonical = descriptor.agent_type
+    return ChatSessionManager(
+        agent_factory=lambda: get_agent(canonical),
+        agent_type=canonical,
     )
-    base_settings = get_settings()
-    try:
-        record = get_agent_configuration(
-            get_persistence_engine(),
-            descriptor.agent_type,
-        )
-    except AgentConfigurationNotFound:
-        record = None
-
-    effective = require_enabled(
-        resolve_docker_support_configuration(
-            base_settings,
-            record,
-        )
-    )
-    return LangGraphDockerSupportAgent(settings=effective.settings)
-
-
-chat_sessions = ChatSessionManager(agent_factory=get_agent)
 
 
 @lru_cache
@@ -244,12 +279,17 @@ def get_persistence_engine() -> Engine:
 
 
 @lru_cache
-def get_chat_coordinator() -> PersistentChatCoordinator:
-    """Create the durable chat coordinator lazily."""
+def get_chat_coordinator(
+    agent_type: str = DOCKER_SUPPORT_DESCRIPTOR.agent_type,
+) -> PersistentChatCoordinator:
+    """Return one durable chat coordinator isolated by Agent type."""
 
+    descriptor = agent_registry.get(agent_type)
+    canonical = descriptor.agent_type
     return PersistentChatCoordinator(
         engine=get_persistence_engine(),
-        sessions=chat_sessions,
+        sessions=get_chat_sessions(canonical),
+        agent_type=canonical,
     )
 
 
@@ -540,6 +580,9 @@ def create_agent_configuration_endpoint(
         ) from exc
 
     if record.agent_type == "docker_support":
+        runtime_agent_factory.invalidate(
+            DOCKER_SUPPORT_DESCRIPTOR.agent_type
+        )
         get_agent.cache_clear()
 
     return build_agent_configuration_response(record)
@@ -613,6 +656,9 @@ def update_agent_configuration_endpoint(
         ) from exc
 
     if record.agent_type == "docker_support":
+        runtime_agent_factory.invalidate(
+            DOCKER_SUPPORT_DESCRIPTOR.agent_type
+        )
         get_agent.cache_clear()
 
     return build_agent_configuration_response(record)
