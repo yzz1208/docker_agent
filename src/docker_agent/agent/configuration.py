@@ -73,26 +73,52 @@ def resolve_docker_support_configuration(
             "Docker Support resolver requires agent_type='docker_support'"
         )
 
+    resolved_settings = resolve_docker_support_settings(
+        base,
+        model_settings=record.model_settings,
+        retrieval_settings=record.retrieval_settings,
+        runtime_settings=record.runtime_settings,
+    )
+
+    return EffectiveDockerSupportConfiguration(
+        agent_type=record.agent_type,
+        display_name=record.display_name,
+        enabled=record.enabled,
+        settings=resolved_settings,
+        persisted=True,
+        configuration_updated_at=record.updated_at,
+    )
+
+
+def resolve_docker_support_settings(
+    base: Settings,
+    *,
+    model_settings: dict[str, object],
+    retrieval_settings: dict[str, object],
+    runtime_settings: dict[str, object],
+) -> Settings:
+    """Validate product preferences and return effective non-secret settings."""
+
     _reject_unknown_keys(
-        record.model_settings,
+        model_settings,
         allowed=_MODEL_KEYS,
         group="model_settings",
     )
     _reject_unknown_keys(
-        record.retrieval_settings,
+        retrieval_settings,
         allowed=_RETRIEVAL_KEYS,
         group="retrieval_settings",
     )
     _reject_unknown_keys(
-        record.runtime_settings,
+        runtime_settings,
         allowed=_RUNTIME_KEYS,
         group="runtime_settings",
     )
 
     updates: dict[str, object] = {}
-    _apply_model_settings(record.model_settings, updates)
-    _apply_retrieval_settings(record.retrieval_settings, updates)
-    _apply_runtime_settings(record.runtime_settings, updates)
+    _apply_model_settings(model_settings, updates)
+    _apply_retrieval_settings(retrieval_settings, updates)
+    _apply_runtime_settings(runtime_settings, updates)
 
     dense_weight = float(
         updates.get("retrieval_dense_weight", base.retrieval_dense_weight)
@@ -116,14 +142,7 @@ def resolve_docker_support_configuration(
             "retrieval_settings.rerank_top_k must not exceed top_k"
         )
 
-    return EffectiveDockerSupportConfiguration(
-        agent_type=record.agent_type,
-        display_name=record.display_name,
-        enabled=record.enabled,
-        settings=base.model_copy(update=updates, deep=True),
-        persisted=True,
-        configuration_updated_at=record.updated_at,
-    )
+    return base.model_copy(update=updates, deep=True)
 
 
 def require_enabled(
