@@ -7,6 +7,12 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from docker_agent.agent.router import AgentRoutingError
 from docker_agent.agent.service import DockerSupportAgent
+from docker_agent.api.agent_configurations import (
+    AgentConfigurationCreateRequest,
+    AgentConfigurationResponse,
+    AgentConfigurationUpdateRequest,
+    build_agent_configuration_response,
+)
 from docker_agent.api.chat import (
     ChatRequest,
     ChatResponse,
@@ -25,15 +31,21 @@ from docker_agent.config import get_settings
 from docker_agent.db import check_database, create_db_engine
 from docker_agent.graph.service import LangGraphDockerSupportAgent
 from docker_agent.persistence import (
+    AgentConfigurationAlreadyExists,
+    AgentConfigurationNotFound,
     ChatConversationMismatch,
     ConversationAgentTypeMismatch,
     ConversationNotFound,
     PersistentChatCoordinator,
+    create_agent_configuration,
     delete_conversation,
+    get_agent_configuration,
     init_persistence_store,
+    list_agent_configurations,
     list_conversations,
     load_conversation,
     rename_conversation,
+    update_agent_configuration,
 )
 from docker_agent.rag.answer import CitationValidationError
 from docker_agent.tools.docker_cli import DockerToolTimeout
@@ -102,6 +114,142 @@ def database_health() -> JSONResponse:
 
 
 
+
+
+@app.get(
+    "/agent-configurations",
+    response_model=list[AgentConfigurationResponse],
+    tags=["agent-configurations"],
+)
+def agent_configurations() -> list[AgentConfigurationResponse]:
+    """List persisted agent configuration records."""
+
+    try:
+        records = list_agent_configurations(get_persistence_engine())
+    except SQLAlchemyError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="PostgreSQL is unavailable.",
+        ) from exc
+
+    return [
+        build_agent_configuration_response(record)
+        for record in records
+    ]
+
+
+@app.get(
+    "/agent-configurations/{agent_type}",
+    response_model=AgentConfigurationResponse,
+    tags=["agent-configurations"],
+)
+def agent_configuration_detail(
+    agent_type: str,
+) -> AgentConfigurationResponse:
+    """Load one persisted agent configuration."""
+
+    try:
+        record = get_agent_configuration(
+            get_persistence_engine(),
+            agent_type,
+        )
+    except AgentConfigurationNotFound as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Agent configuration was not found.",
+        ) from exc
+    except SQLAlchemyError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="PostgreSQL is unavailable.",
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+    return build_agent_configuration_response(record)
+
+
+@app.post(
+    "/agent-configurations",
+    response_model=AgentConfigurationResponse,
+    status_code=status.HTTP_201_CREATED,
+    tags=["agent-configurations"],
+)
+def create_agent_configuration_endpoint(
+    request: AgentConfigurationCreateRequest,
+) -> AgentConfigurationResponse:
+    """Create a product-facing agent configuration."""
+
+    try:
+        record = create_agent_configuration(
+            get_persistence_engine(),
+            agent_type=request.agent_type,
+            display_name=request.display_name,
+            enabled=request.enabled,
+            model_settings=request.model_settings,
+            retrieval_settings=request.retrieval_settings,
+            runtime_settings=request.runtime_settings,
+        )
+    except AgentConfigurationAlreadyExists as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Agent configuration already exists.",
+        ) from exc
+    except SQLAlchemyError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="PostgreSQL is unavailable.",
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+    return build_agent_configuration_response(record)
+
+
+@app.patch(
+    "/agent-configurations/{agent_type}",
+    response_model=AgentConfigurationResponse,
+    tags=["agent-configurations"],
+)
+def update_agent_configuration_endpoint(
+    agent_type: str,
+    request: AgentConfigurationUpdateRequest,
+) -> AgentConfigurationResponse:
+    """Partially update persisted agent preferences."""
+
+    try:
+        record = update_agent_configuration(
+            get_persistence_engine(),
+            agent_type,
+            display_name=request.display_name,
+            enabled=request.enabled,
+            model_settings=request.model_settings,
+            retrieval_settings=request.retrieval_settings,
+            runtime_settings=request.runtime_settings,
+        )
+    except AgentConfigurationNotFound as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Agent configuration was not found.",
+        ) from exc
+    except SQLAlchemyError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="PostgreSQL is unavailable.",
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+    return build_agent_configuration_response(record)
 
 
 @app.get(
