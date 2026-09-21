@@ -2,11 +2,17 @@ import type {
   AgentConfiguration,
   AgentConfigurationCreate,
   AgentConfigurationMutation,
+  AgentRunRecord,
+  AgentRunStatus,
+  AgentRunSummary,
   ChatResponse,
   ConversationDetail,
   ConversationSummary,
   DatabaseHealth,
   EffectiveAgentConfiguration,
+  EvaluationComparison,
+  EvaluationRun,
+  EvaluationRunDetail,
   SystemHealth,
 } from "./types";
 
@@ -174,4 +180,91 @@ export function getSystemHealth(): Promise<SystemHealth> {
 
 export function getDatabaseHealth(): Promise<DatabaseHealth> {
   return request<DatabaseHealth>("/health/db");
+}
+
+
+export function listAgentRuns(input: {
+  conversationId?: string;
+  agentType?: string;
+  status?: AgentRunStatus;
+  limit?: number;
+  offset?: number;
+} = {}): Promise<AgentRunRecord[]> {
+  const params = new URLSearchParams();
+  if (input.conversationId) {
+    params.set("conversation_id", input.conversationId);
+  }
+  if (input.agentType) {
+    params.set("agent_type", input.agentType);
+  }
+  if (input.status) {
+    params.set("status", input.status);
+  }
+  params.set("limit", String(input.limit ?? 50));
+  params.set("offset", String(input.offset ?? 0));
+
+  return request<AgentRunRecord[]>(
+    `/operations/runs?${params.toString()}`,
+  );
+}
+
+export function getAgentRun(
+  runId: string,
+): Promise<AgentRunRecord> {
+  return request<AgentRunRecord>(
+    `/operations/runs/${encodeURIComponent(runId)}`,
+  );
+}
+
+export function getOperationsSummary(
+  hours = 24,
+): Promise<AgentRunSummary> {
+  const params = new URLSearchParams({
+    hours: String(hours),
+  });
+  return request<AgentRunSummary>(
+    `/operations/summary?${params.toString()}`,
+  );
+}
+
+export function listEvaluationRuns(input: {
+  suite?: string;
+  limit?: number;
+  offset?: number;
+} = {}): Promise<EvaluationRun[]> {
+  const params = new URLSearchParams({
+    limit: String(input.limit ?? 50),
+    offset: String(input.offset ?? 0),
+  });
+  if (input.suite) {
+    params.set("suite", input.suite);
+  }
+
+  return request<EvaluationRun[]>(
+    `/operations/evaluations?${params.toString()}`,
+  );
+}
+
+export function getEvaluationRun(
+  runId: string,
+): Promise<EvaluationRunDetail> {
+  return request<EvaluationRunDetail>(
+    `/operations/evaluations/${encodeURIComponent(runId)}`,
+  );
+}
+
+export function compareEvaluationRuns(input: {
+  baselineId: string;
+  candidateId: string;
+  maxRegression?: number;
+}): Promise<EvaluationComparison> {
+  const params = new URLSearchParams({
+    baseline_id: input.baselineId,
+    candidate_id: input.candidateId,
+    max_regression: String(input.maxRegression ?? 0.02),
+  });
+
+  return request<EvaluationComparison>(
+    `/operations/evaluations/compare?${params.toString()}`,
+  );
 }
