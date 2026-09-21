@@ -4,6 +4,12 @@ from docker_agent.persistence.adapter import (
     PersistedAgentTurn,
     persist_langgraph_turn,
 )
+from docker_agent.persistence.chat import (
+    ChatConversationMismatch,
+    ConversationAgentTypeMismatch,
+    PersistentChatCoordinator,
+    PersistentChatTurn,
+)
 from docker_agent.persistence.store import (
     ConversationNotFound,
     ConversationRecord,
@@ -21,6 +27,8 @@ from docker_agent.persistence.store import (
 )
 
 __all__ = [
+    "ChatConversationMismatch",
+    "ConversationAgentTypeMismatch",
     "ConversationNotFound",
     "ConversationRecord",
     "ConversationSnapshot",
@@ -28,6 +36,8 @@ __all__ = [
     "MessageNotFound",
     "MessageRecord",
     "PersistedAgentTurn",
+    "PersistentChatCoordinator",
+    "PersistentChatTurn",
     "append_message",
     "create_conversation",
     "get_conversation",
