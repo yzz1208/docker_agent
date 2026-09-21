@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from threading import Lock
 from time import perf_counter
 
 from sqlalchemy.engine import Engine
+from sqlalchemy.exc import SQLAlchemyError
 
 from docker_agent.api.chat import ChatSessionManager
 from docker_agent.graph.service import LangGraphAgentTurnResult
@@ -18,10 +20,20 @@ from docker_agent.persistence.store import (
     get_conversation,
 )
 from docker_agent.persistence.telemetry import (
+    AgentRunNotFound,
     AgentRunRecord,
+    AgentRunStateError,
     create_agent_run,
     finalize_agent_run_failure,
     finalize_agent_run_success,
+)
+
+logger = logging.getLogger(__name__)
+
+_TELEMETRY_FINALIZATION_ERRORS = (
+    SQLAlchemyError,
+    AgentRunNotFound,
+    AgentRunStateError,
 )
 
 
@@ -132,9 +144,14 @@ class PersistentChatCoordinator:
                         else ()
                     ),
                 )
-            except Exception:
-                # Telemetry finalization must never replace the original error.
-                pass
+            except _TELEMETRY_FINALIZATION_ERRORS:
+                logger.exception(
+                    "Failed to finalize failed agent run telemetry",
+                    extra={
+                        "run_id": run.id,
+                        "conversation_id": conversation.id,
+                    },
+                )
             raise
 
         try:
@@ -149,10 +166,14 @@ class PersistentChatCoordinator:
                 ),
                 duration_ms=_duration_ms(started),
             )
-        except Exception:
-            # A completed chat turn remains successful even if telemetry
-            # finalization fails after messages were already persisted.
-            pass
+        except _TELEMETRY_FINALIZATION_ERRORS:
+            logger.exception(
+                "Failed to finalize successful agent run telemetry",
+                extra={
+                    "run_id": run.id,
+                    "conversation_id": conversation.id,
+                },
+            )
 
         with self._lock:
             if active:
