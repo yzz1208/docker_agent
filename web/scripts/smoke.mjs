@@ -60,6 +60,14 @@ assert(
 );
 console.log("✓ Database readiness");
 
+const agents = await request("/agents");
+assert(
+  Array.isArray(agents) &&
+    agents.some((agent) => agent?.agent_type === "docker_support"),
+  "Agent registry did not expose docker_support.",
+);
+console.log("✓ Agent registry");
+
 const effective = await request(
   "/agent-configurations/docker_support/effective",
 );
