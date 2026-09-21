@@ -1022,6 +1022,225 @@ release gate
 Live-model evaluation remains an explicit protected/release workflow rather than running on
 every small pull request.
 
+### Step 6 implementation status
+
+**IMPLEMENTED pending manual workflow gate**
+
+Added:
+
+~~~text
+.github/workflows/evaluation-gate.yml
+~~~
+
+and extended:
+
+~~~text
+scripts/eval_agent_router.py
+scripts/eval_agent_workflow.py
+scripts/compare_evaluations.py
+~~~
+
+### Manual release-quality workflow
+
+The workflow is intentionally:
+
+~~~text
+workflow_dispatch only
+~~~
+
+It never runs automatically on a normal push or pull request.
+
+Inputs:
+
+~~~text
+suite
+    agent_router | agent_workflow
+
+baseline_run_id
+    required persisted baseline
+
+max_regression
+    default 0.02
+
+limit
+    optional positive case limit
+
+repeats
+    router repeat count, default 1
+
+judge
+    optional LLM judge for agent_workflow
+~~~
+
+### Required GitHub configuration
+
+Repository/environment secret:
+
+~~~text
+EVALUATION_DATABASE_URL
+~~~
+
+must point to the long-lived evaluation PostgreSQL database.
+
+Model configuration:
+
+~~~text
+EVALUATION_MODEL_NAME       # repository variable
+EVALUATION_MODEL_BASE_URL   # secret
+EVALUATION_MODEL_API_KEY    # secret when provider requires it
+~~~
+
+The evaluation database must:
+
+- be reachable from the selected GitHub runner;
+- already be migrated to Alembic head;
+- contain the requested baseline run.
+
+If the database is private-network only, use a self-hosted runner or another runner with
+network access instead of exposing PostgreSQL publicly.
+
+### Candidate workflow
+
+The release gate performs:
+
+~~~text
+manual dispatch
+    ↓
+validate limit / repeats / threshold / baseline id
+    ↓
+run selected live evaluation suite
+    ↓
+--persist
+    ↓
+write reports/evaluation-summary.json
+    ↓
+read candidate evaluation_run_id
+    ↓
+compare baseline vs candidate
+    ↓
+write reports/evaluation-comparison.json
+    ↓
+copy comparison JSON into GitHub Step Summary
+    ↓
+preserve comparison exit code
+~~~
+
+Router evaluations include:
+
+~~~text
+--repeats <input>
+~~~
+
+so the candidate case shape can match a repeated baseline.
+
+If limit/repeat/dataset shape does not match the baseline, the existing Phase 5 comparison
+logic rejects or marks the comparison incomplete rather than allowing a misleading pass.
+
+### Persisted evaluator database policy
+
+Persisted evaluation CLIs no longer call:
+
+~~~text
+metadata.create_all()
+init_persistence_store()
+~~~
+
+They now require:
+
+~~~text
+require_database_ready(engine)
+~~~
+
+before writing an Evaluation Run.
+
+This keeps long-lived release evaluation databases under the same Alembic-only schema policy
+as the serving application.
+
+### Machine-readable outputs
+
+Router and Workflow evaluation scripts now accept:
+
+~~~text
+--summary-output <path>
+~~~
+
+When `--persist` is enabled, the summary contains:
+
+~~~text
+evaluation_run_id
+~~~
+
+The regression CLI now accepts:
+
+~~~text
+--output <path>
+~~~
+
+and writes the same JSON that it prints to stdout.
+
+Its exit semantics remain:
+
+~~~text
+0 = pass
+1 = regression / incomplete
+2 = invalid comparison / missing run
+~~~
+
+The GitHub workflow exits with that same code, so regression directly fails the release
+quality job.
+
+### Security boundary
+
+The workflow grants only:
+
+~~~yaml
+permissions:
+  contents: read
+~~~
+
+Database/model credentials come from GitHub secrets and are not embedded in the workflow.
+
+The Agent tool mode is forced to:
+
+~~~text
+TOOL_MODE=mock
+ALLOW_LOCAL_DOCKER_TOOLS=false
+~~~
+
+so live quality evaluation cannot invoke Docker on the GitHub runner.
+
+### Step 6 coverage
+
+Workflow contract tests verify:
+
+- manual-only trigger;
+- read-only repository permissions;
+- required baseline input;
+- candidate persistence;
+- Router/Workflow suite selection;
+- Router repeat propagation;
+- stable summary JSON extraction;
+- comparison CLI invocation and JSON output;
+- use of GitHub secrets/variable rather than literal credentials;
+- persisted evaluators require migrated databases and never call create_all.
+
+Focused gate:
+
+~~~powershell
+uv run ruff check .
+uv run pytest -v tests/test_ci_workflows.py tests/test_evaluation_comparison.py tests/test_evaluation_persistence.py tests/test_environment_config.py tests/test_docker_tools.py
+~~~
+
+After pushing, configure the GitHub variable/secrets above and manually run:
+
+~~~text
+Actions
+  → Evaluation Regression Gate
+  → Run workflow
+~~~
+
+Use a known persisted baseline run from the same suite/dataset.
+
 ## Step 7 — Deployment and Monitoring Closeout
 
 Finish:
