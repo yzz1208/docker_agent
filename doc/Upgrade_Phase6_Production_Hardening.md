@@ -116,6 +116,72 @@ start FastAPI
 Unit tests may continue to use `PersistenceBase.metadata.create_all()` through the existing
 test helper because isolated ephemeral schemas are not deployment environments.
 
+### Step 1 implementation status
+
+**IMPLEMENTED pending local migration gate**
+
+Added:
+
+~~~text
+alembic.ini
+migrations/env.py
+migrations/script.py.mako
+migrations/versions/20260921_0001_product_persistence.py
+tests/test_migrations.py
+~~~
+
+The initial revision creates the seven current product tables, indexes, foreign keys, and
+the evaluation case unique constraint.
+
+FastAPI `get_persistence_engine()` no longer calls `metadata.create_all()`.
+
+Migration test coverage performs:
+
+~~~text
+empty SQLite database
+    ↓
+alembic upgrade head
+    ↓
+inspect expected product tables
+    ↓
+Alembic autogenerate compare against ORM metadata
+    ↓
+expect zero schema drift
+    ↓
+alembic downgrade base
+    ↓
+verify product tables removed
+    ↓
+alembic upgrade head again
+~~~
+
+Focused gate:
+
+~~~powershell
+uv sync --all-groups
+uv run ruff check .
+uv run pytest -v tests/test_migrations.py tests/test_persistence_store.py tests/test_agent_configuration_persistence.py tests/test_agent_run_telemetry.py tests/test_evaluation_persistence.py
+~~~
+
+With local PostgreSQL running, a clean-database smoke is:
+
+~~~powershell
+uv run alembic current
+uv run alembic upgrade head
+uv run alembic current
+~~~
+
+For a pre-Phase-6 local database that already contains the complete current product schema,
+use the one-time adoption path:
+
+~~~powershell
+uv run alembic stamp head
+uv run alembic current
+~~~
+
+After adoption, all future schema changes must use normal Alembic revisions and
+`upgrade`/`downgrade`.
+
 ## Step 2 — Application Lifecycle and Database Engine Hardening
 
 Move process resources into explicit FastAPI lifespan ownership.
