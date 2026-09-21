@@ -13,6 +13,7 @@ def test_production_compose_orders_migration_before_backend() -> None:
     compose = yaml.safe_load(_read("compose.prod.yaml"))
     services = compose["services"]
 
+    assert compose["name"] == "docker-agent-prod"
     assert set(services) == {
         "postgres",
         "migrate",
