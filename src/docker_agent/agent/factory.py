@@ -82,12 +82,11 @@ class AgentFactory:
             except KeyError as exc:
                 raise AgentBuilderNotRegistered(canonical) from exc
 
-        with build_lock:
-            with self._lock:
-                return (
-                    self._instances.pop(canonical, None)
-                    is not None
-                )
+        with build_lock, self._lock:
+            return (
+                self._instances.pop(canonical, None)
+                is not None
+            )
 
     def clear(self) -> None:
         with self._lock:
