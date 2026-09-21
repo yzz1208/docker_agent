@@ -16,8 +16,17 @@ from docker_agent.agent.configuration import (
     resolve_docker_support_configuration,
     resolve_docker_support_settings,
 )
+from docker_agent.agent.registry import (
+    AgentNotRegistered,
+    DOCKER_SUPPORT_DESCRIPTOR,
+    build_agent_registry,
+)
 from docker_agent.agent.router import AgentRoutingError
 from docker_agent.agent.service import DockerSupportAgent
+from docker_agent.api.agents import (
+    AgentDescriptorResponse,
+    build_agent_descriptor_response,
+)
 from docker_agent.api.agent_configurations import (
     AgentConfigurationCreateRequest,
     AgentConfigurationResponse,
@@ -107,6 +116,7 @@ from docker_agent.tools.docker_cli import DockerToolTimeout
 settings = get_settings()
 configure_structured_logging(settings.app_log_level)
 logger = logging.getLogger(__name__)
+agent_registry = build_agent_registry()
 
 @asynccontextmanager
 async def app_lifespan(_app: FastAPI):
@@ -195,13 +205,16 @@ def prometheus_metrics() -> Response:
 
 @lru_cache
 def get_agent() -> DockerSupportAgent:
-    """Create the LangGraph agent from secure settings plus product preferences."""
+    """Create the default registered Agent from effective product settings."""
 
+    descriptor = agent_registry.get(
+        DOCKER_SUPPORT_DESCRIPTOR.agent_type
+    )
     base_settings = get_settings()
     try:
         record = get_agent_configuration(
             get_persistence_engine(),
-            "docker_support",
+            descriptor.agent_type,
         )
     except AgentConfigurationNotFound:
         record = None
@@ -236,6 +249,41 @@ def get_chat_coordinator() -> PersistentChatCoordinator:
         engine=get_persistence_engine(),
         sessions=chat_sessions,
     )
+
+
+@app.get(
+    "/agents",
+    response_model=list[AgentDescriptorResponse],
+    tags=["agents"],
+)
+def registered_agents() -> list[AgentDescriptorResponse]:
+    """List runtime-supported Agent descriptors."""
+
+    return [
+        build_agent_descriptor_response(descriptor)
+        for descriptor in agent_registry.list()
+    ]
+
+
+@app.get(
+    "/agents/{agent_type}",
+    response_model=AgentDescriptorResponse,
+    tags=["agents"],
+)
+def registered_agent_detail(
+    agent_type: str,
+) -> AgentDescriptorResponse:
+    """Load one runtime-supported Agent descriptor."""
+
+    try:
+        descriptor = agent_registry.get(agent_type)
+    except AgentNotRegistered as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Agent type is not registered.",
+        ) from exc
+
+    return build_agent_descriptor_response(descriptor)
 
 
 @app.get("/health", tags=["system"])
@@ -349,16 +397,19 @@ def effective_agent_configuration(
 ) -> EffectiveAgentConfigurationResponse:
     """Resolve one agent's safe product preferences into runtime values."""
 
-    normalized_agent_type = agent_type.strip()
-    if normalized_agent_type != "docker_support":
+    try:
+        descriptor = agent_registry.get(agent_type)
+    except AgentNotRegistered as exc:
+        normalized_agent_type = agent_type.strip()
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=(
                 "Effective configuration is not supported for agent type "
                 f"{normalized_agent_type!r}."
             ),
-        )
+        ) from exc
 
+    normalized_agent_type = descriptor.agent_type
     base_settings = get_settings()
     try:
         record = get_agent_configuration(
