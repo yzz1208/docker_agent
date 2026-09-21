@@ -122,6 +122,31 @@ class PersistentChatCoordinator:
             self._session_conversations.pop(normalized_session_id, None)
         return removed
 
+    def reset_conversation_sessions(
+        self,
+        conversation_id: str,
+    ) -> int:
+        normalized_conversation_id = conversation_id.strip()
+        if not normalized_conversation_id:
+            raise ValueError("conversation_id must not be empty")
+
+        with self._lock:
+            session_ids = [
+                session_id
+                for session_id, bound_conversation_id
+                in self._session_conversations.items()
+                if bound_conversation_id == normalized_conversation_id
+            ]
+
+        removed = 0
+        for session_id in session_ids:
+            if self.sessions.reset(session_id):
+                removed += 1
+            with self._lock:
+                self._session_conversations.pop(session_id, None)
+
+        return removed
+
     def _resolve_conversation(
         self,
         *,
