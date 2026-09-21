@@ -14,6 +14,7 @@ from docker_agent.graph.service import LangGraphAgentTurnResult
 
 class ChatRequest(BaseModel):
     message: str = Field(min_length=1)
+    agent_type: str | None = None
     conversation_id: str | None = None
     session_id: str | None = None
 
@@ -48,6 +49,7 @@ class AgentExecutionResponse(BaseModel):
 
 
 class ChatResponse(BaseModel):
+    agent_type: str
     conversation_id: str | None = None
     session_id: str
     session_active: bool
@@ -126,6 +128,7 @@ def build_chat_response(
     session_active: bool,
     result: AgentTurnProtocol,
     *,
+    agent_type: str,
     conversation_id: str | None = None,
 ) -> ChatResponse:
     """Serialize an agent turn without exposing raw runtime output."""
@@ -175,6 +178,7 @@ def build_chat_response(
         ]
 
     return ChatResponse(
+        agent_type=agent_type,
         conversation_id=conversation_id,
         session_id=session_id,
         session_active=session_active,
