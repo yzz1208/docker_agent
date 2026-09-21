@@ -1,41 +1,14 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { onMounted, ref } from "vue";
 
-import {
-  ApiError,
-  deleteConversation,
-  getConversation,
-  listConversations,
-  renameConversation,
-  sendChat,
-} from "../lib/api";
-import type {
-  ChatResponse,
-  ConversationDetail,
-  ConversationSummary,
-} from "../lib/types";
+import AppDialog from "../components/AppDialog.vue";
+import { useConversationWorkspace } from "../composables/useConversationWorkspace";
 
-const conversations = ref<ConversationSummary[]>([]);
-const detail = ref<ConversationDetail | null>(null);
-const activeConversationId = ref<string | null>(null);
-const activeSessionId = ref<string | null>(null);
-const latestTurn = ref<ChatResponse | null>(null);
-const draft = ref("");
-const loadingList = ref(false);
-const loadingConversation = ref(false);
-const sending = ref(false);
-const errorMessage = ref("");
+const workspace = useConversationWorkspace();
 
-const activeTitle = computed(() => {
-  if (detail.value?.conversation.title) {
-    return detail.value.conversation.title;
-  }
-  return activeConversationId.value ? "Conversation" : "New conversation";
-});
-
-const canSend = computed(
-  () => draft.value.trim().length > 0 && !sending.value,
-);
+const renameDialogOpen = ref(false);
+const deleteDialogOpen = ref(false);
+const renameTitle = ref("");
 
 function formatDate(value: string): string {
   return new Intl.DateTimeFormat(undefined, {
@@ -46,140 +19,51 @@ function formatDate(value: string): string {
   }).format(new Date(value));
 }
 
-function errorText(error: unknown): string {
-  if (error instanceof ApiError) {
-    return error.detail;
-  }
-  if (error instanceof Error) {
-    return error.message;
-  }
-  return "Something went wrong.";
-}
-
-async function refreshConversations(): Promise<void> {
-  loadingList.value = true;
-  try {
-    conversations.value = await listConversations();
-  } catch (error) {
-    errorMessage.value = errorText(error);
-  } finally {
-    loadingList.value = false;
-  }
-}
-
-async function openConversation(id: string): Promise<void> {
-  errorMessage.value = "";
-  loadingConversation.value = true;
-  latestTurn.value = null;
-  activeSessionId.value = null;
-  activeConversationId.value = id;
-
-  try {
-    detail.value = await getConversation(id);
-  } catch (error) {
-    errorMessage.value = errorText(error);
-  } finally {
-    loadingConversation.value = false;
-  }
-}
-
-function startNewConversation(): void {
-  activeConversationId.value = null;
-  activeSessionId.value = null;
-  detail.value = null;
-  latestTurn.value = null;
-  draft.value = "";
-  errorMessage.value = "";
-}
-
-async function submitMessage(): Promise<void> {
-  const message = draft.value.trim();
-  if (!message || sending.value) {
-    return;
-  }
-
-  sending.value = true;
-  errorMessage.value = "";
-
-  try {
-    const result = await sendChat({
-      message,
-      conversationId: activeConversationId.value,
-      sessionId: activeSessionId.value,
-    });
-
-    latestTurn.value = result;
-    activeConversationId.value = result.conversation_id;
-    activeSessionId.value = result.session_active
-      ? result.session_id
-      : null;
-    draft.value = "";
-
-    if (result.conversation_id) {
-      detail.value = await getConversation(result.conversation_id);
-    }
-    await refreshConversations();
-  } catch (error) {
-    errorMessage.value = errorText(error);
-  } finally {
-    sending.value = false;
-  }
-}
-
-async function renameActiveConversation(): Promise<void> {
-  const conversation = detail.value?.conversation;
+function openRenameDialog(): void {
+  const conversation = workspace.detail.value?.conversation;
   if (!conversation) {
     return;
   }
+  renameTitle.value = conversation.title ?? "";
+  renameDialogOpen.value = true;
+}
 
-  const nextTitle = window.prompt(
-    "Conversation title",
-    conversation.title ?? "",
-  );
-  if (nextTitle === null || !nextTitle.trim()) {
-    return;
-  }
-
-  try {
-    const updated = await renameConversation(
-      conversation.id,
-      nextTitle.trim(),
-    );
-    if (detail.value) {
-      detail.value = {
-        ...detail.value,
-        conversation: updated,
-      };
-    }
-    await refreshConversations();
-  } catch (error) {
-    errorMessage.value = errorText(error);
+function closeRenameDialog(): void {
+  if (!workspace.renaming.value) {
+    renameDialogOpen.value = false;
   }
 }
 
-async function deleteActiveConversation(): Promise<void> {
-  const conversation = detail.value?.conversation;
-  if (!conversation) {
-    return;
-  }
-
-  const confirmed = window.confirm(
-    "Delete this conversation and its persisted history?",
+async function confirmRename(): Promise<void> {
+  const renamed = await workspace.renameActiveConversation(
+    renameTitle.value,
   );
-  if (!confirmed) {
-    return;
-  }
-
-  try {
-    await deleteConversation(conversation.id);
-    startNewConversation();
-    await refreshConversations();
-  } catch (error) {
-    errorMessage.value = errorText(error);
+  if (renamed) {
+    renameDialogOpen.value = false;
   }
 }
 
-onMounted(refreshConversations);
+function openDeleteDialog(): void {
+  if (!workspace.detail.value) {
+    return;
+  }
+  deleteDialogOpen.value = true;
+}
+
+function closeDeleteDialog(): void {
+  if (!workspace.deleting.value) {
+    deleteDialogOpen.value = false;
+  }
+}
+
+async function confirmDelete(): Promise<void> {
+  const deleted = await workspace.deleteActiveConversation();
+  if (deleted) {
+    deleteDialogOpen.value = false;
+  }
+}
+
+onMounted(workspace.refreshConversations);
 </script>
 
 <template>
@@ -190,29 +74,55 @@ onMounted(refreshConversations);
           <p class="section-label">History</p>
           <h2>Conversations</h2>
         </div>
-        <button class="button button--primary" @click="startNewConversation">
+        <button
+          class="button button--primary"
+          :disabled="workspace.sending.value"
+          @click="workspace.startNewConversation"
+        >
           New
         </button>
       </div>
 
-      <div v-if="loadingList" class="empty-state compact">
+      <div
+        v-if="workspace.listError.value"
+        class="panel-state panel-state--error"
+      >
+        <strong>Could not load conversations.</strong>
+        <span>{{ workspace.listError.value }}</span>
+        <button
+          class="button button--ghost"
+          type="button"
+          @click="workspace.refreshConversations"
+        >
+          Retry
+        </button>
+      </div>
+
+      <div
+        v-else-if="workspace.loadingList.value"
+        class="empty-state compact"
+      >
         Loading conversations…
       </div>
 
-      <div v-else-if="conversations.length === 0" class="empty-state compact">
+      <div
+        v-else-if="workspace.conversations.value.length === 0"
+        class="empty-state compact"
+      >
         No persisted conversations yet.
       </div>
 
       <div v-else class="conversation-list">
         <button
-          v-for="conversation in conversations"
+          v-for="conversation in workspace.conversations.value"
           :key="conversation.id"
           class="conversation-item"
           :class="{
             'conversation-item--active':
-              conversation.id === activeConversationId,
+              conversation.id === workspace.activeConversationId.value,
           }"
-          @click="openConversation(conversation.id)"
+          :disabled="workspace.sending.value"
+          @click="workspace.openConversation(conversation.id)"
         >
           <strong>{{ conversation.title || "Untitled conversation" }}</strong>
           <span>{{ formatDate(conversation.updated_at) }}</span>
@@ -224,34 +134,82 @@ onMounted(refreshConversations);
       <div class="panel__header chat-panel__header">
         <div>
           <p class="section-label">Docker Support</p>
-          <h2>{{ activeTitle }}</h2>
+          <h2>{{ workspace.activeTitle.value }}</h2>
         </div>
 
-        <div v-if="detail" class="header-actions">
-          <button class="button button--ghost" @click="renameActiveConversation">
+        <div v-if="workspace.detail.value" class="header-actions">
+          <button
+            class="button button--ghost"
+            :disabled="
+              workspace.sending.value ||
+              workspace.renaming.value ||
+              workspace.deleting.value
+            "
+            @click="openRenameDialog"
+          >
             Rename
           </button>
-          <button class="button button--danger" @click="deleteActiveConversation">
+          <button
+            class="button button--danger"
+            :disabled="
+              workspace.sending.value ||
+              workspace.renaming.value ||
+              workspace.deleting.value
+            "
+            @click="openDeleteDialog"
+          >
             Delete
           </button>
         </div>
       </div>
 
-      <div v-if="errorMessage" class="alert alert--error">
-        {{ errorMessage }}
+      <div
+        v-if="workspace.actionError.value"
+        class="alert alert--error alert--dismissible"
+      >
+        <span>{{ workspace.actionError.value }}</span>
+        <button
+          type="button"
+          aria-label="Dismiss error"
+          @click="workspace.actionError.value = ''"
+        >
+          ×
+        </button>
       </div>
 
       <div class="message-stream">
         <div
-          v-if="loadingConversation"
+          v-if="workspace.loadingConversation.value"
           class="empty-state"
         >
           Loading conversation…
         </div>
 
-        <template v-else-if="detail?.messages.length">
+        <div
+          v-else-if="workspace.conversationError.value"
+          class="panel-state panel-state--error panel-state--centered"
+        >
+          <strong>Could not open this conversation.</strong>
+          <span>{{ workspace.conversationError.value }}</span>
+          <button
+            v-if="workspace.activeConversationId.value"
+            class="button button--ghost"
+            type="button"
+            @click="
+              workspace.openConversation(
+                workspace.activeConversationId.value,
+              )
+            "
+          >
+            Retry
+          </button>
+        </div>
+
+        <template
+          v-else-if="workspace.detail.value?.messages.length"
+        >
           <article
-            v-for="message in detail.messages"
+            v-for="message in workspace.detail.value.messages"
             :key="message.id"
             class="message"
             :class="`message--${message.role}`"
@@ -268,7 +226,10 @@ onMounted(refreshConversations);
             >
               <span>
                 workers:
-                {{ message.execution.completed_workers.join(" → ") || "none" }}
+                {{
+                  message.execution.completed_workers.join(" → ") ||
+                  "none"
+                }}
               </span>
             </div>
           </article>
@@ -284,9 +245,9 @@ onMounted(refreshConversations);
         </div>
       </div>
 
-      <form class="composer" @submit.prevent="submitMessage">
+      <form class="composer" @submit.prevent="workspace.submitMessage">
         <div
-          v-if="activeSessionId"
+          v-if="workspace.activeSessionId.value"
           class="clarification-banner"
         >
           Clarification session active. Your next message continues the same
@@ -295,18 +256,18 @@ onMounted(refreshConversations);
 
         <div class="composer__row">
           <textarea
-            v-model="draft"
+            v-model="workspace.draft.value"
             rows="3"
             placeholder="Describe the Docker issue…"
-            :disabled="sending"
-            @keydown.ctrl.enter.prevent="submitMessage"
+            :disabled="workspace.sending.value"
+            @keydown.ctrl.enter.prevent="workspace.submitMessage"
           />
           <button
             class="button button--primary composer__send"
             type="submit"
-            :disabled="!canSend"
+            :disabled="!workspace.canSend.value"
           >
-            {{ sending ? "Running…" : "Send" }}
+            {{ workspace.sending.value ? "Running…" : "Send" }}
           </button>
         </div>
         <p class="composer__hint">
@@ -323,7 +284,10 @@ onMounted(refreshConversations);
         </div>
       </div>
 
-      <div v-if="!latestTurn" class="empty-state compact">
+      <div
+        v-if="!workspace.latestTurn.value"
+        class="empty-state compact"
+      >
         Run a turn to inspect routing, workers, and sources.
       </div>
 
@@ -331,28 +295,44 @@ onMounted(refreshConversations);
         <dl class="fact-list">
           <div>
             <dt>Route</dt>
-            <dd>{{ latestTurn.route }}</dd>
+            <dd>{{ workspace.latestTurn.value.route }}</dd>
           </div>
           <div>
             <dt>Docs</dt>
-            <dd>{{ latestTurn.use_docs ? "enabled" : "not used" }}</dd>
+            <dd>
+              {{
+                workspace.latestTurn.value.use_docs
+                  ? "enabled"
+                  : "not used"
+              }}
+            </dd>
           </div>
           <div>
             <dt>Clarification</dt>
-            <dd>{{ latestTurn.session_active ? "active" : "complete" }}</dd>
+            <dd>
+              {{
+                workspace.latestTurn.value.session_active
+                  ? "active"
+                  : "complete"
+              }}
+            </dd>
           </div>
         </dl>
 
         <section class="trace-section">
           <h3>Reason</h3>
-          <p>{{ latestTurn.reason }}</p>
+          <p>{{ workspace.latestTurn.value.reason }}</p>
         </section>
 
-        <section v-if="latestTurn.execution" class="trace-section">
+        <section
+          v-if="workspace.latestTurn.value.execution"
+          class="trace-section"
+        >
           <h3>Workers</h3>
           <div class="chip-row">
             <span
-              v-for="worker in latestTurn.execution.completed_workers"
+              v-for="worker in workspace.latestTurn.value.execution
+                .completed_workers"
               :key="worker"
               class="chip"
             >
@@ -362,12 +342,12 @@ onMounted(refreshConversations);
         </section>
 
         <section
-          v-if="latestTurn.runtime_sources.length"
+          v-if="workspace.latestTurn.value.runtime_sources.length"
           class="trace-section"
         >
           <h3>Runtime sources</h3>
           <div
-            v-for="source in latestTurn.runtime_sources"
+            v-for="source in workspace.latestTurn.value.runtime_sources"
             :key="`${source.index}-${source.tool}`"
             class="source-card"
           >
@@ -377,12 +357,12 @@ onMounted(refreshConversations);
         </section>
 
         <section
-          v-if="latestTurn.doc_sources.length"
+          v-if="workspace.latestTurn.value.doc_sources.length"
           class="trace-section"
         >
           <h3>Documentation</h3>
           <a
-            v-for="source in latestTurn.doc_sources"
+            v-for="source in workspace.latestTurn.value.doc_sources"
             :key="`${source.index}-${source.source_url}`"
             class="source-card source-card--link"
             :href="source.source_url"
@@ -395,5 +375,36 @@ onMounted(refreshConversations);
         </section>
       </template>
     </aside>
+
+    <AppDialog
+      :open="renameDialogOpen"
+      title="Rename conversation"
+      description="Use a concise title that makes the issue easy to find later."
+      confirm-label="Save title"
+      :busy="workspace.renaming.value"
+      @close="closeRenameDialog"
+      @confirm="confirmRename"
+    >
+      <label class="field">
+        <span>Title</span>
+        <input
+          v-model="renameTitle"
+          maxlength="240"
+          autocomplete="off"
+          @keydown.enter.prevent="confirmRename"
+        />
+      </label>
+    </AppDialog>
+
+    <AppDialog
+      :open="deleteDialogOpen"
+      title="Delete conversation"
+      description="This permanently deletes the persisted messages and execution history for this conversation."
+      confirm-label="Delete conversation"
+      :danger="true"
+      :busy="workspace.deleting.value"
+      @close="closeDeleteDialog"
+      @confirm="confirmDelete"
+    />
   </section>
 </template>
