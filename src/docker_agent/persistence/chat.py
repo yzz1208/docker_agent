@@ -68,6 +68,12 @@ class PersistentChatCoordinator:
     _session_conversations: dict[str, str] = field(default_factory=dict)
     _lock: Lock = field(default_factory=Lock)
 
+    def __post_init__(self) -> None:
+        if self.sessions.agent_type != self.agent_type:
+            raise ValueError(
+                "session manager agent_type must match coordinator agent_type"
+            )
+
     def chat(
         self,
         *,
