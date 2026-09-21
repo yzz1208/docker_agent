@@ -11,6 +11,7 @@ from sqlalchemy import Engine, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from docker_agent.observability import redact_log_text
 from docker_agent.persistence.models import (
     EvaluationCaseResult,
     EvaluationRun,
@@ -155,7 +156,9 @@ def sanitize_evaluation_payload(value: object) -> object:
         return [sanitize_evaluation_payload(item) for item in value]
     if isinstance(value, tuple):
         return [sanitize_evaluation_payload(item) for item in value]
-    if isinstance(value, (str, int, float, bool)) or value is None:
+    if isinstance(value, str):
+        return redact_log_text(value)
+    if isinstance(value, (int, float, bool)) or value is None:
         return value
     return str(value)
 
