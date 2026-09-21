@@ -15,6 +15,44 @@ class AgentNotRegistered(AgentRegistryError):
     """Raised when a runtime Agent type is not registered."""
 
 
+def _normalize_agent_type(agent_type: str) -> str:
+    if not isinstance(agent_type, str):
+        raise AgentRegistryError(
+            "agent_type must be a string"
+        )
+
+    normalized = agent_type.strip().lower().replace("-", "_")
+    if not normalized:
+        raise AgentRegistryError(
+            "agent_type must not be empty"
+        )
+
+    allowed = set(
+        "abcdefghijklmnopqrstuvwxyz0123456789_"
+    )
+    if any(character not in allowed for character in normalized):
+        raise AgentRegistryError(
+            "agent_type may contain only lowercase letters, "
+            "numbers, underscores, and hyphens"
+        )
+    return normalized
+
+
+def _validate_labels(
+    values: tuple[str, ...],
+    *,
+    field: str,
+) -> None:
+    if len(set(values)) != len(values):
+        raise AgentRegistryError(
+            f"{field} must not contain duplicates"
+        )
+    for value in values:
+        if not value.strip():
+            raise AgentRegistryError(
+                f"{field} must not contain empty values"
+            )
+
 @dataclass(frozen=True, slots=True)
 class AgentDescriptor:
     """Immutable runtime metadata for one supported Agent type."""
@@ -129,40 +167,3 @@ def build_agent_registry() -> AgentRegistry:
     return AgentRegistry((DOCKER_SUPPORT_DESCRIPTOR,))
 
 
-def _normalize_agent_type(agent_type: str) -> str:
-    if not isinstance(agent_type, str):
-        raise AgentRegistryError(
-            "agent_type must be a string"
-        )
-
-    normalized = agent_type.strip().lower().replace("-", "_")
-    if not normalized:
-        raise AgentRegistryError(
-            "agent_type must not be empty"
-        )
-
-    allowed = set(
-        "abcdefghijklmnopqrstuvwxyz0123456789_"
-    )
-    if any(character not in allowed for character in normalized):
-        raise AgentRegistryError(
-            "agent_type may contain only lowercase letters, "
-            "numbers, underscores, and hyphens"
-        )
-    return normalized
-
-
-def _validate_labels(
-    values: tuple[str, ...],
-    *,
-    field: str,
-) -> None:
-    if len(set(values)) != len(values):
-        raise AgentRegistryError(
-            f"{field} must not contain duplicates"
-        )
-    for value in values:
-        if not value.strip():
-            raise AgentRegistryError(
-                f"{field} must not contain empty values"
-            )
