@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import hashlib
-import subprocess
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -90,20 +89,52 @@ def dataset_version(path: Path) -> str:
 
 
 def resolve_git_revision(root: Path | None = None) -> str | None:
-    try:
-        completed = subprocess.run(
-            ["git", "rev-parse", "HEAD"],
-            cwd=root,
-            check=True,
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
-    except (OSError, subprocess.SubprocessError):
+    base = (root or Path.cwd()).resolve()
+    git_dir = _find_git_directory(base)
+    if git_dir is None:
         return None
 
-    revision = completed.stdout.strip()
+    head_path = git_dir / "HEAD"
+    try:
+        head = head_path.read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
+
+    if not head.startswith("ref:"):
+        return head or None
+
+    ref_name = head.removeprefix("ref:").strip()
+    ref_path = git_dir / ref_name
+    try:
+        revision = ref_path.read_text(encoding="utf-8").strip()
+    except OSError:
+        revision = _packed_ref_revision(git_dir, ref_name)
+
     return revision or None
+
+
+def _find_git_directory(start: Path) -> Path | None:
+    for candidate in (start, *start.parents):
+        git_path = candidate / ".git"
+        if git_path.is_dir():
+            return git_path
+    return None
+
+
+def _packed_ref_revision(git_dir: Path, ref_name: str) -> str | None:
+    packed_refs = git_dir / "packed-refs"
+    try:
+        lines = packed_refs.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return None
+
+    for line in lines:
+        if not line or line.startswith(("#", "^")):
+            continue
+        revision, _, name = line.partition(" ")
+        if name == ref_name:
+            return revision.strip() or None
+    return None
 
 
 def sanitize_evaluation_payload(value: object) -> object:
