@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import Literal
 from uuid import uuid4
 
-from sqlalchemy import Engine, select
+from sqlalchemy import Engine, delete, select
 from sqlalchemy.orm import Session
 
 from docker_agent.persistence.models import (
@@ -186,6 +186,66 @@ def get_conversation(
         if row is None:
             raise ConversationNotFound(normalized)
         return _conversation_record(row)
+
+
+def rename_conversation(
+    engine: Engine,
+    conversation_id: str,
+    *,
+    title: str,
+) -> ConversationRecord:
+    normalized_id = conversation_id.strip()
+    normalized_title = title.strip()
+    if not normalized_id:
+        raise ValueError("conversation_id must not be empty")
+    if not normalized_title:
+        raise ValueError("title must not be empty")
+    if len(normalized_title) > 240:
+        raise ValueError("title must not exceed 240 characters")
+
+    with Session(engine) as session:
+        row = session.get(Conversation, normalized_id)
+        if row is None:
+            raise ConversationNotFound(normalized_id)
+
+        row.title = normalized_title
+        row.updated_at = utc_now()
+        session.commit()
+        session.refresh(row)
+        return _conversation_record(row)
+
+
+def delete_conversation(
+    engine: Engine,
+    conversation_id: str,
+) -> None:
+    normalized_id = conversation_id.strip()
+    if not normalized_id:
+        raise ValueError("conversation_id must not be empty")
+
+    with Session(engine) as session:
+        row = session.get(Conversation, normalized_id)
+        if row is None:
+            raise ConversationNotFound(normalized_id)
+
+        message_ids = session.scalars(
+            select(Message.id).where(
+                Message.conversation_id == normalized_id
+            )
+        ).all()
+        if message_ids:
+            session.execute(
+                delete(AgentExecution).where(
+                    AgentExecution.message_id.in_(message_ids)
+                )
+            )
+        session.execute(
+            delete(Message).where(
+                Message.conversation_id == normalized_id
+            )
+        )
+        session.delete(row)
+        session.commit()
 
 
 def list_conversations(
