@@ -114,6 +114,7 @@ export function deleteConversation(
 
 export function sendChat(input: {
   message: string;
+  agentType?: string | null;
   conversationId?: string | null;
   sessionId?: string | null;
 }): Promise<ChatResponse> {
@@ -121,6 +122,7 @@ export function sendChat(input: {
     method: "POST",
     body: jsonBody({
       message: input.message,
+      agent_type: input.agentType ?? null,
       conversation_id: input.conversationId ?? null,
       session_id: input.sessionId ?? null,
     }),
@@ -129,9 +131,16 @@ export function sendChat(input: {
 
 export function resetChatSession(
   sessionId: string,
+  agentType?: string | null,
 ): Promise<void> {
+  const params = new URLSearchParams();
+  if (agentType) {
+    params.set("agent_type", agentType);
+  }
+  const query = params.toString();
+
   return request<void>(
-    `/chat/${encodeURIComponent(sessionId)}`,
+    `/chat/${encodeURIComponent(sessionId)}${query ? `?${query}` : ""}`,
     { method: "DELETE" },
   );
 }
