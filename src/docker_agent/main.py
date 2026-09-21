@@ -14,7 +14,15 @@ from docker_agent.api.chat import (
     build_chat_response,
 )
 from docker_agent.config import get_settings
-from docker_agent.db import check_database
+from docker_agent.db import check_database, create_db_engine
+from docker_agent.graph.service import LangGraphDockerSupportAgent
+from docker_agent.persistence import (
+    ChatConversationMismatch,
+    ConversationAgentTypeMismatch,
+    ConversationNotFound,
+    PersistentChatCoordinator,
+    init_persistence_store,
+)
 from docker_agent.rag.answer import CitationValidationError
 from docker_agent.tools.docker_cli import DockerToolTimeout
 
@@ -29,12 +37,24 @@ app = FastAPI(
 
 @lru_cache
 def get_agent() -> DockerSupportAgent:
-    """Create the expensive agent stack lazily on the first chat request."""
+    """Create the LangGraph-backed agent stack lazily on first use."""
 
-    return DockerSupportAgent()
+    return LangGraphDockerSupportAgent()
 
 
 chat_sessions = ChatSessionManager(agent_factory=get_agent)
+
+
+@lru_cache
+def get_chat_coordinator() -> PersistentChatCoordinator:
+    """Create the durable chat coordinator and product tables lazily."""
+
+    engine = create_db_engine(register_pgvector_types=False)
+    init_persistence_store(engine)
+    return PersistentChatCoordinator(
+        engine=engine,
+        sessions=chat_sessions,
+    )
 
 
 @app.get("/health", tags=["system"])
@@ -64,17 +84,23 @@ def database_health() -> JSONResponse:
 
 @app.post("/chat", response_model=ChatResponse, tags=["agent"])
 def chat(request: ChatRequest) -> ChatResponse:
-    """Run one agent turn, optionally continuing a pending clarification session."""
+    """Run and persist one product chat turn."""
 
     try:
-        session_id, active, result = chat_sessions.chat(
+        turn = get_chat_coordinator().chat(
             message=request.message,
+            conversation_id=request.conversation_id,
             session_id=request.session_id,
         )
-    except ChatSessionNotFound as exc:
+    except (ChatSessionNotFound, ConversationNotFound) as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Chat session was not found or has already completed.",
+            detail="Conversation or chat session was not found.",
+        ) from exc
+    except (ChatConversationMismatch, ConversationAgentTypeMismatch) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
         ) from exc
     except AgentRoutingError as exc:
         raise HTTPException(
@@ -102,7 +128,12 @@ def chat(request: ChatRequest) -> ChatResponse:
             detail=str(exc),
         ) from exc
 
-    return build_chat_response(session_id, active, result)
+    return build_chat_response(
+        turn.session_id,
+        turn.session_active,
+        turn.result,
+        conversation_id=turn.conversation.id,
+    )
 
 
 @app.delete(
@@ -111,10 +142,10 @@ def chat(request: ChatRequest) -> ChatResponse:
     tags=["agent"],
 )
 def reset_chat_session(session_id: str) -> Response:
-    """Discard a pending clarification session."""
+    """Discard clarification state without deleting conversation history."""
 
     try:
-        removed = chat_sessions.reset(session_id)
+        removed = get_chat_coordinator().reset(session_id)
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
