@@ -17,7 +17,7 @@
 - Upgrade Phase 3B：Persistence + Agent Configuration + Effective Config API ✅
 - Upgrade Phase 4：Vue 3 Web Product Shell ✅（UI/交互细节后续优化）
 - Upgrade Phase 5：Observability + Evaluation Ops ✅
-- Upgrade Phase 6：Production / Deployment Hardening ✅（Step 1–7 已实现，待最终 production validation）
+- Upgrade Phase 6：Production / Deployment Hardening ✅
 
 ## 本地环境
 
