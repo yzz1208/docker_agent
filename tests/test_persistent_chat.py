@@ -5,13 +5,13 @@ from docker_agent.agent.answer import AgentAnswer
 from docker_agent.agent.router import AgentRouteDecision
 from docker_agent.api.chat import ChatSessionManager
 from docker_agent.graph.service import LangGraphAgentTurnResult
+from docker_agent.multi_agent.execution import WorkerExecutionRecord
+from docker_agent.multi_agent.supervisor import SupervisorPlan
 from docker_agent.observability import (
     correlation_context,
     current_correlation,
     metrics,
 )
-from docker_agent.multi_agent.execution import WorkerExecutionRecord
-from docker_agent.multi_agent.supervisor import SupervisorPlan
 from docker_agent.persistence import (
     ChatConversationMismatch,
     ConversationAgentTypeMismatch,
