@@ -63,8 +63,12 @@ console.log("✓ Database readiness");
 const agents = await request("/agents");
 assert(
   Array.isArray(agents) &&
-    agents.some((agent) => agent?.agent_type === "docker_support"),
-  "Agent registry did not expose docker_support.",
+    agents.some((agent) => agent?.agent_type === "docker_support") &&
+    agents.some(
+      (agent) =>
+        agent?.agent_type === "infrastructure_troubleshooter",
+    ),
+  "Agent registry did not expose both runtime Agents.",
 );
 console.log("✓ Agent registry");
 
