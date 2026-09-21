@@ -2,6 +2,7 @@ from functools import lru_cache
 
 from fastapi import FastAPI, HTTPException, Response, status
 from fastapi.responses import JSONResponse
+from sqlalchemy.engine import Engine
 from sqlalchemy.exc import SQLAlchemyError
 
 from docker_agent.agent.router import AgentRoutingError
@@ -13,6 +14,12 @@ from docker_agent.api.chat import (
     ChatSessionNotFound,
     build_chat_response,
 )
+from docker_agent.api.conversations import (
+    ConversationDetailResponse,
+    ConversationSummaryResponse,
+    build_conversation_detail,
+    build_conversation_summary,
+)
 from docker_agent.config import get_settings
 from docker_agent.db import check_database, create_db_engine
 from docker_agent.graph.service import LangGraphDockerSupportAgent
@@ -22,6 +29,8 @@ from docker_agent.persistence import (
     ConversationNotFound,
     PersistentChatCoordinator,
     init_persistence_store,
+    list_conversations,
+    load_conversation,
 )
 from docker_agent.rag.answer import CitationValidationError
 from docker_agent.tools.docker_cli import DockerToolTimeout
@@ -46,13 +55,20 @@ chat_sessions = ChatSessionManager(agent_factory=get_agent)
 
 
 @lru_cache
-def get_chat_coordinator() -> PersistentChatCoordinator:
-    """Create the durable chat coordinator and product tables lazily."""
+def get_persistence_engine() -> Engine:
+    """Create the product persistence engine and tables lazily."""
 
     engine = create_db_engine(register_pgvector_types=False)
     init_persistence_store(engine)
+    return engine
+
+
+@lru_cache
+def get_chat_coordinator() -> PersistentChatCoordinator:
+    """Create the durable chat coordinator lazily."""
+
     return PersistentChatCoordinator(
-        engine=engine,
+        engine=get_persistence_engine(),
         sessions=chat_sessions,
     )
 
@@ -81,6 +97,71 @@ def database_health() -> JSONResponse:
         content={"status": "ok" if healthy else "error", "database": "reachable"},
     )
 
+
+
+
+
+@app.get(
+    "/conversations",
+    response_model=list[ConversationSummaryResponse],
+    tags=["conversations"],
+)
+def conversations(
+    limit: int = 50,
+    offset: int = 0,
+) -> list[ConversationSummaryResponse]:
+    """List durable conversations ordered by most recently updated."""
+
+    try:
+        records = list_conversations(
+            get_persistence_engine(),
+            limit=limit,
+            offset=offset,
+        )
+    except SQLAlchemyError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="PostgreSQL is unavailable.",
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+    return [build_conversation_summary(record) for record in records]
+
+
+@app.get(
+    "/conversations/{conversation_id}",
+    response_model=ConversationDetailResponse,
+    tags=["conversations"],
+)
+def conversation_detail(conversation_id: str) -> ConversationDetailResponse:
+    """Load one durable conversation with messages and execution metadata."""
+
+    try:
+        snapshot = load_conversation(
+            get_persistence_engine(),
+            conversation_id,
+        )
+    except ConversationNotFound as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Conversation was not found.",
+        ) from exc
+    except SQLAlchemyError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="PostgreSQL is unavailable.",
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+    return build_conversation_detail(snapshot)
 
 @app.post("/chat", response_model=ChatResponse, tags=["agent"])
 def chat(request: ChatRequest) -> ChatResponse:
