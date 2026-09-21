@@ -11,7 +11,10 @@ x-backend-common: &backend-common
     APP_PORT: 8000
     DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-docker_agent}
     EMBEDDING_CACHE_DIR: /app/.cache/huggingface
+    EMBEDDING_DEVICE: ${CONTAINER_EMBEDDING_DEVICE:-cpu}
     RERANK_CACHE_DIR: /app/.cache/huggingface
+    RERANK_DEVICE: ${CONTAINER_RERANK_DEVICE:-cpu}
+    RERANK_USE_FP16: ${CONTAINER_RERANK_USE_FP16:-false}
     TOOL_MODE: ${TOOL_MODE:-mock}
   volumes:
     - model_cache:/app/.cache/huggingface
