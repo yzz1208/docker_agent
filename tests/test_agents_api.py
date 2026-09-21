@@ -61,7 +61,6 @@ def test_agent_detail_api_returns_404_for_unregistered_type() -> None:
     )
 
 
-
 def test_agent_detail_api_rejects_malformed_type() -> None:
     client = TestClient(app)
 
