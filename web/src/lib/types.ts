@@ -262,6 +262,34 @@ export type EvaluationComparison = {
 };
 
 
+export type ConfigurationValueKind =
+  | "string"
+  | "integer"
+  | "number";
+
+export type ConfigurationFieldDescriptor = {
+  key: string;
+  label: string;
+  description: string;
+  kind: ConfigurationValueKind;
+  minimum: number | null;
+  maximum: number | null;
+};
+
+export type ConfigurationGroupDescriptor = {
+  key: string;
+  label: string;
+  fields: ConfigurationFieldDescriptor[];
+};
+
+export type ConfigurationRuleDescriptor = {
+  kind: "less_equal" | "not_all_zero";
+  group: string;
+  fields: string[];
+  target_field: string;
+  message: string;
+};
+
 export type AgentDescriptor = {
   agent_type: string;
   display_name: string;
@@ -271,5 +299,7 @@ export type AgentDescriptor = {
   toolsets: string[];
   worker_roles: string[];
   configuration_groups: string[];
+  configuration_schema: ConfigurationGroupDescriptor[];
+  configuration_rules: ConfigurationRuleDescriptor[];
   default_enabled: boolean;
 };
