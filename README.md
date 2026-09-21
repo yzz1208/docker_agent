@@ -17,7 +17,7 @@
 - Upgrade Phase 3B：Persistence + Agent Configuration + Effective Config API ✅
 - Upgrade Phase 4：Vue 3 Web Product Shell ✅（UI/交互细节后续优化）
 - Upgrade Phase 5：Observability + Evaluation Ops ✅
-- Upgrade Phase 6：Production / Deployment Hardening（Step 1–4 Alembic / DB lifecycle / Containers / Environment Separation 已实现待本地 gate）
+- Upgrade Phase 6：Production / Deployment Hardening（Step 1–5 已实现：Alembic / DB lifecycle / Containers / Environment Separation / CI）
 
 ## 本地环境
 
@@ -279,3 +279,29 @@ FastAPI serving 启动时还会校验 `MODEL_NAME` / `MODEL_BASE_URL`。
 
 `TOOL_MODE=mock` 现在是真正的无 Docker subprocess 模式；`TOOL_MODE=local`
 才调用只读 Docker CLI。默认 production Compose 强制使用 mock 模式。
+
+
+## CI
+
+GitHub Actions 普通 CI：
+
+~~~text
+Backend quality
+├─ uv sync
+├─ Ruff
+├─ migration/runtime contract
+└─ pytest
+
+Frontend quality
+├─ typecheck
+├─ unit tests
+└─ production build
+
+Production configuration
+└─ docker compose config
+~~~
+
+普通 PR/Push CI 不调用真实模型，也不需要生产 secrets。Live-model regression gate 会放在独立
+的显式工作流中。
+
+Linux CI/生产容器使用 CPU PyTorch；Windows 本地开发继续使用 cu130。
