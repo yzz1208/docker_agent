@@ -65,6 +65,37 @@ def test_create_and_get_agent_configuration(monkeypatch) -> None:
     assert loaded.json() == payload
 
 
+def test_registered_agent_configuration_uses_canonical_agent_type(
+    monkeypatch,
+) -> None:
+    engine = _engine()
+    monkeypatch.setattr(
+        "docker_agent.main.get_persistence_engine",
+        lambda: engine,
+    )
+    client = TestClient(app)
+
+    response = client.post(
+        "/agent-configurations",
+        json={
+            "agent_type": "Docker-Support",
+            "display_name": "Docker Support",
+            "model_settings": {
+                "temperature": 0.2,
+            },
+        },
+    )
+
+    assert response.status_code == 201
+    assert response.json()["agent_type"] == "docker_support"
+
+    loaded = client.get(
+        "/agent-configurations/Docker-Support"
+    )
+    assert loaded.status_code == 200
+    assert loaded.json()["agent_type"] == "docker_support"
+
+
 def test_list_agent_configurations(monkeypatch) -> None:
     engine = _engine()
     create_agent_configuration(
