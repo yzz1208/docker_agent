@@ -102,20 +102,27 @@ assert(
 );
 console.log("✓ Evaluation history");
 
-const prometheus = await request("/metrics");
-assert(
-  typeof prometheus === "string",
-  "Metrics endpoint did not return text.",
+const checkMetrics = !["0", "false", "no"].includes(
+  (process.env.SMOKE_CHECK_METRICS ?? "true").toLowerCase(),
 );
-assert(
-  prometheus.includes("docker_agent_http_requests_total"),
-  "Metrics endpoint is missing HTTP request metrics.",
-);
-assert(
-  prometheus.includes("docker_agent_run_duration_seconds"),
-  "Metrics endpoint is missing Agent run duration metrics.",
-);
-console.log("✓ Prometheus metrics");
+if (checkMetrics) {
+  const prometheus = await request("/metrics");
+  assert(
+    typeof prometheus === "string",
+    "Metrics endpoint did not return text.",
+  );
+  assert(
+    prometheus.includes("docker_agent_http_requests_total"),
+    "Metrics endpoint is missing HTTP request metrics.",
+  );
+  assert(
+    prometheus.includes("docker_agent_run_duration_seconds"),
+    "Metrics endpoint is missing Agent run duration metrics.",
+  );
+  console.log("✓ Prometheus metrics");
+} else {
+  console.log("↷ Prometheus metrics check skipped");
+}
 
 const smokeMessage = process.env.SMOKE_CHAT_MESSAGE?.trim();
 if (smokeMessage) {
