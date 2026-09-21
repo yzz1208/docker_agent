@@ -17,7 +17,7 @@
 - Upgrade Phase 3B：Persistence + Agent Configuration + Effective Config API ✅
 - Upgrade Phase 4：Vue 3 Web Product Shell ✅（UI/交互细节后续优化）
 - Upgrade Phase 5：Observability + Evaluation Ops ✅
-- Upgrade Phase 6：Production / Deployment Hardening（Step 1–2 Alembic + DB lifecycle/readiness 已实现待本地 gate）
+- Upgrade Phase 6：Production / Deployment Hardening（Step 1–3 Alembic / DB lifecycle / Production Containers 已实现待本地 gate）
 
 ## 本地环境
 
@@ -199,3 +199,44 @@ npm run build
 ```powershell
 npm run smoke
 ```
+
+
+## Production Compose
+
+完整生产化本地栈：
+
+~~~powershell
+docker compose -f compose.prod.yaml build
+docker compose -f compose.prod.yaml up -d
+docker compose -f compose.prod.yaml ps
+~~~
+
+默认只对宿主机暴露 Web：
+
+~~~text
+http://127.0.0.1:8080
+~~~
+
+容器启动顺序：
+
+~~~text
+PostgreSQL
+  ↓
+Alembic migration
+  ↓
+FastAPI readiness
+  ↓
+Nginx / Vue
+~~~
+
+通过 Nginx 跑完整只读 smoke：
+
+~~~powershell
+cd web
+$env:BACKEND_URL="http://127.0.0.1:8080"
+npm run smoke
+Remove-Item Env:BACKEND_URL
+~~~
+
+生产 Compose 默认不挂载 Docker socket，并默认使用 `TOOL_MODE=mock`。真实宿主机 Docker
+控制需要后续显式配置高权限部署模式。
