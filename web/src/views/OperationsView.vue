@@ -9,6 +9,12 @@ const dashboard = useOperationsDashboard();
 const activeTab = ref<OperationsTab>("overview");
 const tabs: OperationsTab[] = ["overview", "runs", "evaluations"];
 
+const activeRun = computed(() => activeRun);
+const activeEvaluation = computed(
+  () => activeEvaluation,
+);
+const comparison = computed(() => comparison);
+
 const routeRows = computed(() =>
   distributionRows(dashboard.summary.value?.route_distribution ?? {}),
 );
@@ -333,7 +339,7 @@ onMounted(dashboard.loadOverview);
               class="operations-table__row operations-table__row--button"
               :class="{
                 'operations-table__row--active':
-                  dashboard.activeRun.value?.id === run.id,
+                  activeRun?.id === run.id,
               }"
               type="button"
               @click="dashboard.openRun(run.id)"
@@ -368,7 +374,7 @@ onMounted(dashboard.loadOverview);
           </div>
 
           <div
-            v-else-if="!dashboard.activeRun.value"
+            v-else-if="!activeRun"
             class="empty-state"
           >
             Select a run to inspect its route, workers, duration, and error.
@@ -381,37 +387,37 @@ onMounted(dashboard.loadOverview);
                 <dd>
                   <span
                     class="status-pill"
-                    :data-status="dashboard.activeRun.value.status"
+                    :data-status="activeRun.status"
                   >
-                    {{ dashboard.activeRun.value.status }}
+                    {{ activeRun.status }}
                   </span>
                 </dd>
               </div>
               <div>
                 <dt>Run ID</dt>
-                <dd><code>{{ dashboard.activeRun.value.id }}</code></dd>
+                <dd><code>{{ activeRun.id }}</code></dd>
               </div>
               <div>
                 <dt>Conversation</dt>
                 <dd>
                   <code>
-                    {{ dashboard.activeRun.value.conversation_id }}
+                    {{ activeRun.conversation_id }}
                   </code>
                 </dd>
               </div>
               <div>
                 <dt>Route</dt>
-                <dd>{{ dashboard.activeRun.value.route || "—" }}</dd>
+                <dd>{{ activeRun.route || "—" }}</dd>
               </div>
               <div>
                 <dt>Duration</dt>
                 <dd>
-                  {{ formatDuration(dashboard.activeRun.value.duration_ms) }}
+                  {{ formatDuration(activeRun.duration_ms) }}
                 </dd>
               </div>
               <div>
                 <dt>Started</dt>
-                <dd>{{ formatDate(dashboard.activeRun.value.started_at) }}</dd>
+                <dd>{{ formatDate(activeRun.started_at) }}</dd>
               </div>
             </dl>
 
@@ -419,7 +425,7 @@ onMounted(dashboard.loadOverview);
               <h3>Workers</h3>
               <div class="chip-row">
                 <span
-                  v-for="worker in dashboard.activeRun.value.completed_workers"
+                  v-for="worker in activeRun.completed_workers"
                   :key="worker"
                   class="chip"
                 >
@@ -427,7 +433,7 @@ onMounted(dashboard.loadOverview);
                 </span>
                 <span
                   v-if="
-                    dashboard.activeRun.value.completed_workers.length === 0
+                    activeRun.completed_workers.length === 0
                   "
                   class="field-hint"
                 >
@@ -437,11 +443,11 @@ onMounted(dashboard.loadOverview);
             </section>
 
             <section
-              v-if="dashboard.activeRun.value.error_type"
+              v-if="activeRun.error_type"
               class="operations-detail-section operations-error-detail"
             >
-              <h3>{{ dashboard.activeRun.value.error_type }}</h3>
-              <p>{{ dashboard.activeRun.value.error_message || "No detail." }}</p>
+              <h3>{{ activeRun.error_type }}</h3>
+              <p>{{ activeRun.error_message || "No detail." }}</p>
             </section>
           </template>
         </aside>
@@ -473,7 +479,7 @@ onMounted(dashboard.loadOverview);
               class="evaluation-card"
               :class="{
                 'evaluation-card--active':
-                  dashboard.activeEvaluation.value?.run.id === evaluation.id,
+                  activeEvaluation?.run.id === evaluation.id,
               }"
             >
               <button
@@ -530,7 +536,7 @@ onMounted(dashboard.loadOverview);
           </div>
 
           <div
-            v-else-if="!dashboard.activeEvaluation.value"
+            v-else-if="!activeEvaluation"
             class="empty-state"
           >
             Select an evaluation run to inspect persisted cases.
@@ -540,12 +546,12 @@ onMounted(dashboard.loadOverview);
             <dl class="operations-facts">
               <div>
                 <dt>Suite</dt>
-                <dd>{{ dashboard.activeEvaluation.value.run.suite }}</dd>
+                <dd>{{ activeEvaluation.run.suite }}</dd>
               </div>
               <div>
                 <dt>Dataset</dt>
                 <dd>
-                  {{ dashboard.activeEvaluation.value.run.dataset_name }}
+                  {{ activeEvaluation.run.dataset_name }}
                 </dd>
               </div>
               <div>
@@ -553,7 +559,7 @@ onMounted(dashboard.loadOverview);
                 <dd>
                   <code>
                     {{
-                      dashboard.activeEvaluation.value.run.git_revision ||
+                      activeEvaluation.run.git_revision ||
                       "—"
                     }}
                   </code>
@@ -562,7 +568,7 @@ onMounted(dashboard.loadOverview);
               <div>
                 <dt>Cases</dt>
                 <dd>
-                  {{ dashboard.activeEvaluation.value.run.case_count }}
+                  {{ activeEvaluation.run.case_count }}
                 </dd>
               </div>
             </dl>
@@ -571,7 +577,7 @@ onMounted(dashboard.loadOverview);
               <h3>Aggregate metrics</h3>
               <pre class="operations-json">{{
                 JSON.stringify(
-                  dashboard.activeEvaluation.value.run.aggregate_metrics,
+                  activeEvaluation.run.aggregate_metrics,
                   null,
                   2,
                 )
@@ -582,7 +588,7 @@ onMounted(dashboard.loadOverview);
               <h3>Cases</h3>
               <div class="evaluation-case-list">
                 <div
-                  v-for="evaluationCase in dashboard.activeEvaluation.value.cases"
+                  v-for="evaluationCase in activeEvaluation.cases"
                   :key="evaluationCase.id"
                   class="evaluation-case"
                 >
@@ -641,7 +647,7 @@ onMounted(dashboard.loadOverview);
         </div>
 
         <div
-          v-if="dashboard.comparison.value"
+          v-if="comparison"
           class="comparison-result"
         >
           <div class="comparison-verdict">
@@ -649,27 +655,27 @@ onMounted(dashboard.loadOverview);
               <p class="section-label">Verdict</p>
               <strong
                 class="verdict-badge"
-                :data-verdict="dashboard.comparison.value.verdict"
+                :data-verdict="comparison.verdict"
               >
-                {{ dashboard.comparison.value.verdict }}
+                {{ comparison.verdict }}
               </strong>
             </div>
             <div>
               <span>Common cases</span>
               <strong>
-                {{ dashboard.comparison.value.common_case_count }}
+                {{ comparison.common_case_count }}
               </strong>
             </div>
             <div>
               <span>New failures</span>
               <strong>
-                {{ dashboard.comparison.value.new_failures.length }}
+                {{ comparison.new_failures.length }}
               </strong>
             </div>
             <div>
               <span>New passes</span>
               <strong>
-                {{ dashboard.comparison.value.new_passes.length }}
+                {{ comparison.new_passes.length }}
               </strong>
             </div>
           </div>
@@ -677,11 +683,11 @@ onMounted(dashboard.loadOverview);
           <section class="comparison-section">
             <h3>Metric deltas</h3>
             <div
-              v-if="dashboard.comparison.value.metric_comparisons.length"
+              v-if="comparison.metric_comparisons.length"
               class="comparison-metrics"
             >
               <div
-                v-for="metric in dashboard.comparison.value.metric_comparisons"
+                v-for="metric in comparison.metric_comparisons"
                 :key="metric.path"
                 class="comparison-metric"
                 :class="{
@@ -705,13 +711,13 @@ onMounted(dashboard.loadOverview);
             <div>
               <h3>New failures</h3>
               <code
-                v-for="caseKey in dashboard.comparison.value.new_failures"
+                v-for="caseKey in comparison.new_failures"
                 :key="caseKey"
               >
                 {{ caseKey }}
               </code>
               <span
-                v-if="!dashboard.comparison.value.new_failures.length"
+                v-if="!comparison.new_failures.length"
                 class="field-hint"
               >
                 None
@@ -721,7 +727,7 @@ onMounted(dashboard.loadOverview);
             <div>
               <h3>Behavior changes</h3>
               <div
-                v-for="change in dashboard.comparison.value.behavior_changes"
+                v-for="change in comparison.behavior_changes"
                 :key="`${change.case_key}-${change.field}`"
                 class="comparison-change"
               >
@@ -733,7 +739,7 @@ onMounted(dashboard.loadOverview);
                 </small>
               </div>
               <span
-                v-if="!dashboard.comparison.value.behavior_changes.length"
+                v-if="!comparison.behavior_changes.length"
                 class="field-hint"
               >
                 None
@@ -743,7 +749,7 @@ onMounted(dashboard.loadOverview);
             <div>
               <h3>Configuration changes</h3>
               <div
-                v-for="change in dashboard.comparison.value.configuration_changes"
+                v-for="change in comparison.configuration_changes"
                 :key="change.path"
                 class="comparison-change"
               >
@@ -755,7 +761,7 @@ onMounted(dashboard.loadOverview);
                 </small>
               </div>
               <span
-                v-if="!dashboard.comparison.value.configuration_changes.length"
+                v-if="!comparison.configuration_changes.length"
                 class="field-hint"
               >
                 None
