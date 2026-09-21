@@ -263,12 +263,14 @@ def test_app_lifespan_rejects_outdated_database_schema(
         reject_schema,
     )
 
-    with pytest.raises(
-        DatabaseSchemaNotReady,
-        match="schema is outdated",
+    with (
+        pytest.raises(
+            DatabaseSchemaNotReady,
+            match="schema is outdated",
+        ),
+        TestClient(app),
     ):
-        with TestClient(app):
-            pass
+        pass
 
     assert engine.disposed is True
 
