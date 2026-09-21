@@ -7,7 +7,10 @@ from docker_agent.agent.configuration_schema import (
     ConfigurationSchemaError,
     resolve_settings_from_schema,
 )
-from docker_agent.agent.registry import DOCKER_SUPPORT_DESCRIPTOR
+from docker_agent.agent.registry import (
+    DOCKER_SUPPORT_DESCRIPTOR,
+    AgentDescriptor,
+)
 from docker_agent.config import Settings
 from docker_agent.persistence.agent_config import AgentConfigurationRecord
 
@@ -21,8 +24,8 @@ class AgentDisabledError(RuntimeError):
 
 
 @dataclass(frozen=True, slots=True)
-class EffectiveDockerSupportConfiguration:
-    """Resolved Docker Support settings with secure environment values preserved."""
+class EffectiveAgentConfiguration:
+    """Resolved Agent settings with secure environment values preserved."""
 
     agent_type: str
     display_name: str
@@ -32,41 +35,64 @@ class EffectiveDockerSupportConfiguration:
     configuration_updated_at: datetime | None
 
 
-def resolve_docker_support_configuration(
+EffectiveDockerSupportConfiguration = EffectiveAgentConfiguration
+
+
+def resolve_agent_configuration(
+    descriptor: AgentDescriptor,
     base: Settings,
     record: AgentConfigurationRecord | None = None,
-) -> EffectiveDockerSupportConfiguration:
-    """Merge descriptor-owned product preferences over secure environment settings."""
+) -> EffectiveAgentConfiguration:
+    """Resolve one registered Agent's descriptor-owned product settings."""
 
     if record is None:
-        return EffectiveDockerSupportConfiguration(
-            agent_type=DOCKER_SUPPORT_DESCRIPTOR.agent_type,
-            display_name=DOCKER_SUPPORT_DESCRIPTOR.display_name,
-            enabled=DOCKER_SUPPORT_DESCRIPTOR.default_enabled,
+        return EffectiveAgentConfiguration(
+            agent_type=descriptor.agent_type,
+            display_name=descriptor.display_name,
+            enabled=descriptor.default_enabled,
             settings=base.model_copy(deep=True),
             persisted=False,
             configuration_updated_at=None,
         )
 
-    if record.agent_type != DOCKER_SUPPORT_DESCRIPTOR.agent_type:
+    if record.agent_type != descriptor.agent_type:
         raise AgentConfigurationResolutionError(
-            "Docker Support resolver requires agent_type='docker_support'"
+            f"Resolver for {descriptor.agent_type!r} cannot load "
+            f"configuration for {record.agent_type!r}"
         )
 
-    resolved_settings = resolve_docker_support_settings(
-        base,
-        model_settings=record.model_settings,
-        retrieval_settings=record.retrieval_settings,
-        runtime_settings=record.runtime_settings,
-    )
+    try:
+        resolved_settings = resolve_settings_from_schema(
+            base,
+            schema=descriptor.configuration_schema,
+            rules=descriptor.configuration_rules,
+            model_settings=record.model_settings,
+            retrieval_settings=record.retrieval_settings,
+            runtime_settings=record.runtime_settings,
+        )
+    except ConfigurationSchemaError as exc:
+        raise AgentConfigurationResolutionError(str(exc)) from exc
 
-    return EffectiveDockerSupportConfiguration(
+    return EffectiveAgentConfiguration(
         agent_type=record.agent_type,
         display_name=record.display_name,
         enabled=record.enabled,
         settings=resolved_settings,
         persisted=True,
         configuration_updated_at=record.updated_at,
+    )
+
+
+def resolve_docker_support_configuration(
+    base: Settings,
+    record: AgentConfigurationRecord | None = None,
+) -> EffectiveDockerSupportConfiguration:
+    """Compatibility wrapper for Docker Support configuration resolution."""
+
+    return resolve_agent_configuration(
+        DOCKER_SUPPORT_DESCRIPTOR,
+        base,
+        record,
     )
 
 
@@ -93,8 +119,8 @@ def resolve_docker_support_settings(
 
 
 def require_enabled(
-    config: EffectiveDockerSupportConfiguration,
-) -> EffectiveDockerSupportConfiguration:
+    config: EffectiveAgentConfiguration,
+) -> EffectiveAgentConfiguration:
     if not config.enabled:
         raise AgentDisabledError(
             f"Agent type {config.agent_type!r} is disabled"
