@@ -51,6 +51,17 @@ def validate_configuration_schema(
     schema: tuple[ConfigurationGroupDescriptor, ...],
     rules: tuple[ConfigurationRuleDescriptor, ...],
 ) -> None:
+    allowed_groups = {
+        "model_settings",
+        "retrieval_settings",
+        "runtime_settings",
+    }
+    allowed_kinds = {
+        "string",
+        "integer",
+        "number",
+    }
+
     group_keys = [group.key for group in schema]
     if len(set(group_keys)) != len(group_keys):
         raise ConfigurationSchemaError(
@@ -58,12 +69,60 @@ def validate_configuration_schema(
         )
 
     field_keys_by_group: dict[str, set[str]] = {}
+    settings_names: set[str] = set()
     for group in schema:
+        if group.key not in allowed_groups:
+            raise ConfigurationSchemaError(
+                f"unsupported configuration group {group.key!r}"
+            )
+        if not group.label.strip():
+            raise ConfigurationSchemaError(
+                f"{group.key} label must not be empty"
+            )
+
         field_keys = [field.key for field in group.fields]
         if len(set(field_keys)) != len(field_keys):
             raise ConfigurationSchemaError(
                 f"{group.key} contains duplicate fields"
             )
+
+        for field in group.fields:
+            if not field.key.strip():
+                raise ConfigurationSchemaError(
+                    f"{group.key} contains an empty field key"
+                )
+            if not field.settings_name.strip():
+                raise ConfigurationSchemaError(
+                    f"{group.key}.{field.key} settings_name must not be empty"
+                )
+            if not field.label.strip():
+                raise ConfigurationSchemaError(
+                    f"{group.key}.{field.key} label must not be empty"
+                )
+            if not field.description.strip():
+                raise ConfigurationSchemaError(
+                    f"{group.key}.{field.key} description must not be empty"
+                )
+            if field.kind not in allowed_kinds:
+                raise ConfigurationSchemaError(
+                    f"{group.key}.{field.key} has unsupported kind "
+                    f"{field.kind!r}"
+                )
+            if (
+                field.minimum is not None
+                and field.maximum is not None
+                and field.minimum > field.maximum
+            ):
+                raise ConfigurationSchemaError(
+                    f"{group.key}.{field.key} minimum must not exceed maximum"
+                )
+            if field.settings_name in settings_names:
+                raise ConfigurationSchemaError(
+                    "configuration schema maps multiple fields to "
+                    f"{field.settings_name!r}"
+                )
+            settings_names.add(field.settings_name)
+
         field_keys_by_group[group.key] = set(field_keys)
 
     for rule in rules:
