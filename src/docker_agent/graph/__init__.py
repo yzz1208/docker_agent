@@ -9,7 +9,10 @@ from docker_agent.graph.runtime_loop import (
     build_runtime_loop_graph,
     run_runtime_loop_graph,
 )
-from docker_agent.graph.service import LangGraphDockerSupportAgent
+from docker_agent.graph.service import (
+    LangGraphAgentTurnResult,
+    LangGraphDockerSupportAgent,
+)
 from docker_agent.graph.state import GraphState
 from docker_agent.graph.workflow import (
     build_docs_only_graph,
@@ -24,6 +27,7 @@ from docker_agent.graph.workflow import (
 
 __all__ = [
     "GraphState",
+    "LangGraphAgentTurnResult",
     "LangGraphDockerSupportAgent",
     "RuntimeLoopState",
     "build_docs_only_graph",
