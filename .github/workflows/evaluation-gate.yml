@@ -1,0 +1,141 @@
+name: Evaluation Regression Gate
+
+on:
+  workflow_dispatch:
+    inputs:
+      suite:
+        description: Evaluation suite to run for the candidate
+        required: true
+        type: choice
+        options:
+          - agent_router
+          - agent_workflow
+      baseline_run_id:
+        description: Persisted baseline evaluation run id
+        required: true
+        type: string
+      max_regression:
+        description: Maximum tolerated absolute quality regression
+        required: true
+        default: "0.02"
+        type: string
+      limit:
+        description: Optional positive case limit; leave blank for full suite
+        required: false
+        default: ""
+        type: string
+      judge:
+        description: Enable LLM judge for agent_workflow
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: evaluation-gate-${{ inputs.suite }}
+  cancel-in-progress: false
+
+jobs:
+  evaluate:
+    name: Live candidate regression gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      APP_ENV: production
+      DATABASE_URL: ${{ secrets.EVALUATION_DATABASE_URL }}
+      MODEL_NAME: ${{ vars.EVALUATION_MODEL_NAME }}
+      MODEL_BASE_URL: ${{ secrets.EVALUATION_MODEL_BASE_URL }}
+      MODEL_API_KEY: ${{ secrets.EVALUATION_MODEL_API_KEY }}
+      TOOL_MODE: mock
+      ALLOW_LOCAL_DOCKER_TOOLS: "false"
+      EVAL_SUITE: ${{ inputs.suite }}
+      BASELINE_RUN_ID: ${{ inputs.baseline_run_id }}
+      MAX_REGRESSION: ${{ inputs.max_regression }}
+      CASE_LIMIT: ${{ inputs.limit }}
+      ENABLE_JUDGE: ${{ inputs.judge }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up uv and Python
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        with:
+          python-version: "3.12"
+          enable-cache: true
+          cache-dependency-glob: pyproject.toml
+
+      - name: Install backend dependencies
+        run: uv sync --all-groups
+
+      - name: Validate release-evaluation inputs
+        run: |
+          python - <<'PY'
+          import os
+
+          limit = os.environ['CASE_LIMIT'].strip()
+          if limit:
+              value = int(limit)
+              if value <= 0:
+                  raise SystemExit('limit must be a positive integer')
+
+          threshold = float(os.environ['MAX_REGRESSION'])
+          if threshold < 0:
+              raise SystemExit('max_regression must not be negative')
+
+          baseline = os.environ['BASELINE_RUN_ID'].strip()
+          if not baseline:
+              raise SystemExit('baseline_run_id must not be empty')
+          PY
+
+      - name: Run and persist candidate evaluation
+        id: candidate
+        run: |
+          mkdir -p reports
+          args=(--persist --summary-output reports/evaluation-summary.json)
+          if [[ -n "$CASE_LIMIT" ]]; then
+            args+=(--limit "$CASE_LIMIT")
+          fi
+
+          if [[ "$EVAL_SUITE" == "agent_router" ]]; then
+            uv run python scripts/eval_agent_router.py "${args[@]}"
+          else
+            if [[ "$ENABLE_JUDGE" == "true" ]]; then
+              args+=(--judge)
+            fi
+            uv run python scripts/eval_agent_workflow.py "${args[@]}"
+          fi
+
+          candidate_run_id=$(python - <<'PY'
+          import json
+
+          with open('reports/evaluation-summary.json', encoding='utf-8') as handle:
+              payload = json.load(handle)
+          run_id = str(payload.get('evaluation_run_id') or '').strip()
+          if not run_id:
+              raise SystemExit('candidate evaluation did not persist a run id')
+          print(run_id)
+          PY
+          )
+          echo "candidate_run_id=$candidate_run_id" >> "$GITHUB_OUTPUT"
+          echo "Candidate evaluation run: $candidate_run_id" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Compare candidate to baseline
+        env:
+          CANDIDATE_RUN_ID: ${{ steps.candidate.outputs.candidate_run_id }}
+        run: |
+          set +e
+          uv run python scripts/compare_evaluations.py \
+            --baseline "$BASELINE_RUN_ID" \
+            --candidate "$CANDIDATE_RUN_ID" \
+            --max-regression "$MAX_REGRESSION" \
+            --output reports/evaluation-comparison.json
+          status=$?
+          set -e
+
+          echo "### Regression comparison" >> "$GITHUB_STEP_SUMMARY"
+          echo "\`\`\`json" >> "$GITHUB_STEP_SUMMARY"
+          cat reports/evaluation-comparison.json >> "$GITHUB_STEP_SUMMARY"
+          echo "\`\`\`" >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"
