@@ -116,6 +116,11 @@ def test_production_compose_uses_production_env_and_requires_db_password() -> No
     backend_common = compose["x-backend-common"]
 
     assert backend_common["env_file"] == [".env.production"]
+    assert backend_common["environment"]["TOOL_MODE"] == "mock"
+    assert (
+        backend_common["environment"]["ALLOW_LOCAL_DOCKER_TOOLS"]
+        == "false"
+    )
     assert "POSTGRES_PASSWORD:?" in compose_text
     assert "postgres:postgres" not in compose_text
 
