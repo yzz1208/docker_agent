@@ -77,6 +77,9 @@ class Settings(BaseSettings):
     runtime_evidence_max_chars: int = 8_000
     dynamic_runtime_max_steps: int = 4
 
+    incident_max_hypotheses: int = Field(default=3, ge=1, le=10)
+    incident_max_next_steps: int = Field(default=5, ge=1, le=20)
+
     retrieval_top_k: int = 10
     retrieval_candidate_k: int = 20
     retrieval_rrf_k: int = 60
