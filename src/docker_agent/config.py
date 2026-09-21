@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     app_env: str = "development"
     app_host: str = "127.0.0.1"
     app_port: int = 8000
+    app_log_level: str = "INFO"
 
     database_url: str = (
         "postgresql+psycopg://postgres:postgres@localhost:5432/docker_agent"
