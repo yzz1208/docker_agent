@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Literal
 from uuid import uuid4
 
-from sqlalchemy import Engine
+from sqlalchemy import Engine, select
 from sqlalchemy.orm import Session
 
 from docker_agent.persistence.models import AgentRun, Conversation, utc_now
@@ -92,6 +92,38 @@ def get_agent_run(
         if row is None:
             raise AgentRunNotFound(normalized)
         return _agent_run_record(row)
+
+
+def list_agent_runs(
+    engine: Engine,
+    *,
+    conversation_id: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> tuple[AgentRunRecord, ...]:
+    if limit <= 0:
+        raise ValueError("limit must be positive")
+    if offset < 0:
+        raise ValueError("offset must not be negative")
+
+    statement = select(AgentRun)
+    if conversation_id is not None:
+        normalized_conversation_id = conversation_id.strip()
+        if not normalized_conversation_id:
+            raise ValueError("conversation_id must not be empty")
+        statement = statement.where(
+            AgentRun.conversation_id == normalized_conversation_id
+        )
+
+    statement = (
+        statement.order_by(AgentRun.started_at.desc(), AgentRun.id)
+        .offset(offset)
+        .limit(limit)
+    )
+
+    with Session(engine) as session:
+        rows = session.scalars(statement).all()
+        return tuple(_agent_run_record(row) for row in rows)
 
 
 def finalize_agent_run_success(
