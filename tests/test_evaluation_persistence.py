@@ -47,6 +47,7 @@ def test_sanitize_evaluation_payload_redacts_nested_secrets() -> None:
                 {"password": "pw"},
                 {"temperature": 0.1},
             ],
+            "validation_error": "provider api_key=secret-value",
         }
     )
 
@@ -71,6 +72,7 @@ def test_sanitize_evaluation_payload_redacts_nested_secrets() -> None:
             },
             {"temperature": 0.1},
         ],
+        "validation_error": "provider api_key=[REDACTED]",
     }
 
 
