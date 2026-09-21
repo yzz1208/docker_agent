@@ -1,6 +1,6 @@
 from docker_agent.agent.conversation import AgentConversation
-from docker_agent.config import Settings
 from docker_agent.api.chat import build_chat_response
+from docker_agent.config import Settings
 from docker_agent.graph.service import (
     LangGraphAgentTurnResult,
     LangGraphDockerSupportAgent,
@@ -183,7 +183,6 @@ def test_langgraph_agent_handle_graph_exposes_canonical_state() -> None:
         "runtime",
         "diagnosis",
     ]
-
 
 
 def test_detailed_graph_turn_remains_chat_response_compatible() -> None:
