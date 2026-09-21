@@ -28,6 +28,7 @@ export type DocSource = {
 };
 
 export type ChatResponse = {
+  agent_type: string;
   conversation_id: string | null;
   session_id: string;
   session_active: boolean;
