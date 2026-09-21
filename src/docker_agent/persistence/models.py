@@ -7,6 +7,7 @@ from sqlalchemy import (
     Boolean,
     DateTime,
     ForeignKey,
+    Integer,
     String,
     Text,
 )
@@ -104,4 +105,39 @@ class AgentExecution(PersistenceBase):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=utc_now,
+    )
+
+
+
+class AgentRun(PersistenceBase):
+    __tablename__ = "agent_runs"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    conversation_id: Mapped[str] = mapped_column(
+        String(32),
+        ForeignKey("conversations.id", ondelete="CASCADE"),
+        index=True,
+    )
+    agent_type: Mapped[str] = mapped_column(String(64), index=True)
+    status: Mapped[str] = mapped_column(String(16), index=True)
+    route: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    use_docs: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    planned_workers: Mapped[list[str]] = mapped_column(JSON, default=list)
+    completed_workers: Mapped[list[str]] = mapped_column(JSON, default=list)
+    duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    error_type: Mapped[str | None] = mapped_column(
+        String(128),
+        nullable=True,
+        index=True,
+    )
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utc_now,
+        index=True,
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        index=True,
     )
