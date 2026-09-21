@@ -8,8 +8,6 @@ import type {
   EffectiveAgentConfiguration,
 } from "./types";
 
-type JsonBody = Record<string, unknown>;
-
 export class ApiError extends Error {
   readonly status: number;
   readonly detail: string;
@@ -58,7 +56,7 @@ async function request<T>(
   return (await response.json()) as T;
 }
 
-function jsonBody(body: JsonBody): string {
+function jsonBody(body: unknown): string {
   return JSON.stringify(body);
 }
 
