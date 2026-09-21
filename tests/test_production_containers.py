@@ -116,3 +116,24 @@ def test_production_compose_bootstraps_rag_schema_without_resetting_chunks() -> 
     assert "init_vector_store" in command
     assert "clear_chunks" not in command
     assert "--reset" not in command
+
+
+
+def test_production_compose_uses_production_env_and_requires_db_password() -> None:
+    compose_text = _read("compose.prod.yaml")
+    compose = yaml.safe_load(compose_text)
+    backend_common = compose["x-backend-common"]
+
+    assert backend_common["env_file"] == [".env.production"]
+    assert "POSTGRES_PASSWORD:?" in compose_text
+    assert "postgres:postgres" not in compose_text
+
+
+def test_environment_secret_files_are_ignored_but_examples_are_tracked() -> None:
+    gitignore = _read(".gitignore").splitlines()
+
+    assert ".env" in gitignore
+    assert ".env.test" in gitignore
+    assert ".env.production" in gitignore
+    assert (ROOT / ".env.test.example").is_file()
+    assert (ROOT / ".env.production.example").is_file()
