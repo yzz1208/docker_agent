@@ -6,11 +6,12 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from docker_agent.agent.configuration import (
-    DOCKER_SUPPORT_MODEL_PREFERENCE_FIELDS,
-    DOCKER_SUPPORT_RETRIEVAL_PREFERENCE_FIELDS,
-    DOCKER_SUPPORT_RUNTIME_PREFERENCE_FIELDS,
     EffectiveDockerSupportConfiguration,
 )
+from docker_agent.agent.configuration_schema import (
+    ConfigurationGroupDescriptor,
+)
+from docker_agent.agent.registry import AgentDescriptor
 from docker_agent.config import Settings
 from docker_agent.persistence.agent_config import AgentConfigurationRecord
 
@@ -103,25 +104,28 @@ def build_effective_agent_configuration_response(
     base: Settings,
     effective: EffectiveDockerSupportConfiguration,
     record: AgentConfigurationRecord | None,
+    descriptor: AgentDescriptor,
 ) -> EffectiveAgentConfigurationResponse:
-    model_settings = _build_preference_group(
-        base=base,
-        effective=effective.settings,
-        persisted=(record.model_settings if record is not None else {}),
-        fields=DOCKER_SUPPORT_MODEL_PREFERENCE_FIELDS,
-    )
-    retrieval_settings = _build_preference_group(
-        base=base,
-        effective=effective.settings,
-        persisted=(record.retrieval_settings if record is not None else {}),
-        fields=DOCKER_SUPPORT_RETRIEVAL_PREFERENCE_FIELDS,
-    )
-    runtime_settings = _build_preference_group(
-        base=base,
-        effective=effective.settings,
-        persisted=(record.runtime_settings if record is not None else {}),
-        fields=DOCKER_SUPPORT_RUNTIME_PREFERENCE_FIELDS,
-    )
+    persisted_groups = {
+        "model_settings": (
+            record.model_settings if record is not None else {}
+        ),
+        "retrieval_settings": (
+            record.retrieval_settings if record is not None else {}
+        ),
+        "runtime_settings": (
+            record.runtime_settings if record is not None else {}
+        ),
+    }
+    groups = {
+        group.key: _build_preference_group(
+            base=base,
+            effective=effective.settings,
+            persisted=persisted_groups[group.key],
+            group=group,
+        )
+        for group in descriptor.configuration_schema
+    }
 
     return EffectiveAgentConfigurationResponse(
         agent_type=effective.agent_type,
@@ -129,9 +133,9 @@ def build_effective_agent_configuration_response(
         enabled=effective.enabled,
         persisted=effective.persisted,
         configuration_updated_at=effective.configuration_updated_at,
-        model_settings=model_settings,
-        retrieval_settings=retrieval_settings,
-        runtime_settings=runtime_settings,
+        model_settings=groups.get("model_settings", {}),
+        retrieval_settings=groups.get("retrieval_settings", {}),
+        runtime_settings=groups.get("runtime_settings", {}),
         environment_settings=_build_environment_group(base),
     )
 
@@ -141,16 +145,16 @@ def _build_preference_group(
     base: Settings,
     effective: Settings,
     persisted: dict[str, object],
-    fields: dict[str, str],
+    group: ConfigurationGroupDescriptor,
 ) -> dict[str, EffectiveConfigurationFieldResponse]:
     response: dict[str, EffectiveConfigurationFieldResponse] = {}
-    for preference_name, settings_name in fields.items():
-        base_value = getattr(base, settings_name)
-        effective_value = getattr(effective, settings_name)
-        is_persisted = preference_name in persisted
-        response[preference_name] = EffectiveConfigurationFieldResponse(
+    for field in group.fields:
+        base_value = getattr(base, field.settings_name)
+        effective_value = getattr(effective, field.settings_name)
+        is_persisted = field.key in persisted
+        response[field.key] = EffectiveConfigurationFieldResponse(
             persisted_value=(
-                persisted[preference_name]
+                persisted[field.key]
                 if is_persisted
                 else None
             ),
@@ -159,7 +163,7 @@ def _build_preference_group(
             source=(
                 "persisted"
                 if is_persisted
-                else _base_source(base, settings_name)
+                else _base_source(base, field.settings_name)
             ),
             editable=True,
             secure=False,
