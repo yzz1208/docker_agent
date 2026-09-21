@@ -1,26 +1,26 @@
 from __future__ import annotations
 
 import json
-import os
 import sys
 
 from pydantic import ValidationError
 from sqlalchemy.engine import make_url
 
 from docker_agent.config import (
-    get_settings,
+    Settings,
     require_application_runtime_settings,
+    settings_env_file,
 )
 
 
 def production_preflight() -> int:
     """Validate production runtime settings and print a secret-safe summary."""
 
-    os.environ["APP_ENV"] = "production"
-    get_settings.cache_clear()
-
     try:
-        settings = get_settings()
+        settings = Settings(
+            _env_file=settings_env_file("production"),
+            app_env="production",
+        )
         require_application_runtime_settings(settings)
     except ValidationError as exc:
         payload = {
