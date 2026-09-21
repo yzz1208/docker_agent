@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from threading import Lock
+
 from docker_agent.agent.protocol import AgentProtocol
 from docker_agent.agent.registry import AgentRegistry
-
 
 AgentBuilder = Callable[[], AgentProtocol]
 
@@ -28,6 +28,7 @@ class AgentFactory:
         self._registry = registry
         self._builders: dict[str, AgentBuilder] = {}
         self._instances: dict[str, AgentProtocol] = {}
+        self._build_locks: dict[str, Lock] = {}
         self._lock = Lock()
 
     def register(
@@ -42,6 +43,7 @@ class AgentFactory:
             if canonical in self._builders:
                 raise AgentBuilderAlreadyRegistered(canonical)
             self._builders[canonical] = builder
+            self._build_locks[canonical] = Lock()
             self._instances.pop(canonical, None)
 
     def get(self, agent_type: str) -> AgentProtocol:
@@ -52,14 +54,22 @@ class AgentFactory:
             instance = self._instances.get(canonical)
             if instance is not None:
                 return instance
-
             try:
                 builder = self._builders[canonical]
+                build_lock = self._build_locks[canonical]
             except KeyError as exc:
                 raise AgentBuilderNotRegistered(canonical) from exc
 
+        with build_lock:
+            with self._lock:
+                instance = self._instances.get(canonical)
+                if instance is not None:
+                    return instance
+
             instance = builder()
-            self._instances[canonical] = instance
+
+            with self._lock:
+                self._instances[canonical] = instance
             return instance
 
     def invalidate(self, agent_type: str) -> bool:
@@ -96,6 +106,7 @@ def validate_factory_registration(
         raise AgentBuilderNotRegistered(
             ", ".join(missing)
         )
+
 
 __all__ = [
     "AgentBuilder",
