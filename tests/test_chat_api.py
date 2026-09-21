@@ -15,8 +15,8 @@ from docker_agent.agent.registry import (
 )
 from docker_agent.agent.router import AgentRouteDecision
 from docker_agent.api.chat import ChatSessionManager
-from docker_agent.graph.service import LangGraphAgentTurnResult
 from docker_agent.config import Settings
+from docker_agent.graph.service import LangGraphAgentTurnResult
 from docker_agent.main import app
 from docker_agent.multi_agent.execution import WorkerExecutionRecord
 from docker_agent.multi_agent.supervisor import SupervisorPlan
