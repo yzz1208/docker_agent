@@ -77,7 +77,17 @@ class AgentFactory:
         canonical = descriptor.agent_type
 
         with self._lock:
-            return self._instances.pop(canonical, None) is not None
+            try:
+                build_lock = self._build_locks[canonical]
+            except KeyError as exc:
+                raise AgentBuilderNotRegistered(canonical) from exc
+
+        with build_lock:
+            with self._lock:
+                return (
+                    self._instances.pop(canonical, None)
+                    is not None
+                )
 
     def clear(self) -> None:
         with self._lock:
