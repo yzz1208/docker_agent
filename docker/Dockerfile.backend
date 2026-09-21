@@ -19,6 +19,7 @@ RUN uv pip install --system --no-cache .
 
 RUN addgroup --system app \
     && adduser --system --ingroup app --home /app app \
+    && mkdir -p /app/.cache/huggingface \
     && chown -R app:app /app
 
 USER app
