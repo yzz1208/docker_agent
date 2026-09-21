@@ -271,6 +271,27 @@ def test_active_session_cannot_be_reused_for_another_conversation() -> None:
         raise AssertionError("ChatConversationMismatch was not raised")
 
 
+def test_session_manager_agent_type_must_match_coordinator() -> None:
+    engine = _engine()
+    sessions = ChatSessionManager(
+        agent_factory=ImmediateAnswerAgent,
+        agent_type="future_agent",
+    )
+
+    try:
+        PersistentChatCoordinator(
+            engine=engine,
+            sessions=sessions,
+            agent_type="docker_support",
+        )
+    except ValueError as exc:
+        assert str(exc) == (
+            "session manager agent_type must match coordinator agent_type"
+        )
+    else:
+        raise AssertionError("ValueError was not raised")
+
+
 def test_conversation_agent_type_must_match_coordinator() -> None:
     engine = _engine()
     conversation = create_conversation(
