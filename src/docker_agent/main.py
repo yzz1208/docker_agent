@@ -18,6 +18,7 @@ from docker_agent.agent.configuration import (
 )
 from docker_agent.agent.registry import (
     AgentNotRegistered,
+    AgentRegistryError,
     DOCKER_SUPPORT_DESCRIPTOR,
     build_agent_registry,
 )
@@ -282,6 +283,11 @@ def registered_agent_detail(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Agent type is not registered.",
         ) from exc
+    except AgentRegistryError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
 
     return build_agent_descriptor_response(descriptor)
 
@@ -399,7 +405,7 @@ def effective_agent_configuration(
 
     try:
         descriptor = agent_registry.get(agent_type)
-    except AgentNotRegistered as exc:
+    except AgentRegistryError as exc:
         normalized_agent_type = agent_type.strip()
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
