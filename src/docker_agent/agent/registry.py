@@ -2,6 +2,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from docker_agent.agent.configuration_schema import (
+    ConfigurationFieldDescriptor,
+    ConfigurationGroupDescriptor,
+    ConfigurationRuleDescriptor,
+)
+
 
 class AgentRegistryError(ValueError):
     """Base error for invalid Agent registry operations."""
@@ -65,8 +71,22 @@ class AgentDescriptor:
     knowledge_sources: tuple[str, ...]
     toolsets: tuple[str, ...]
     worker_roles: tuple[str, ...]
-    configuration_groups: tuple[str, ...]
+    configuration_schema: tuple[
+        ConfigurationGroupDescriptor,
+        ...,
+    ]
+    configuration_rules: tuple[
+        ConfigurationRuleDescriptor,
+        ...,
+    ] = ()
     default_enabled: bool = True
+
+    @property
+    def configuration_groups(self) -> tuple[str, ...]:
+        return tuple(
+            group.key
+            for group in self.configuration_schema
+        )
 
     def __post_init__(self) -> None:
         normalized_type = _normalize_agent_type(self.agent_type)
@@ -154,10 +174,202 @@ DOCKER_SUPPORT_DESCRIPTOR = AgentDescriptor(
         "runtime",
         "diagnosis",
     ),
-    configuration_groups=(
-        "model_settings",
-        "retrieval_settings",
-        "runtime_settings",
+    configuration_schema=(
+        ConfigurationGroupDescriptor(
+            key="model_settings",
+            label="Model",
+            fields=(
+                ConfigurationFieldDescriptor(
+                    key="model_name",
+                    settings_name="model_name",
+                    label="Model name",
+                    description=(
+                        "OpenAI-compatible model identifier used by the Agent."
+                    ),
+                    kind="string",
+                ),
+                ConfigurationFieldDescriptor(
+                    key="temperature",
+                    settings_name="model_temperature",
+                    label="Temperature",
+                    description="Sampling temperature for model responses.",
+                    kind="number",
+                    minimum=0,
+                    maximum=2,
+                ),
+                ConfigurationFieldDescriptor(
+                    key="max_tokens",
+                    settings_name="model_max_tokens",
+                    label="Max tokens",
+                    description=(
+                        "Maximum generated tokens when the provider supports it."
+                    ),
+                    kind="integer",
+                    minimum=1,
+                ),
+                ConfigurationFieldDescriptor(
+                    key="timeout_seconds",
+                    settings_name="model_timeout_seconds",
+                    label="Model timeout",
+                    description=(
+                        "Maximum seconds allowed for one model request."
+                    ),
+                    kind="number",
+                    minimum=0.001,
+                ),
+                ConfigurationFieldDescriptor(
+                    key="max_retries",
+                    settings_name="model_max_retries",
+                    label="Model retries",
+                    description=(
+                        "Retry attempts after a retryable model failure."
+                    ),
+                    kind="integer",
+                    minimum=0,
+                ),
+                ConfigurationFieldDescriptor(
+                    key="retry_backoff_seconds",
+                    settings_name="model_retry_backoff_seconds",
+                    label="Retry backoff",
+                    description="Delay between model retries in seconds.",
+                    kind="number",
+                    minimum=0,
+                ),
+            ),
+        ),
+        ConfigurationGroupDescriptor(
+            key="retrieval_settings",
+            label="Retrieval",
+            fields=(
+                ConfigurationFieldDescriptor(
+                    key="top_k",
+                    settings_name="retrieval_candidate_k",
+                    label="Candidate top K",
+                    description=(
+                        "Hybrid retrieval candidates kept before reranking."
+                    ),
+                    kind="integer",
+                    minimum=1,
+                ),
+                ConfigurationFieldDescriptor(
+                    key="rrf_k",
+                    settings_name="retrieval_rrf_k",
+                    label="RRF K",
+                    description=(
+                        "Reciprocal-rank-fusion smoothing constant."
+                    ),
+                    kind="integer",
+                    minimum=0,
+                ),
+                ConfigurationFieldDescriptor(
+                    key="dense_weight",
+                    settings_name="retrieval_dense_weight",
+                    label="Dense weight",
+                    description=(
+                        "Weight applied to dense retrieval ranking."
+                    ),
+                    kind="number",
+                    minimum=0,
+                ),
+                ConfigurationFieldDescriptor(
+                    key="keyword_weight",
+                    settings_name="retrieval_keyword_weight",
+                    label="Keyword weight",
+                    description=(
+                        "Weight applied to keyword retrieval ranking."
+                    ),
+                    kind="number",
+                    minimum=0,
+                ),
+                ConfigurationFieldDescriptor(
+                    key="rerank_top_k",
+                    settings_name="rerank_top_k",
+                    label="Rerank top K",
+                    description=(
+                        "Final candidates retained after reranking."
+                    ),
+                    kind="integer",
+                    minimum=1,
+                ),
+                ConfigurationFieldDescriptor(
+                    key="context_max_chars",
+                    settings_name="rag_context_max_chars",
+                    label="Context max chars",
+                    description=(
+                        "Maximum documentation context passed to the answer model."
+                    ),
+                    kind="integer",
+                    minimum=1,
+                ),
+            ),
+        ),
+        ConfigurationGroupDescriptor(
+            key="runtime_settings",
+            label="Runtime",
+            fields=(
+                ConfigurationFieldDescriptor(
+                    key="max_steps",
+                    settings_name="dynamic_runtime_max_steps",
+                    label="Runtime max steps",
+                    description=(
+                        "Maximum dynamic runtime workflow steps."
+                    ),
+                    kind="integer",
+                    minimum=1,
+                ),
+                ConfigurationFieldDescriptor(
+                    key="tool_timeout_seconds",
+                    settings_name="docker_tool_timeout_seconds",
+                    label="Docker tool timeout",
+                    description=(
+                        "Maximum seconds allowed for one Docker tool call."
+                    ),
+                    kind="number",
+                    minimum=0.001,
+                ),
+                ConfigurationFieldDescriptor(
+                    key="logs_max_lines",
+                    settings_name="docker_logs_max_lines",
+                    label="Log line limit",
+                    description=(
+                        "Maximum Docker log lines collected per tool call."
+                    ),
+                    kind="integer",
+                    minimum=1,
+                ),
+                ConfigurationFieldDescriptor(
+                    key="evidence_max_chars",
+                    settings_name="runtime_evidence_max_chars",
+                    label="Evidence max chars",
+                    description=(
+                        "Maximum runtime evidence characters retained "
+                        "for synthesis."
+                    ),
+                    kind="integer",
+                    minimum=1,
+                ),
+            ),
+        ),
+    ),
+    configuration_rules=(
+        ConfigurationRuleDescriptor(
+            kind="less_equal",
+            group="retrieval_settings",
+            fields=("rerank_top_k", "top_k"),
+            target_field="rerank_top_k",
+            message=(
+                "retrieval_settings.rerank_top_k must not exceed top_k"
+            ),
+        ),
+        ConfigurationRuleDescriptor(
+            kind="not_all_zero",
+            group="retrieval_settings",
+            fields=("dense_weight", "keyword_weight"),
+            target_field="keyword_weight",
+            message=(
+                "retrieval dense_weight and keyword_weight cannot both be zero"
+            ),
+        ),
     ),
 )
 
