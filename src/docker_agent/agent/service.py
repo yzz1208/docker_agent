@@ -19,7 +19,10 @@ from docker_agent.rag.store import (
     search_keyword_chunks,
     search_similar_chunks,
 )
-from docker_agent.tools.docker_cli import DockerReadOnlyTools
+from docker_agent.tools.docker_cli import (
+    DockerReadOnlyTools,
+    build_docker_tools,
+)
 
 DocsRetriever = Callable[[str], RagContext]
 
@@ -53,9 +56,8 @@ class DockerSupportAgent:
         self.answer_model = answer_model or self._build_model(
             temperature=self.settings.model_temperature
         )
-        self.docker_tools = docker_tools or DockerReadOnlyTools(
-            timeout_seconds=self.settings.docker_tool_timeout_seconds,
-            max_log_lines=self.settings.docker_logs_max_lines,
+        self.docker_tools = docker_tools or build_docker_tools(
+            self.settings
         )
         self.docs_retriever = docs_retriever or self._retrieve_docs
 
