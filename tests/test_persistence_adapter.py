@@ -9,6 +9,7 @@ from docker_agent.persistence import (
     create_conversation,
     init_persistence_store,
     load_conversation,
+    persist_agent_turn,
     persist_langgraph_turn,
 )
 
@@ -146,7 +147,7 @@ def test_persist_langgraph_turn_saves_clarification_as_assistant_message() -> No
     assert len(snapshot.executions) == 1
 
 
-def test_persist_langgraph_turn_rejects_missing_assistant_content() -> None:
+def test_persist_agent_turn_rejects_missing_assistant_content() -> None:
     engine = _engine()
     conversation = create_conversation(
         engine,
@@ -171,7 +172,7 @@ def test_persist_langgraph_turn_rejects_missing_assistant_content() -> None:
     )
 
     try:
-        persist_langgraph_turn(
+        persist_agent_turn(
             engine,
             conversation_id=conversation.id,
             user_message="web 现在用了多少内存？",
@@ -179,7 +180,7 @@ def test_persist_langgraph_turn_rejects_missing_assistant_content() -> None:
         )
     except ValueError as exc:
         assert str(exc) == (
-            "LangGraph turn has neither answer nor clarification content"
+            "Agent turn has neither answer nor clarification content"
         )
     else:
         raise AssertionError("ValueError was not raised")
