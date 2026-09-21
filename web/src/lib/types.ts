@@ -259,3 +259,16 @@ export type EvaluationComparison = {
   behavior_changes: BehaviorChange[];
   configuration_changes: ConfigurationChange[];
 };
+
+
+export type AgentDescriptor = {
+  agent_type: string;
+  display_name: string;
+  description: string;
+  capabilities: string[];
+  knowledge_sources: string[];
+  toolsets: string[];
+  worker_roles: string[];
+  configuration_groups: string[];
+  default_enabled: boolean;
+};
