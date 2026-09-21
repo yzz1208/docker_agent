@@ -81,7 +81,6 @@ from docker_agent.persistence import (
     get_agent_configuration,
     get_agent_run,
     get_evaluation_run,
-    init_persistence_store,
     list_agent_configurations,
     list_agent_runs,
     list_conversations,
@@ -186,11 +185,12 @@ chat_sessions = ChatSessionManager(agent_factory=get_agent)
 
 @lru_cache
 def get_persistence_engine() -> Engine:
-    """Create the product persistence engine and tables lazily."""
+    """Create the product persistence engine.
 
-    engine = create_db_engine(register_pgvector_types=False)
-    init_persistence_store(engine)
-    return engine
+    Product schema creation and upgrades are owned by Alembic migrations.
+    """
+
+    return create_db_engine(register_pgvector_types=False)
 
 
 @lru_cache
