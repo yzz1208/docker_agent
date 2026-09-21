@@ -15,13 +15,12 @@ from docker_agent.agent.evaluation import (
 )
 from docker_agent.agent.router import AgentRoutingError, route_question
 from docker_agent.config import get_settings
-from docker_agent.db import create_db_engine
+from docker_agent.db import create_db_engine, require_database_ready
 from docker_agent.persistence import (
     add_evaluation_case,
     create_evaluation_run,
     dataset_version,
     finalize_evaluation_run_success,
-    init_persistence_store,
     resolve_git_revision,
 )
 from docker_agent.rag.llm import OpenAICompatibleChatClient
@@ -316,7 +315,7 @@ def main() -> None:
     if args.persist:
         settings = get_settings()
         engine = create_db_engine(register_pgvector_types=False)
-        init_persistence_store(engine)
+        require_database_ready(engine)
         evaluation_run = create_evaluation_run(
             engine,
             suite="agent_router",
