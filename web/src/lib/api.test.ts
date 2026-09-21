@@ -4,8 +4,10 @@ import {
   ApiError,
   compareEvaluationRuns,
   createAgentConfiguration,
+  getAgentDescriptor,
   getOperationsSummary,
   listAgentRuns,
+  listAgents,
   listEvaluationRuns,
   sendChat,
   updateAgentConfiguration,
@@ -114,6 +116,45 @@ describe("API client", () => {
           runtime_settings: { max_steps: 6 },
         }),
       }),
+    );
+  });
+
+  it("loads registered Agent descriptors", async () => {
+    const descriptor = {
+      agent_type: "docker_support",
+      display_name: "Docker Support",
+      description: "Docker support",
+      capabilities: ["chat"],
+      knowledge_sources: ["docker_docs"],
+      toolsets: ["docker_read_only"],
+      worker_roles: ["knowledge"],
+      configuration_groups: ["model_settings"],
+      default_enabled: true,
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify([descriptor]), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(descriptor), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(listAgents()).resolves.toEqual([descriptor]);
+    await expect(
+      getAgentDescriptor("Docker Support"),
+    ).resolves.toEqual(descriptor);
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("/agents");
+    expect(fetchMock.mock.calls[1]?.[0]).toBe(
+      "/agents/Docker%20Support",
     );
   });
 
