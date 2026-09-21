@@ -2,7 +2,12 @@ import subprocess
 
 import pytest
 
-from docker_agent.tools.docker_cli import DockerReadOnlyTools, validate_container_ref
+from docker_agent.config import Settings
+from docker_agent.tools.docker_cli import (
+    DockerReadOnlyTools,
+    build_docker_tools,
+    validate_container_ref,
+)
 
 
 class RecordingRunner:
@@ -142,3 +147,53 @@ def test_inspect_compacts_output_and_keeps_only_env_keys() -> None:
     assert '"EnvKeys":["POSTGRES_PASSWORD","PATH"]' in result.output
     assert '"ExitCode":1' in result.output
     assert '"RestartCount":2' in result.output
+
+
+
+def test_mock_tool_mode_returns_deterministic_results_without_local_docker() -> None:
+    settings = Settings(
+        tool_mode="mock",
+        docker_tool_timeout_seconds=3,
+        docker_logs_max_lines=25,
+    )
+
+    tools = build_docker_tools(settings)
+
+    info = tools.info()
+    inspected = tools.inspect("demo")
+    logs = tools.logs("demo", tail=10)
+    stats = tools.stats("demo")
+
+    assert info.ok is True
+    assert '"ServerVersion":"mock"' in info.output
+    assert '"Name":"/demo"' in inspected.output
+    assert "mock container log line" in logs.output
+    assert '"CPUPerc":"0.10%"' in stats.output
+
+
+def test_local_tool_mode_keeps_real_cli_runner(monkeypatch) -> None:
+    calls: list[tuple[str, ...]] = []
+
+    def fake_run(
+        args: list[str],
+        **_kwargs: object,
+    ) -> subprocess.CompletedProcess[str]:
+        calls.append(tuple(args))
+        return subprocess.CompletedProcess(
+            args=args,
+            returncode=0,
+            stdout="local-ok",
+            stderr="",
+        )
+
+    monkeypatch.setattr(
+        "docker_agent.tools.docker_cli.subprocess.run",
+        fake_run,
+    )
+    settings = Settings(tool_mode="local")
+
+    tools = build_docker_tools(settings)
+    result = tools.info()
+
+    assert result.output == "local-ok"
+    assert calls == [("docker", "info")]
