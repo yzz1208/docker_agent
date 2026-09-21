@@ -210,6 +210,23 @@ def test_registered_future_agent_uses_its_own_configuration_schema(
         "temperature": 0.6,
     }
 
+    effective = client.get(
+        "/agent-configurations/future_agent/effective"
+    )
+
+    assert effective.status_code == 200
+    payload = effective.json()
+    assert payload["agent_type"] == "future_agent"
+    assert payload["display_name"] == "Future Agent"
+    assert payload["model_settings"]["temperature"][
+        "persisted_value"
+    ] == 0.6
+    assert payload["model_settings"]["temperature"][
+        "effective_value"
+    ] == 0.6
+    assert payload["retrieval_settings"] == {}
+    assert payload["runtime_settings"] == {}
+
 
 def test_patch_agent_configuration_is_partial(monkeypatch) -> None:
     engine = _engine()
