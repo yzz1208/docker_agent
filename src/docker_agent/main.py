@@ -1,7 +1,9 @@
+import logging
 from functools import lru_cache
+from time import perf_counter
 from typing import Annotated
 
-from fastapi import FastAPI, HTTPException, Query, Response, status
+from fastapi import FastAPI, HTTPException, Query, Request, Response, status
 from fastapi.responses import JSONResponse
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import SQLAlchemyError
@@ -47,6 +49,12 @@ from docker_agent.api.operations import (
 from docker_agent.config import get_settings
 from docker_agent.db import check_database, create_db_engine
 from docker_agent.graph.service import LangGraphDockerSupportAgent
+from docker_agent.observability import (
+    configure_structured_logging,
+    correlation_context,
+    metrics,
+    resolve_request_id,
+)
 from docker_agent.persistence import (
     AgentConfigurationAlreadyExists,
     AgentConfigurationNotFound,
@@ -73,12 +81,66 @@ from docker_agent.rag.answer import CitationValidationError
 from docker_agent.tools.docker_cli import DockerToolTimeout
 
 settings = get_settings()
+configure_structured_logging(settings.app_log_level)
+logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title=settings.app_name,
     version="0.1.0",
     description="Docker technical support agent backend.",
 )
+
+
+@app.middleware("http")
+async def observe_http_request(
+    request: Request,
+    call_next,
+) -> Response:
+    """Attach request correlation and emit bounded request metrics."""
+
+    request_id = resolve_request_id(
+        request.headers.get("X-Request-ID")
+    )
+    started = perf_counter()
+    response_status = status.HTTP_500_INTERNAL_SERVER_ERROR
+
+    with correlation_context(request_id=request_id):
+        try:
+            response = await call_next(request)
+            response_status = response.status_code
+            response.headers["X-Request-ID"] = request_id
+            return response
+        finally:
+            route = _request_route_template(request)
+            duration_ms = max(
+                0,
+                round((perf_counter() - started) * 1000),
+            )
+            if request.url.path != "/metrics":
+                metrics.record_http_request(
+                    method=request.method,
+                    route=route,
+                    status_code=response_status,
+                )
+            logger.info(
+                "HTTP request completed",
+                extra={
+                    "http_method": request.method,
+                    "http_route": route,
+                    "http_status": response_status,
+                    "duration_ms": duration_ms,
+                },
+            )
+
+
+@app.get("/metrics", include_in_schema=False)
+def prometheus_metrics() -> Response:
+    """Expose bounded in-process metrics in Prometheus text format."""
+
+    return Response(
+        content=metrics.render_prometheus(),
+        media_type="text/plain; version=0.0.4",
+    )
 
 
 @lru_cache
@@ -629,7 +691,10 @@ def delete_conversation_endpoint(conversation_id: str) -> Response:
 
 
 @app.post("/chat", response_model=ChatResponse, tags=["agent"])
-def chat(request: ChatRequest) -> ChatResponse:
+def chat(
+    request: ChatRequest,
+    response: Response,
+) -> ChatResponse:
     """Run and persist one product chat turn."""
 
     try:
@@ -684,6 +749,9 @@ def chat(request: ChatRequest) -> ChatResponse:
             detail=str(exc),
         ) from exc
 
+    response.headers["X-Run-ID"] = turn.run.id
+    response.headers["X-Conversation-ID"] = turn.conversation.id
+
     return build_chat_response(
         turn.session_id,
         turn.session_active,
@@ -715,3 +783,12 @@ def reset_chat_session(session_id: str) -> Response:
         )
 
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+
+def _request_route_template(request: Request) -> str:
+    route = request.scope.get("route")
+    route_path = getattr(route, "path", None)
+    if isinstance(route_path, str) and route_path:
+        return route_path
+    return "unmatched"
