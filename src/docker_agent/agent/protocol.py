@@ -15,6 +15,7 @@ class AgentTurnProtocol(Protocol):
     @property
     def needs_clarification(self) -> bool:
         """Whether this turn requires a user follow-up."""
+        ...
 
 
 class AgentProtocol(Protocol):
@@ -22,3 +23,4 @@ class AgentProtocol(Protocol):
 
     def handle(self, question: str) -> AgentTurnProtocol:
         """Handle one user turn."""
+        ...
