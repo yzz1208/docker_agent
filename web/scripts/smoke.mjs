@@ -51,6 +51,15 @@ assert(
 );
 console.log("✓ Database health");
 
+const readiness = await request("/health/ready");
+assert(
+  readiness?.status === "ok" &&
+    readiness?.database === "reachable" &&
+    readiness?.schema === "current",
+  "Readiness health did not report a current database schema.",
+);
+console.log("✓ Database readiness");
+
 const effective = await request(
   "/agent-configurations/docker_support/effective",
 );
