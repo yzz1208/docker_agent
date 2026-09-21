@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from threading import Lock
+from time import perf_counter
 
 from sqlalchemy.engine import Engine
 
@@ -15,6 +16,12 @@ from docker_agent.persistence.store import (
     ConversationRecord,
     create_conversation,
     get_conversation,
+)
+from docker_agent.persistence.telemetry import (
+    AgentRunRecord,
+    create_agent_run,
+    finalize_agent_run_failure,
+    finalize_agent_run_success,
 )
 
 
@@ -35,6 +42,7 @@ class PersistentChatTurn:
     session_active: bool
     result: LangGraphAgentTurnResult
     persisted: PersistedAgentTurn
+    run: AgentRunRecord
 
 
 @dataclass(slots=True)
@@ -68,21 +76,83 @@ class PersistentChatCoordinator:
             conversation_id=conversation.id,
         )
 
-        resolved_session_id, active, result = self.sessions.chat(
-            message=normalized_message,
-            session_id=session_id,
-        )
-        if not isinstance(result, LangGraphAgentTurnResult):
-            raise TypeError(
-                "PersistentChatCoordinator requires LangGraphAgentTurnResult"
-            )
-
-        persisted = persist_langgraph_turn(
+        run = create_agent_run(
             self.engine,
             conversation_id=conversation.id,
-            user_message=normalized_message,
-            result=result,
+            agent_type=self.agent_type,
         )
+        started = perf_counter()
+        result: LangGraphAgentTurnResult | None = None
+
+        try:
+            resolved_session_id, active, raw_result = self.sessions.chat(
+                message=normalized_message,
+                session_id=session_id,
+            )
+            if not isinstance(raw_result, LangGraphAgentTurnResult):
+                raise TypeError(
+                    "PersistentChatCoordinator requires LangGraphAgentTurnResult"
+                )
+            result = raw_result
+
+            persisted = persist_langgraph_turn(
+                self.engine,
+                conversation_id=conversation.id,
+                user_message=normalized_message,
+                result=result,
+            )
+        except Exception as exc:
+            try:
+                run = finalize_agent_run_failure(
+                    self.engine,
+                    run.id,
+                    duration_ms=_duration_ms(started),
+                    error=exc,
+                    route=(
+                        result.decision.route
+                        if result is not None
+                        else None
+                    ),
+                    use_docs=(
+                        result.decision.use_docs
+                        if result is not None
+                        else None
+                    ),
+                    planned_workers=(
+                        result.supervisor_plan.workers
+                        if result is not None
+                        else ()
+                    ),
+                    completed_workers=(
+                        tuple(
+                            record.role
+                            for record in result.worker_trace
+                        )
+                        if result is not None
+                        else ()
+                    ),
+                )
+            except Exception:
+                # Telemetry finalization must never replace the original error.
+                pass
+            raise
+
+        try:
+            run = finalize_agent_run_success(
+                self.engine,
+                run.id,
+                route=result.decision.route,
+                use_docs=result.decision.use_docs,
+                planned_workers=result.supervisor_plan.workers,
+                completed_workers=tuple(
+                    record.role for record in result.worker_trace
+                ),
+                duration_ms=_duration_ms(started),
+            )
+        except Exception:
+            # A completed chat turn remains successful even if telemetry
+            # finalization fails after messages were already persisted.
+            pass
 
         with self._lock:
             if active:
@@ -96,6 +166,7 @@ class PersistentChatCoordinator:
             session_active=active,
             result=result,
             persisted=persisted,
+            run=run,
         )
 
     def reset(
@@ -209,3 +280,8 @@ def _default_title(message: str, *, max_chars: int = 60) -> str:
     if len(normalized) <= max_chars:
         return normalized
     return normalized[: max_chars - 1].rstrip() + "…"
+
+
+
+def _duration_ms(started: float) -> int:
+    return max(0, round((perf_counter() - started) * 1000))
