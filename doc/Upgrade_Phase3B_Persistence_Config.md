@@ -207,3 +207,75 @@ accidentally append messages to a conversation owned by a future agent type.
 
 Step 3 still leaves the current HTTP `/chat` endpoint unchanged. Step 4 will expose the
 durable conversation id in the API and switch the endpoint to this coordinator.
+
+
+## Step 4 — Persistent Chat API Cutover
+
+The public `POST /chat` endpoint now uses `PersistentChatCoordinator`.
+
+Request shape:
+
+~~~json
+{
+  "message": "web",
+  "conversation_id": "<durable-id-or-null>",
+  "session_id": "<clarification-session-or-null>"
+}
+~~~
+
+Response shape now includes both identities:
+
+~~~json
+{
+  "conversation_id": "<durable-conversation-id>",
+  "session_id": "<temporary-session-id>",
+  "session_active": false
+}
+~~~
+
+Rules:
+
+~~~text
+new conversation:
+conversation_id = null
+session_id      = null
+
+independent next turn in existing conversation:
+conversation_id = existing durable id
+session_id      = null
+
+clarification follow-up:
+conversation_id = existing durable id
+session_id      = active clarification id
+~~~
+
+The default HTTP product path now creates `LangGraphDockerSupportAgent`, so every
+persisted turn has the Supervisor/Worker execution contract required by the persistence
+adapter.
+
+Product persistence is initialized lazily on the first chat request. The current
+development implementation uses SQLAlchemy `create_all` for these product tables; a
+migration tool can replace this bootstrap before production deployment.
+
+Deleting `/chat/{session_id}` only clears temporary clarification state. It deliberately
+does not delete the durable conversation or historical messages.
+
+HTTP-level targeted tests use a shared in-memory SQLite engine and verify:
+
+- durable conversation id survives a clarification flow;
+- user/assistant messages and executions are persisted;
+- a clarification follow-up without conversation id is rejected;
+- an expired clarification session returns 404;
+- resetting a session leaves conversation history intact.
+
+## Next
+
+Step 5 will expose read-only conversation history APIs:
+
+~~~text
+GET /conversations
+GET /conversations/{conversation_id}
+~~~
+
+Those endpoints will return product DTOs from the persistence repository and will not
+expose ORM objects or raw internal GraphState.
