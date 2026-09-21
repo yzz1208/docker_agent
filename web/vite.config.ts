@@ -6,6 +6,9 @@ const backendTarget =
 
 export default defineConfig({
   plugins: [vue()],
+  test: {
+    include: ["src/**/*.test.ts"],
+  },
   server: {
     port: 5173,
     proxy: {
