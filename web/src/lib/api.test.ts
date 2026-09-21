@@ -62,14 +62,14 @@ describe("API client", () => {
       created_at: "2026-09-21T03:00:00Z",
       updated_at: "2026-09-21T03:00:00Z",
     };
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValue(
+    const fetchMock = vi.fn().mockImplementation(() =>
+      Promise.resolve(
         new Response(JSON.stringify(responseBody), {
           status: 200,
           headers: { "Content-Type": "application/json" },
         }),
-      );
+      ),
+    );
     vi.stubGlobal("fetch", fetchMock);
 
     await createAgentConfiguration({
