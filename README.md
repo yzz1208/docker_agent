@@ -13,7 +13,9 @@
 - Upgrade Phase 1：Unified ToolResult + Evidence + AgentState + Shadow Migration ✅
 - Upgrade Phase 2A：Coarse-Grained LangGraph Migration ✅
 - Upgrade Phase 2B：Runtime Loop LangGraph Migration ✅
-- Upgrade Phase 3：Role Separation / Multi-Agent Architecture（下一阶段）
+- Upgrade Phase 3A：Role Separation / Multi-Agent Architecture ✅
+- Upgrade Phase 3B：Persistence + Agent Configuration + Effective Config API ✅
+- Upgrade Phase 4：Vue 3 Web Product Shell（Step 1 进行中）
 
 ## 本地环境
 
@@ -127,3 +129,36 @@ RETRIEVAL_TOP_K=10
 ```
 
 如果没有 CUDA，可以不设置 `EMBEDDING_DEVICE` 或设置为 `cpu`。
+
+
+## Web 前端
+
+Phase 4 前端位于：
+
+```text
+web/
+```
+
+启动后端：
+
+```powershell
+uv run uvicorn docker_agent.main:app --reload
+```
+
+启动前端：
+
+```powershell
+cd web
+npm install
+npm run dev
+```
+
+开发环境默认通过 Vite 将 `/chat`、`/conversations`、`/agent-configurations`
+和 `/health` 代理到 `http://127.0.0.1:8000`。
+
+前端门禁：
+
+```powershell
+npm run typecheck
+npm run build
+```
