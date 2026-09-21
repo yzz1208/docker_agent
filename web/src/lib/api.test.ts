@@ -2,7 +2,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   ApiError,
+  compareEvaluationRuns,
   createAgentConfiguration,
+  getOperationsSummary,
+  listAgentRuns,
+  listEvaluationRuns,
   sendChat,
   updateAgentConfiguration,
 } from "./api";
@@ -110,6 +114,52 @@ describe("API client", () => {
           runtime_settings: { max_steps: 6 },
         }),
       }),
+    );
+  });
+
+  it("serializes operations filters and comparison queries", async () => {
+    const fetchMock = vi.fn().mockImplementation(() =>
+      Promise.resolve(
+        new Response(JSON.stringify({}), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await listAgentRuns({
+      conversationId: "conversation 1",
+      agentType: "docker_support",
+      status: "failed",
+      limit: 25,
+      offset: 5,
+    });
+    await getOperationsSummary(168);
+    await listEvaluationRuns({
+      suite: "agent_router",
+      limit: 10,
+      offset: 2,
+    });
+    await compareEvaluationRuns({
+      baselineId: "baseline-1",
+      candidateId: "candidate-2",
+      maxRegression: 0.01,
+    });
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "/operations/runs?conversation_id=conversation+1" +
+        "&agent_type=docker_support&status=failed&limit=25&offset=5",
+    );
+    expect(fetchMock.mock.calls[1]?.[0]).toBe(
+      "/operations/summary?hours=168",
+    );
+    expect(fetchMock.mock.calls[2]?.[0]).toBe(
+      "/operations/evaluations?limit=10&offset=2&suite=agent_router",
+    );
+    expect(fetchMock.mock.calls[3]?.[0]).toBe(
+      "/operations/evaluations/compare?baseline_id=baseline-1" +
+        "&candidate_id=candidate-2&max_regression=0.01",
     );
   });
 
