@@ -318,6 +318,30 @@ beforeEach(() => {
 });
 
 describe("editable agent settings", () => {
+  it("loads configuration metadata for the requested Agent type", async () => {
+    const descriptor = agentDescriptor();
+    descriptor.agent_type = "future_agent";
+    descriptor.display_name = "Future Agent";
+    const effective = effectiveConfiguration();
+    effective.agent_type = "future_agent";
+    effective.display_name = "Future Agent";
+
+    vi.mocked(getAgentDescriptor).mockResolvedValueOnce(descriptor);
+    vi.mocked(getEffectiveAgentConfiguration).mockResolvedValueOnce(
+      effective,
+    );
+
+    const settings = useAgentSettings("future_agent");
+    await settings.load();
+
+    expect(getAgentDescriptor).toHaveBeenCalledWith("future_agent");
+    expect(getEffectiveAgentConfiguration).toHaveBeenCalledWith(
+      "future_agent",
+    );
+    expect(settings.descriptor.value?.display_name).toBe("Future Agent");
+    expect(settings.displayName.value).toBe("Future Agent");
+  });
+
   it("hydrates field metadata from the Agent descriptor", async () => {
     vi.mocked(getEffectiveAgentConfiguration).mockResolvedValue(
       effectiveConfiguration(),
