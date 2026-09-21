@@ -228,6 +228,181 @@ Targets:
 - ChatSessionManager bound to one Agent type;
 - PersistentChatCoordinator created per Agent type.
 
+### Step 2 implementation status
+
+**IMPLEMENTED pending local gate**
+
+Phase 7 now has a generic runtime construction layer.
+
+### Runtime protocol
+
+Added:
+
+~~~text
+AgentTurnProtocol
+AgentProtocol
+~~~
+
+The session layer only requires:
+
+~~~text
+AgentProtocol.handle(question)
+    ↓
+AgentTurnProtocol
+├─ decision
+├─ answer
+└─ needs_clarification
+~~~
+
+This removes the direct `DockerSupportAgent` type dependency from:
+
+~~~text
+AgentConversation
+ChatSessionManager
+~~~
+
+The durable persistence coordinator still requires `LangGraphAgentTurnResult` because the
+current persistence adapter stores supervisor/worker execution metadata. That specialization
+is intentionally retained until a second real Agent proves a broader persistence contract is
+needed.
+
+### AgentFactory
+
+Added:
+
+~~~text
+AgentFactory
+AgentBuilder
+AgentBuilderAlreadyRegistered
+AgentBuilderNotRegistered
+validate_factory_registration()
+~~~
+
+The Factory:
+
+- resolves external Agent types through the Registry;
+- caches one runtime instance per canonical Agent type;
+- rejects duplicate builders;
+- reports missing builders;
+- supports targeted invalidation;
+- supports full cache clear on application shutdown;
+- uses one build lock per Agent type.
+
+Per-Agent build locks prevent duplicate concurrent construction of one expensive Agent while
+allowing different Agent types to initialize independently.
+
+### Docker Support builder
+
+Docker Support is now registered as a runtime builder:
+
+~~~text
+DOCKER_SUPPORT_DESCRIPTOR
+        ↓
+_build_docker_support_agent()
+        ↓
+AgentFactory
+        ↓
+LangGraphDockerSupportAgent
+~~~
+
+The builder still applies:
+
+- secure base Settings;
+- persisted product preferences;
+- enabled/disabled validation;
+- existing LangGraph Docker Support construction.
+
+The behavior of the current Docker Agent is unchanged.
+
+### Runtime session isolation
+
+Runtime helpers are now Agent-aware:
+
+~~~text
+get_agent(agent_type)
+get_chat_sessions(agent_type)
+get_chat_coordinator(agent_type)
+~~~
+
+The default remains:
+
+~~~text
+docker_support
+~~~
+
+so the existing `POST /chat` contract is unchanged in Step 2.
+
+Each `ChatSessionManager` is bound to one `agent_type`.
+
+`PersistentChatCoordinator` verifies:
+
+~~~text
+sessions.agent_type == coordinator.agent_type
+~~~
+
+and rejects a mismatched runtime binding immediately.
+
+This provides the isolation required before Step 3 lets clients select an Agent type.
+
+### Configuration invalidation
+
+When the Docker Support configuration changes:
+
+~~~text
+AgentFactory.invalidate("docker_support")
+get_agent.cache_clear()
+~~~
+
+is applied.
+
+New turns then receive a runtime Agent built from the new effective configuration.
+
+An already-active clarification session keeps the Agent instance it started with so one
+conversation turn cannot switch model/runtime configuration halfway through its clarification
+flow.
+
+### Lifecycle
+
+FastAPI shutdown now clears:
+
+~~~text
+chat coordinator cache
+chat session-manager cache
+get_agent compatibility cache
+AgentFactory runtime instances
+database engine
+~~~
+
+### Step 2 coverage
+
+Tests cover:
+
+- canonical Agent instance caching;
+- targeted invalidation and rebuild;
+- independent cached instances across Agent types;
+- duplicate builder rejection;
+- missing builder rejection;
+- Registry/Factory completeness validation;
+- full AgentFactory cache clear;
+- session-manager/coordinator Agent-type mismatch rejection;
+- existing durable chat behavior remains compatible.
+
+Focused gate:
+
+~~~powershell
+uv run ruff check .
+uv run pytest -v tests/test_agent_factory.py tests/test_agent_registry.py tests/test_persistent_chat.py tests/test_chat_api.py tests/test_database_runtime.py
+~~~
+
+Frontend is unchanged functionally in Step 2. A quick type/test gate is still recommended:
+
+~~~powershell
+cd web
+npm run typecheck
+npm test
+cd ..
+~~~
+
 ## Step 3 — Agent-Aware Chat Contract
 
 Extend Chat so a new conversation can choose an Agent type.
