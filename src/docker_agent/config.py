@@ -130,23 +130,10 @@ class Settings(BaseSettings):
                 "Production DATABASE_URL must use a non-default password"
             )
 
-        if not self.model_name.strip():
-            raise ValueError("Production MODEL_NAME must be configured")
-        if not self.model_base_url.strip():
+        if "REPLACE_WITH_" in self.database_url.upper():
             raise ValueError(
-                "Production MODEL_BASE_URL must be configured"
+                "Production DATABASE_URL still contains a placeholder"
             )
-
-        critical_values = {
-            "DATABASE_URL": self.database_url,
-            "MODEL_NAME": self.model_name,
-            "MODEL_BASE_URL": self.model_base_url,
-        }
-        for label, value in critical_values.items():
-            if "REPLACE_WITH_" in value.upper():
-                raise ValueError(
-                    f"Production {label} still contains a placeholder"
-                )
 
         if (
             self.tool_mode == "local"
@@ -158,6 +145,30 @@ class Settings(BaseSettings):
             )
 
         return self
+
+
+def require_application_runtime_settings(settings: Settings) -> None:
+    """Require configuration needed by the serving Agent runtime."""
+
+    if settings.app_env != "production":
+        return
+
+    if not settings.model_name.strip():
+        raise ValueError("Production MODEL_NAME must be configured")
+    if not settings.model_base_url.strip():
+        raise ValueError(
+            "Production MODEL_BASE_URL must be configured"
+        )
+
+    for label, value in {
+        "MODEL_NAME": settings.model_name,
+        "MODEL_BASE_URL": settings.model_base_url,
+        "MODEL_API_KEY": settings.model_api_key,
+    }.items():
+        if value and "REPLACE_WITH_" in value.upper():
+            raise ValueError(
+                f"Production {label} still contains a placeholder"
+            )
 
 
 def settings_env_file(app_env: str | None = None) -> str:
