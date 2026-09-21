@@ -20,7 +20,7 @@ def _descriptor(agent_type: str, display_name: str) -> AgentDescriptor:
         knowledge_sources=(),
         toolsets=(),
         worker_roles=(),
-        configuration_groups=("model_settings",),
+        configuration_schema=(),
     )
 
 
@@ -107,5 +107,5 @@ def test_descriptor_rejects_duplicate_metadata_labels() -> None:
             knowledge_sources=(),
             toolsets=(),
             worker_roles=(),
-            configuration_groups=(),
+            configuration_schema=(),
         )
