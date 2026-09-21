@@ -19,3 +19,12 @@ reports/
 web/node_modules/
 web/dist/
 web/.vite/
+
+# Accidental TypeScript emit from frontend type-checking
+web/src/**/*.js
+web/src/**/*.js.map
+web/src/**/*.d.ts
+web/src/**/*.d.ts.map
+web/vite.config.js
+web/vite.config.js.map
+web/*.tsbuildinfo
