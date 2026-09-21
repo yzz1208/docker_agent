@@ -145,10 +145,12 @@ async function renameActiveConversation(): Promise<void> {
       conversation.id,
       nextTitle.trim(),
     );
-    detail.value = {
-      ...detail.value,
-      conversation: updated,
-    };
+    if (detail.value) {
+      detail.value = {
+        ...detail.value,
+        conversation: updated,
+      };
+    }
     await refreshConversations();
   } catch (error) {
     errorMessage.value = errorText(error);
