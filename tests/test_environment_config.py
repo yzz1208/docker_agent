@@ -102,7 +102,6 @@ def test_production_local_docker_can_be_explicitly_enabled() -> None:
     assert settings.allow_local_docker_tools is True
 
 
-
 def test_get_settings_loads_environment_specific_dotenv(
     tmp_path,
     monkeypatch,
