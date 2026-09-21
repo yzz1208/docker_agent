@@ -3,9 +3,9 @@ from __future__ import annotations
 import json
 import logging
 import re
-from collections import Counter, defaultdict
+from collections import Counter
 from contextlib import contextmanager
-from contextvars import ContextVar
+from contextvars import ContextVar, Token
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from threading import Lock
@@ -113,7 +113,9 @@ def correlation_context(
     run_id: str | None = None,
     conversation_id: str | None = None,
 ) -> Iterator[CorrelationContext]:
-    tokens: list[tuple[ContextVar[str | None], object]] = []
+    tokens: list[
+        tuple[ContextVar[str | None], Token[str | None]]
+    ] = []
 
     if request_id is not None:
         tokens.append((_request_id, _request_id.set(request_id)))
@@ -131,7 +133,7 @@ def correlation_context(
         yield current_correlation()
     finally:
         for variable, token in reversed(tokens):
-            variable.reset(token)  # type: ignore[arg-type]
+            variable.reset(token)
 
 
 def current_correlation() -> CorrelationContext:
@@ -150,7 +152,7 @@ class MetricsRegistry:
         self.reset()
 
     def reset(self) -> None:
-        with getattr(self, "_lock", Lock()):
+        with self._lock:
             self._http_requests: Counter[
                 tuple[str, str, str]
             ] = Counter()
