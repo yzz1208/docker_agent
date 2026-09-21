@@ -7,6 +7,8 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any
 
+from docker_agent.config import Settings
+
 _CONTAINER_REF_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
 
 CommandRunner = Callable[
@@ -55,6 +57,112 @@ def _default_runner(
         timeout=timeout_seconds,
         check=False,
         shell=False,
+    )
+
+
+def build_docker_tools(settings: Settings) -> "DockerReadOnlyTools":
+    """Build Docker diagnostics according to the explicit tool mode."""
+
+    runner: CommandRunner | None = None
+    if settings.tool_mode == "mock":
+        runner = _mock_runner
+
+    return DockerReadOnlyTools(
+        timeout_seconds=settings.docker_tool_timeout_seconds,
+        max_log_lines=settings.docker_logs_max_lines,
+        runner=runner,
+    )
+
+
+def _mock_runner(
+    args: Sequence[str],
+    _timeout_seconds: float,
+) -> subprocess.CompletedProcess[str]:
+    command = tuple(args)
+    action = command[1] if len(command) > 1 else ""
+
+    if action == "info":
+        stdout = json.dumps(
+            {
+                "ServerVersion": "mock",
+                "OperatingSystem": "mock-runtime",
+                "Containers": 1,
+            },
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+    elif action == "ps":
+        stdout = json.dumps(
+            {
+                "ID": "mock-container",
+                "Names": "demo",
+                "Image": "demo:latest",
+                "Status": "Up 1 minute",
+            },
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+    elif action == "inspect":
+        container = command[-1] if command else "demo"
+        stdout = json.dumps(
+            [
+                {
+                    "Id": "mock-container",
+                    "Name": f"/{container}",
+                    "RestartCount": 0,
+                    "State": {
+                        "Status": "running",
+                        "Running": True,
+                        "Restarting": False,
+                        "OOMKilled": False,
+                        "Dead": False,
+                        "ExitCode": 0,
+                        "Error": "",
+                        "StartedAt": "mock",
+                        "FinishedAt": "",
+                    },
+                    "Config": {
+                        "Image": "demo:latest",
+                        "Entrypoint": [],
+                        "Cmd": [],
+                        "Env": [],
+                    },
+                    "HostConfig": {
+                        "RestartPolicy": {
+                            "Name": "no",
+                            "MaximumRetryCount": 0,
+                        }
+                    },
+                }
+            ],
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+    elif action == "logs":
+        stdout = "mock container log line"
+    elif action == "stats":
+        stdout = json.dumps(
+            {
+                "Name": command[-1] if command else "demo",
+                "CPUPerc": "0.10%",
+                "MemUsage": "16MiB / 1GiB",
+            },
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+    else:
+        return subprocess.CompletedProcess(
+            args=list(args),
+            returncode=1,
+            stdout="",
+            stderr=f"unsupported mock Docker command: {action}",
+        )
+
+    return subprocess.CompletedProcess(
+        args=list(args),
+        returncode=0,
+        stdout=stdout,
+        stderr="",
     )
 
 
