@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from numbers import Real
 
+from docker_agent.agent.registry import DOCKER_SUPPORT_DESCRIPTOR
 from docker_agent.config import Settings
 from docker_agent.persistence.agent_config import AgentConfigurationRecord
 
@@ -65,7 +66,7 @@ def resolve_docker_support_configuration(
     if record is None:
         return EffectiveDockerSupportConfiguration(
             agent_type="docker_support",
-            display_name="Docker Support",
+            display_name=DOCKER_SUPPORT_DESCRIPTOR.display_name,
             enabled=True,
             settings=base.model_copy(deep=True),
             persisted=False,
