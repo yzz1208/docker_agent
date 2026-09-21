@@ -392,6 +392,234 @@ OpenTelemetry integration can be added behind configuration once the internal ru
 and metric names are stable.
 
 
+### Step 3 implementation status
+
+**IMPLEMENTED pending local Ruff/pytest/smoke gate**
+
+The application now has three complementary observability layers:
+
+~~~text
+durable Operations data
+    = PostgreSQL agent_runs history
+
+structured JSON logs
+    = request/run debugging and correlation
+
+Prometheus-compatible metrics
+    = process/runtime monitoring
+~~~
+
+### Correlation identifiers
+
+Every HTTP request receives:
+
+~~~text
+X-Request-ID
+~~~
+
+A valid incoming `X-Request-ID` is preserved. Unsafe or missing values are replaced by a
+new generated identifier.
+
+Every successful chat response also exposes:
+
+~~~text
+X-Run-ID
+X-Conversation-ID
+~~~
+
+Inside one Agent execution, ContextVar-based correlation provides:
+
+~~~text
+request_id
+run_id
+conversation_id
+~~~
+
+to nested application logs without passing those identifiers through every function
+signature.
+
+The correlation context is scoped and restored after each request/run so identifiers do
+not leak into another execution.
+
+### Structured JSON logging
+
+The `docker_agent` logger now emits compact JSON records to stderr/stdout-compatible
+logging handlers.
+
+Operational fields are deliberately bounded:
+
+~~~text
+request_id
+run_id
+conversation_id
+http_method
+http_route
+http_status
+duration_ms
+agent_type
+agent_status
+agent_route
+error_type
+worker_count
+~~~
+
+Application log level is configurable through:
+
+~~~text
+APP_LOG_LEVEL=INFO
+~~~
+
+Secret-like patterns in both log messages and formatted exception traces are redacted for
+common API-key/token/password/Bearer/sk-* forms.
+
+Raw prompts, model responses, retrieved contexts, and Docker stdout are not added to
+structured log metadata by this layer.
+
+### HTTP request telemetry
+
+The FastAPI middleware records:
+
+~~~text
+method
+route template
+status
+duration for structured logs
+~~~
+
+Prometheus labels use the route template rather than raw path parameters, preventing
+run/conversation IDs from becoming high-cardinality labels.
+
+Unmatched routes use a single:
+
+~~~text
+unmatched
+~~~
+
+label.
+
+### Prometheus-compatible endpoint
+
+Metrics are exposed at:
+
+~~~text
+GET /metrics
+~~~
+
+without adding a third-party metrics dependency.
+
+Current metrics:
+
+~~~text
+docker_agent_http_requests_total{method,route,status}
+
+docker_agent_runs_total{status}
+
+docker_agent_run_failures_total{error_type}
+
+docker_agent_run_routes_total{route}
+
+docker_agent_worker_executions_total{worker}
+
+docker_agent_run_duration_seconds
+    _bucket
+    _sum
+    _count
+~~~
+
+Run-duration histogram buckets:
+
+~~~text
+0.1
+0.25
+0.5
+1
+2.5
+5
+10
+30
+60
++Inf
+seconds
+~~~
+
+The `/metrics` scrape itself is intentionally excluded from the HTTP request counter.
+
+### Cardinality policy
+
+The following values are **never Prometheus labels**:
+
+~~~text
+request_id
+run_id
+conversation_id
+raw user text
+raw error message
+container id/name
+~~~
+
+They belong in correlated logs or durable Operations records instead.
+
+This prevents unbounded metric-series growth.
+
+### Persistence vs metrics semantics
+
+~~~text
+Operations API / agent_runs
+    durable
+    survives process restart
+    queryable historical record
+
+/metrics
+    in-process
+    resets when the process restarts
+    intended for Prometheus scraping/aggregation
+~~~
+
+The two layers intentionally overlap on some counters but serve different operational
+purposes.
+
+### Step 3 coverage
+
+Tests now cover:
+
+- nested ContextVar correlation and restoration;
+- safe incoming request-id preservation;
+- unsafe request-id replacement;
+- structured JSON correlation fields;
+- log secret redaction;
+- Prometheus counter/histogram exposition;
+- HTTP request metrics and `X-Request-ID`;
+- metrics scrape self-exclusion;
+- Chat `X-Run-ID` / `X-Conversation-ID`;
+- successful and failed run metric emission;
+- deep Agent `handle()` inheritance of request/run/conversation context.
+
+The read-only integration smoke now also checks:
+
+~~~text
+GET /metrics
+~~~
+
+Focused local gate:
+
+~~~powershell
+uv run ruff check .
+uv run pytest -v \
+  tests/test_observability.py \
+  tests/test_observability_api.py \
+  tests/test_agent_run_telemetry.py \
+  tests/test_operations_api.py \
+  tests/test_persistent_chat.py \
+  tests/test_chat_api.py
+~~~
+
+With FastAPI + PostgreSQL running:
+
+~~~powershell
+cd web
+npm run smoke
+~~~
+
 ## Step 4 — Evaluation Run Persistence
 
 Wrap the existing retrieval/agent evaluation workflows in a persistent evaluation-run
