@@ -3,8 +3,10 @@ from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 from sqlalchemy.pool import StaticPool
 
+from docker_agent.api.chat import ChatSessionManager
 from docker_agent.main import app
 from docker_agent.persistence import (
+    PersistentChatCoordinator,
     append_message,
     create_conversation,
     init_persistence_store,
@@ -195,3 +197,104 @@ def test_list_conversations_rejects_invalid_pagination(monkeypatch) -> None:
 
     assert response.status_code == 400
     assert response.json()["detail"] == "limit must be positive"
+
+
+
+def test_patch_conversation_renames_sidebar_title(monkeypatch) -> None:
+    engine = _engine()
+    conversation = create_conversation(
+        engine,
+        title="Old",
+        conversation_id="conversation-rename-api",
+    )
+    monkeypatch.setattr(
+        "docker_agent.main.get_persistence_engine",
+        lambda: engine,
+    )
+    client = TestClient(app)
+
+    response = client.patch(
+        f"/conversations/{conversation.id}",
+        json={"title": "  New sidebar title  "},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["id"] == conversation.id
+    assert payload["title"] == "New sidebar title"
+
+
+def test_patch_conversation_returns_404_for_unknown_id(monkeypatch) -> None:
+    engine = _engine()
+    monkeypatch.setattr(
+        "docker_agent.main.get_persistence_engine",
+        lambda: engine,
+    )
+    client = TestClient(app)
+
+    response = client.patch(
+        "/conversations/missing",
+        json={"title": "New"},
+    )
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Conversation was not found."
+
+
+def test_delete_conversation_removes_history(monkeypatch) -> None:
+    engine = _engine()
+    conversation = create_conversation(
+        engine,
+        conversation_id="conversation-delete-api",
+    )
+    append_message(
+        engine,
+        conversation_id=conversation.id,
+        role="user",
+        content="hello",
+    )
+    coordinator = PersistentChatCoordinator(
+        engine=engine,
+        sessions=ChatSessionManager(
+            agent_factory=lambda: object(),  # type: ignore[arg-type]
+        ),
+    )
+    monkeypatch.setattr(
+        "docker_agent.main.get_persistence_engine",
+        lambda: engine,
+    )
+    monkeypatch.setattr(
+        "docker_agent.main.get_chat_coordinator",
+        lambda: coordinator,
+    )
+    client = TestClient(app)
+
+    response = client.delete(f"/conversations/{conversation.id}")
+
+    assert response.status_code == 204
+    detail = client.get(f"/conversations/{conversation.id}")
+    assert detail.status_code == 404
+
+
+def test_delete_conversation_returns_404_for_unknown_id(monkeypatch) -> None:
+    engine = _engine()
+    coordinator = PersistentChatCoordinator(
+        engine=engine,
+        sessions=ChatSessionManager(
+            agent_factory=lambda: object(),  # type: ignore[arg-type]
+        ),
+    )
+    monkeypatch.setattr(
+        "docker_agent.main.get_persistence_engine",
+        lambda: engine,
+    )
+    monkeypatch.setattr(
+        "docker_agent.main.get_chat_coordinator",
+        lambda: coordinator,
+    )
+    client = TestClient(app)
+
+    response = client.delete("/conversations/missing")
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Conversation was not found."
