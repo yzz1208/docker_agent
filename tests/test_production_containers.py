@@ -8,7 +8,6 @@ ROOT = Path(__file__).resolve().parents[1]
 def _read(path: str) -> str:
     return (ROOT / path).read_text(encoding="utf-8")
 
-
 def test_production_compose_orders_migration_before_backend() -> None:
     compose = yaml.safe_load(_read("compose.prod.yaml"))
     services = compose["services"]
@@ -40,7 +39,6 @@ def test_production_compose_orders_migration_before_backend() -> None:
         "condition": "service_healthy"
     }
 
-
 def test_production_compose_uses_readiness_health_and_single_public_web_port() -> None:
     compose = yaml.safe_load(_read("compose.prod.yaml"))
     services = compose["services"]
@@ -63,12 +61,10 @@ def test_production_compose_uses_readiness_health_and_single_public_web_port() -
         "${WEB_PORT:-8080}:8080"
     ]
 
-
 def test_production_compose_does_not_mount_docker_socket_by_default() -> None:
     compose_text = _read("compose.prod.yaml")
 
     assert "/var/run/docker.sock" not in compose_text
-
 
 def test_nginx_keeps_operations_page_in_spa_and_proxies_operations_apis() -> None:
     nginx = _read("docker/nginx/default.conf")
@@ -79,7 +75,6 @@ def test_nginx_keeps_operations_page_in_spa_and_proxies_operations_apis() -> Non
     assert "location = /operations {" not in nginx
     assert "try_files $uri $uri/ /index.html;" in nginx
 
-
 def test_backend_image_runs_as_non_root_application_user() -> None:
     dockerfile = _read("docker/Dockerfile.backend")
 
@@ -89,7 +84,6 @@ def test_backend_image_runs_as_non_root_application_user() -> None:
     assert "/app/.cache/huggingface" in dockerfile
     assert '"docker_agent.main:app"' in dockerfile
 
-
 def test_web_image_is_multistage_and_served_by_nginx() -> None:
     dockerfile = _read("docker/Dockerfile.web")
 
@@ -98,7 +92,6 @@ def test_web_image_is_multistage_and_served_by_nginx() -> None:
     assert "FROM nginx:1.27-alpine AS runtime" in dockerfile
     assert "COPY --from=build /app/dist" in dockerfile
 
-
 def test_dockerignore_excludes_secrets_and_generated_artifacts() -> None:
     dockerignore = _read(".dockerignore").splitlines()
 
@@ -106,7 +99,6 @@ def test_dockerignore_excludes_secrets_and_generated_artifacts() -> None:
     assert ".venv" in dockerignore
     assert "web/node_modules" in dockerignore
     assert "web/dist" in dockerignore
-
 
 
 def test_production_compose_bootstraps_rag_schema_without_resetting_chunks() -> None:
@@ -118,7 +110,6 @@ def test_production_compose_bootstraps_rag_schema_without_resetting_chunks() -> 
     assert "--reset" not in command
 
 
-
 def test_production_compose_uses_production_env_and_requires_db_password() -> None:
     compose_text = _read("compose.prod.yaml")
     compose = yaml.safe_load(compose_text)
@@ -127,7 +118,6 @@ def test_production_compose_uses_production_env_and_requires_db_password() -> No
     assert backend_common["env_file"] == [".env.production"]
     assert "POSTGRES_PASSWORD:?" in compose_text
     assert "postgres:postgres" not in compose_text
-
 
 def test_environment_secret_files_are_ignored_but_examples_are_tracked() -> None:
     gitignore = _read(".gitignore").splitlines()
