@@ -5,6 +5,7 @@ from docker_agent.agent.answer import AgentAnswer
 from docker_agent.agent.router import AgentRouteDecision
 from docker_agent.api.chat import ChatSessionManager
 from docker_agent.graph.service import LangGraphAgentTurnResult
+from docker_agent.observability import metrics
 from docker_agent.multi_agent.execution import WorkerExecutionRecord
 from docker_agent.multi_agent.supervisor import SupervisorPlan
 from docker_agent.persistence import (
@@ -379,3 +380,46 @@ def test_successful_turn_survives_telemetry_finalize_failure(
     snapshot = load_conversation(engine, turn.conversation.id)
     assert len(snapshot.messages) == 2
     assert len(snapshot.executions) == 1
+
+
+
+def test_persistent_chat_records_success_metrics() -> None:
+    metrics.reset()
+    engine = _engine()
+    coordinator = PersistentChatCoordinator(
+        engine=engine,
+        sessions=ChatSessionManager(agent_factory=ImmediateAnswerAgent),
+    )
+
+    coordinator.chat(message="Docker volume 是什么？")
+
+    output = metrics.render_prometheus()
+    assert 'docker_agent_runs_total{status="succeeded"} 1' in output
+    assert 'docker_agent_run_routes_total{route="docs_only"} 1' in output
+    assert (
+        'docker_agent_worker_executions_total{worker="knowledge"} 1'
+        in output
+    )
+
+
+def test_persistent_chat_records_failure_metrics() -> None:
+    metrics.reset()
+    engine = _engine()
+    coordinator = PersistentChatCoordinator(
+        engine=engine,
+        sessions=ChatSessionManager(agent_factory=FailingAgent),
+    )
+
+    try:
+        coordinator.chat(message="触发一次失败")
+    except RuntimeError:
+        pass
+    else:
+        raise AssertionError("RuntimeError was not raised")
+
+    output = metrics.render_prometheus()
+    assert 'docker_agent_runs_total{status="failed"} 1' in output
+    assert (
+        'docker_agent_run_failures_total{error_type="RuntimeError"} 1'
+        in output
+    )
