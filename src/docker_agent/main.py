@@ -5,6 +5,12 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import SQLAlchemyError
 
+from docker_agent.agent.configuration import (
+    AgentConfigurationResolutionError,
+    AgentDisabledError,
+    require_enabled,
+    resolve_docker_support_configuration,
+)
 from docker_agent.agent.router import AgentRoutingError
 from docker_agent.agent.service import DockerSupportAgent
 from docker_agent.api.agent_configurations import (
@@ -61,9 +67,24 @@ app = FastAPI(
 
 @lru_cache
 def get_agent() -> DockerSupportAgent:
-    """Create the LangGraph-backed agent stack lazily on first use."""
+    """Create the LangGraph agent from secure settings plus product preferences."""
 
-    return LangGraphDockerSupportAgent()
+    base_settings = get_settings()
+    try:
+        record = get_agent_configuration(
+            get_persistence_engine(),
+            "docker_support",
+        )
+    except AgentConfigurationNotFound:
+        record = None
+
+    effective = require_enabled(
+        resolve_docker_support_configuration(
+            base_settings,
+            record,
+        )
+    )
+    return LangGraphDockerSupportAgent(settings=effective.settings)
 
 
 chat_sessions = ChatSessionManager(agent_factory=get_agent)
@@ -209,6 +230,9 @@ def create_agent_configuration_endpoint(
             detail=str(exc),
         ) from exc
 
+    if record.agent_type == "docker_support":
+        get_agent.cache_clear()
+
     return build_agent_configuration_response(record)
 
 
@@ -248,6 +272,9 @@ def update_agent_configuration_endpoint(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(exc),
         ) from exc
+
+    if record.agent_type == "docker_support":
+        get_agent.cache_clear()
 
     return build_agent_configuration_response(record)
 
@@ -402,6 +429,16 @@ def chat(request: ChatRequest) -> ChatResponse:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=str(exc),
+        ) from exc
+    except AgentDisabledError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
+    except AgentConfigurationResolutionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Invalid effective agent configuration: {exc}",
         ) from exc
     except AgentRoutingError as exc:
         raise HTTPException(
