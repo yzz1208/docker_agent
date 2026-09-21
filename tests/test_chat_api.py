@@ -456,7 +456,6 @@ def test_delete_chat_session_routes_reset_by_agent_type(
     assert future_coordinator.sessions.active_sessions() == 0
 
 
-
 def test_chat_endpoint_runs_real_infrastructure_agent_contract(
     monkeypatch,
 ) -> None:
