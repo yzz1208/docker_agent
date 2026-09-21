@@ -279,3 +279,82 @@ GET /conversations/{conversation_id}
 
 Those endpoints will return product DTOs from the persistence repository and will not
 expose ORM objects or raw internal GraphState.
+
+
+## Step 5 — Conversation History API
+
+The backend now exposes read-only product history endpoints:
+
+~~~text
+GET /conversations
+GET /conversations/{conversation_id}
+~~~
+
+### Conversation list
+
+The list endpoint returns lightweight summaries ordered by most recent activity:
+
+~~~text
+id
+agent_type
+title
+created_at
+updated_at
+~~~
+
+It supports:
+
+~~~text
+limit
+offset
+~~~
+
+so a future sidebar can paginate conversation history without loading message bodies.
+
+### Conversation detail
+
+The detail endpoint returns:
+
+~~~text
+conversation metadata
+messages[]
+~~~
+
+Each assistant message can include its own compact execution metadata:
+
+~~~text
+execution
+├─ planned_workers
+├─ completed_workers
+└─ worker_trace
+~~~
+
+Execution rows are joined to messages in the API serializer, so frontend code does not
+need to correlate a separate execution list by message id.
+
+The history API exposes product DTOs only. It does not expose SQLAlchemy ORM objects,
+GraphState, raw Docker stdout, or full evidence contexts.
+
+### Targeted API coverage
+
+Step 5 tests cover:
+
+- conversation summary listing;
+- most-recently-updated ordering;
+- limit/offset pagination;
+- detail message ordering;
+- execution metadata attached to assistant messages;
+- unknown conversation 404;
+- invalid pagination 400.
+
+## Next
+
+Step 6 will add mutation operations needed by a real conversation sidebar:
+
+~~~text
+PATCH /conversations/{conversation_id}
+DELETE /conversations/{conversation_id}
+~~~
+
+The first mutation scope will be intentionally small: rename a conversation and delete
+its persisted history. Agent configuration persistence remains the following step.
