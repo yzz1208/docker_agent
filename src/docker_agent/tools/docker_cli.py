@@ -60,7 +60,7 @@ def _default_runner(
     )
 
 
-def build_docker_tools(settings: Settings) -> "DockerReadOnlyTools":
+def build_docker_tools(settings: Settings) -> DockerReadOnlyTools:
     """Build Docker diagnostics according to the explicit tool mode."""
 
     runner: CommandRunner | None = None
