@@ -1,8 +1,8 @@
 import pytest
 
-from docker_agent.core.evidence import Evidence, EvidenceKind
+from docker_agent.core.evidence import runtime_tool_result_to_evidence
 from docker_agent.core.state import AgentState, AgentStep
-from docker_agent.core.tool_result import ToolResult
+from docker_agent.core.tool_result import ToolErrorType, ToolResult
 from docker_agent.multi_agent.execution import (
     WorkerExecutionRecord,
     build_worker_execution_record,
@@ -11,22 +11,23 @@ from docker_agent.multi_agent.execution import (
 
 def test_worker_execution_record_summarizes_state_deltas() -> None:
     before = AgentState(question="web 现在用了多少内存？")
-    after = before.append_tool_result(
-        ToolResult(
-            tool_name="docker_stats",
-            command=("docker", "stats", "--no-stream", "web"),
-            ok=True,
-            returncode=0,
-            stdout='{"MemUsage":"128MiB / 2GiB"}',
-            stderr="",
-        )
+    tool_result = ToolResult(
+        tool_name="docker_stats",
+        ok=True,
+        output='{"MemUsage":"128MiB / 2GiB"}',
+        error=None,
+        error_type=ToolErrorType.NONE,
+        metadata={
+            "adapter": "docker_cli",
+            "command": ("docker", "stats", "--no-stream", "web"),
+            "returncode": 0,
+        },
     )
+    after = before.append_tool_result(tool_result)
     after = after.append_evidence(
-        Evidence(
-            kind=EvidenceKind.RUNTIME,
-            content='{"MemUsage":"128MiB / 2GiB"}',
-            citation_label="[R1]",
-            source_id="docker_stats",
+        runtime_tool_result_to_evidence(
+            tool_result,
+            index=1,
         )
     )
     after = after.append_runtime_step(
