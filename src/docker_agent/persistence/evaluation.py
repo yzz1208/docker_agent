@@ -22,17 +22,31 @@ from docker_agent.persistence.telemetry import safe_error_message
 EvaluationRunStatus = Literal["running", "succeeded", "failed"]
 EvaluationCaseStatus = Literal["passed", "failed", "error"]
 
-_SECRET_FRAGMENTS = (
+_SENSITIVE_KEYS = {
     "api_key",
     "apikey",
     "base_url",
     "database_url",
     "access_token",
     "refresh_token",
+    "token",
     "password",
     "secret",
     "private_key",
     "credential",
+}
+
+_SENSITIVE_KEY_SUFFIXES = (
+    "_api_key",
+    "_base_url",
+    "_database_url",
+    "_access_token",
+    "_refresh_token",
+    "_token",
+    "_password",
+    "_secret",
+    "_private_key",
+    "_credential",
 )
 
 
@@ -138,13 +152,20 @@ def _packed_ref_revision(git_dir: Path, ref_name: str) -> str | None:
     return None
 
 
+def _is_sensitive_key(normalized_key: str) -> bool:
+    return (
+        normalized_key in _SENSITIVE_KEYS
+        or normalized_key.endswith(_SENSITIVE_KEY_SUFFIXES)
+    )
+
+
 def sanitize_evaluation_payload(value: object) -> object:
     if isinstance(value, dict):
         sanitized: dict[str, object] = {}
         for raw_key, raw_value in value.items():
             key = str(raw_key)
             normalized = key.lower().replace("-", "_")
-            if any(fragment in normalized for fragment in _SECRET_FRAGMENTS):
+            if _is_sensitive_key(normalized):
                 sanitized[key] = {
                     "configured": bool(raw_value),
                     "redacted": True,
