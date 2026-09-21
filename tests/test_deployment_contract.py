@@ -1,4 +1,5 @@
 import json
+import os
 from pathlib import Path
 
 import yaml
@@ -30,7 +31,7 @@ def test_production_preflight_reports_safe_summary(
     get_settings.cache_clear()
 
     try:
-        assert production_preflight() == 0
+        assert production_preflight(env_file=None) == 0
         captured = capsys.readouterr()
         payload = json.loads(captured.out)
 
@@ -50,6 +51,28 @@ def test_production_preflight_reports_safe_summary(
         assert "super-secret-model-key" not in captured.out
     finally:
         get_settings.cache_clear()
+
+
+def test_production_preflight_does_not_mutate_app_env(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("APP_ENV", "development")
+    monkeypatch.setenv(
+        "DATABASE_URL",
+        (
+            "postgresql+psycopg://docker_agent:"
+            "strong-password@postgres:5432/docker_agent"
+        ),
+    )
+    monkeypatch.setenv("MODEL_NAME", "release-model")
+    monkeypatch.setenv(
+        "MODEL_BASE_URL",
+        "https://model.example/v1",
+    )
+    monkeypatch.setenv("TOOL_MODE", "mock")
+
+    assert production_preflight(env_file=None) == 0
+    assert os.environ["APP_ENV"] == "development"
 
 
 def test_production_preflight_hides_invalid_input_values(
@@ -72,7 +95,7 @@ def test_production_preflight_hides_invalid_input_values(
     get_settings.cache_clear()
 
     try:
-        assert production_preflight() == 2
+        assert production_preflight(env_file=None) == 2
         captured = capsys.readouterr()
 
         assert "do-not-print-this-value" not in captured.err
