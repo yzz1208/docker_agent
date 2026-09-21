@@ -1,5 +1,6 @@
 from functools import lru_cache
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -15,10 +16,10 @@ class Settings(BaseSettings):
     database_url: str = (
         "postgresql+psycopg://postgres:postgres@localhost:5432/docker_agent"
     )
-    database_pool_size: int = 5
-    database_max_overflow: int = 10
-    database_pool_timeout_seconds: float = 30.0
-    database_pool_recycle_seconds: int = 1800
+    database_pool_size: int = Field(default=5, ge=1)
+    database_max_overflow: int = Field(default=10, ge=0)
+    database_pool_timeout_seconds: float = Field(default=30.0, gt=0)
+    database_pool_recycle_seconds: int = Field(default=1800, ge=0)
     database_migration_config: str = "alembic.ini"
 
     model_provider: str = ""
