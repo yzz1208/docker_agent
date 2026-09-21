@@ -24,10 +24,6 @@ from docker_agent.agent.registry import (
 )
 from docker_agent.agent.router import AgentRoutingError
 from docker_agent.agent.service import DockerSupportAgent
-from docker_agent.api.agents import (
-    AgentDescriptorResponse,
-    build_agent_descriptor_response,
-)
 from docker_agent.api.agent_configurations import (
     AgentConfigurationCreateRequest,
     AgentConfigurationResponse,
@@ -35,6 +31,10 @@ from docker_agent.api.agent_configurations import (
     EffectiveAgentConfigurationResponse,
     build_agent_configuration_response,
     build_effective_agent_configuration_response,
+)
+from docker_agent.api.agents import (
+    AgentDescriptorResponse,
+    build_agent_descriptor_response,
 )
 from docker_agent.api.chat import (
     ChatRequest,
