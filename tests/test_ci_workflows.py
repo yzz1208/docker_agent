@@ -104,6 +104,7 @@ def test_evaluation_gate_requires_baseline_and_runs_persisted_candidate() -> Non
 
     assert inputs["suite"]["type"] == "choice"
     assert inputs["baseline_run_id"]["required"] == "true"
+    assert inputs["repeats"]["default"] == "1"
 
     job = workflow["jobs"]["evaluate"]
     commands = "\n".join(
@@ -114,6 +115,7 @@ def test_evaluation_gate_requires_baseline_and_runs_persisted_candidate() -> Non
 
     assert "--persist --summary-output reports/evaluation-summary.json" in commands
     assert "scripts/eval_agent_router.py" in commands
+    assert '--repeats "$ROUTER_REPEATS"' in commands
     assert "scripts/eval_agent_workflow.py" in commands
     assert "candidate_run_id" in commands
     assert "scripts/compare_evaluations.py" in commands
