@@ -19,10 +19,12 @@ from docker_agent.persistence.store import (
     MessageRecord,
     append_message,
     create_conversation,
+    delete_conversation,
     get_conversation,
     init_persistence_store,
     list_conversations,
     load_conversation,
+    rename_conversation,
     save_execution,
 )
 
@@ -40,10 +42,12 @@ __all__ = [
     "PersistentChatTurn",
     "append_message",
     "create_conversation",
+    "delete_conversation",
     "get_conversation",
     "init_persistence_store",
     "list_conversations",
     "load_conversation",
     "persist_langgraph_turn",
+    "rename_conversation",
     "save_execution",
 ]
