@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 
 from docker_agent.agent.conversation import AgentConversation
 from docker_agent.agent.service import AgentTurnResult, DockerSupportAgent
+from docker_agent.graph.service import LangGraphAgentTurnResult
 
 
 class ChatRequest(BaseModel):
@@ -30,6 +31,21 @@ class DocSourceResponse(BaseModel):
     source_url: str
 
 
+class WorkerExecutionResponse(BaseModel):
+    index: int
+    role: str
+    tool_results_added: int
+    evidence_added: int
+    runtime_steps_added: int
+    answer_created: bool
+
+
+class AgentExecutionResponse(BaseModel):
+    planned_workers: list[str] = Field(default_factory=list)
+    completed_workers: list[str] = Field(default_factory=list)
+    worker_trace: list[WorkerExecutionResponse] = Field(default_factory=list)
+
+
 class ChatResponse(BaseModel):
     session_id: str
     session_active: bool
@@ -40,6 +56,7 @@ class ChatResponse(BaseModel):
     answer: str | None = None
     runtime_sources: list[RuntimeSourceResponse] = Field(default_factory=list)
     doc_sources: list[DocSourceResponse] = Field(default_factory=list)
+    execution: AgentExecutionResponse | None = None
 
 
 class ChatSessionNotFound(KeyError):
@@ -112,6 +129,24 @@ def build_chat_response(
     runtime_sources: list[RuntimeSourceResponse] = []
     doc_sources: list[DocSourceResponse] = []
     answer_text: str | None = None
+    execution: AgentExecutionResponse | None = None
+
+    if isinstance(result, LangGraphAgentTurnResult):
+        execution = AgentExecutionResponse(
+            planned_workers=list(result.supervisor_plan.workers),
+            completed_workers=[record.role for record in result.worker_trace],
+            worker_trace=[
+                WorkerExecutionResponse(
+                    index=record.index,
+                    role=record.role,
+                    tool_results_added=record.tool_results_added,
+                    evidence_added=record.evidence_added,
+                    runtime_steps_added=record.runtime_steps_added,
+                    answer_created=record.answer_created,
+                )
+                for record in result.worker_trace
+            ],
+        )
 
     if result.answer is not None:
         answer_text = result.answer.answer
@@ -144,4 +179,5 @@ def build_chat_response(
         answer=answer_text,
         runtime_sources=runtime_sources,
         doc_sources=doc_sources,
+        execution=execution,
     )
