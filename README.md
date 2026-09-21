@@ -17,6 +17,7 @@
 - Upgrade Phase 3B：Persistence + Agent Configuration + Effective Config API ✅
 - Upgrade Phase 4：Vue 3 Web Product Shell ✅（UI/交互细节后续优化）
 - Upgrade Phase 5：Observability + Evaluation Ops ✅
+- Upgrade Phase 6：Production / Deployment Hardening（Step 1 Alembic migrations 已实现待本地 gate）
 
 ## 本地环境
 
@@ -38,6 +39,21 @@ uv sync --all-groups
 ```powershell
 docker compose up -d postgres
 ```
+
+首次使用空数据库时，先应用产品数据库迁移：
+
+```powershell
+uv run alembic upgrade head
+```
+
+如果是 Phase 5 已经通过 `create_all()` 建好当前完整产品表的本地数据库，只在首次接入
+Alembic 时执行一次：
+
+```powershell
+uv run alembic stamp head
+```
+
+之后所有长期数据库都使用 Alembic 管理 schema，不再由 FastAPI 启动时自动建表。
 
 ## Milestone 1：构建 Docker Docs 数据
 
