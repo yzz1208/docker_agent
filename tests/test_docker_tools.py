@@ -36,7 +36,6 @@ class RecordingRunner:
             stderr=self.stderr,
         )
 
-
 def test_ps_builds_allowlisted_command_without_shell_text() -> None:
     runner = RecordingRunner(stdout='{"Names":"web"}')
     tools = DockerReadOnlyTools(runner=runner)
@@ -59,7 +58,6 @@ def test_ps_builds_allowlisted_command_without_shell_text() -> None:
         )
     ]
 
-
 def test_inspect_accepts_normal_container_name() -> None:
     runner = RecordingRunner(stdout="[]")
     tools = DockerReadOnlyTools(runner=runner)
@@ -77,13 +75,11 @@ def test_container_ref_rejects_shell_or_flag_like_input(container: str) -> None:
     with pytest.raises(ValueError):
         validate_container_ref(container)
 
-
 def test_logs_enforces_bounded_tail() -> None:
     tools = DockerReadOnlyTools(max_log_lines=200, runner=RecordingRunner())
 
     with pytest.raises(ValueError, match="less than or equal"):
         tools.logs("web", tail=201)
-
 
 def test_logs_builds_exact_argv() -> None:
     runner = RecordingRunner(stdout="line")
@@ -99,7 +95,6 @@ def test_logs_builds_exact_argv() -> None:
         "web",
     )
 
-
 def test_nonzero_docker_exit_is_returned_as_structured_result() -> None:
     runner = RecordingRunner(returncode=1, stdout="", stderr="daemon unavailable")
     tools = DockerReadOnlyTools(runner=runner)
@@ -108,7 +103,6 @@ def test_nonzero_docker_exit_is_returned_as_structured_result() -> None:
 
     assert result.ok is False
     assert result.output == "daemon unavailable"
-
 
 def test_stats_uses_no_stream_mode() -> None:
     runner = RecordingRunner(stdout='{"CPUPerc":"1.2%"}')
@@ -124,7 +118,6 @@ def test_stats_uses_no_stream_mode() -> None:
         "{{json .}}",
         "api",
     )
-
 
 def test_inspect_compacts_output_and_keeps_only_env_keys() -> None:
     runner = RecordingRunner(
@@ -149,7 +142,6 @@ def test_inspect_compacts_output_and_keeps_only_env_keys() -> None:
     assert '"RestartCount":2' in result.output
 
 
-
 def test_mock_tool_mode_returns_deterministic_results_without_local_docker() -> None:
     settings = Settings(
         tool_mode="mock",
@@ -169,7 +161,6 @@ def test_mock_tool_mode_returns_deterministic_results_without_local_docker() -> 
     assert '"Name":"/demo"' in inspected.output
     assert "mock container log line" in logs.output
     assert '"CPUPerc":"0.10%"' in stats.output
-
 
 def test_local_tool_mode_keeps_real_cli_runner(monkeypatch) -> None:
     calls: list[tuple[str, ...]] = []
