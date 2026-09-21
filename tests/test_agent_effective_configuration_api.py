@@ -11,6 +11,15 @@ from docker_agent.persistence import (
 )
 
 
+def _isolated_settings(
+    monkeypatch,
+    **overrides: object,
+) -> Settings:
+    for field_name in Settings.model_fields:
+        monkeypatch.delenv(field_name.upper(), raising=False)
+    return Settings(_env_file=None, **overrides)
+
+
 def _engine() -> Engine:
     engine = create_engine(
         "sqlite+pysqlite://",
@@ -25,7 +34,8 @@ def test_effective_configuration_reports_environment_and_defaults(
     monkeypatch,
 ) -> None:
     engine = _engine()
-    base = Settings(
+    base = _isolated_settings(
+        monkeypatch,
         model_name="env-model",
         model_api_key="super-secret-key",
         model_base_url="https://secure.example/v1",
@@ -112,7 +122,8 @@ def test_effective_configuration_shows_persisted_overrides(
             "max_steps": 7,
         },
     )
-    base = Settings(
+    base = _isolated_settings(
+        monkeypatch,
         model_name="env-model",
         model_temperature=0.1,
         retrieval_candidate_k=20,
@@ -169,7 +180,8 @@ def test_effective_configuration_marks_visible_environment_owned_fields(
     monkeypatch,
 ) -> None:
     engine = _engine()
-    base = Settings(
+    base = _isolated_settings(
+        monkeypatch,
         model_provider="openai-compatible",
         embedding_model="test-embedding",
         rerank_model="test-reranker",
