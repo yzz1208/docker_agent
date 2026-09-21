@@ -17,7 +17,7 @@
 - Upgrade Phase 3B：Persistence + Agent Configuration + Effective Config API ✅
 - Upgrade Phase 4：Vue 3 Web Product Shell ✅（UI/交互细节后续优化）
 - Upgrade Phase 5：Observability + Evaluation Ops ✅
-- Upgrade Phase 6：Production / Deployment Hardening（Step 1 Alembic migrations 已实现待本地 gate）
+- Upgrade Phase 6：Production / Deployment Hardening（Step 1–2 Alembic + DB lifecycle/readiness 已实现待本地 gate）
 
 ## 本地环境
 
@@ -156,10 +156,23 @@ Phase 4 前端位于：
 web/
 ```
 
-启动后端：
+启动后端前确认 migration 已到 head：
+
+```powershell
+uv run alembic current
+uv run alembic upgrade head
+```
+
+再启动后端：
 
 ```powershell
 uv run uvicorn docker_agent.main:app --reload
+```
+
+生产化 readiness：
+
+```text
+GET /health/ready
 ```
 
 启动前端：
