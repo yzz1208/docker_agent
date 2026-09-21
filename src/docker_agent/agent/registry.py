@@ -6,6 +6,7 @@ from docker_agent.agent.configuration_schema import (
     ConfigurationFieldDescriptor,
     ConfigurationGroupDescriptor,
     ConfigurationRuleDescriptor,
+    validate_configuration_schema,
 )
 
 
@@ -111,6 +112,11 @@ class AgentDescriptor:
             "configuration_groups": self.configuration_groups,
         }.items():
             _validate_labels(values, field=label)
+
+        validate_configuration_schema(
+            schema=self.configuration_schema,
+            rules=self.configuration_rules,
+        )
 
 
 class AgentRegistry:
