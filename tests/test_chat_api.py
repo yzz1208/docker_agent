@@ -295,7 +295,7 @@ def test_chat_endpoint_routes_new_and_existing_conversation_by_agent_type(
                 knowledge_sources=(),
                 toolsets=(),
                 worker_roles=(),
-                configuration_groups=(),
+                configuration_schema=(),
             ),
         )
     )
@@ -405,7 +405,7 @@ def test_delete_chat_session_routes_reset_by_agent_type(
                 knowledge_sources=(),
                 toolsets=(),
                 worker_roles=(),
-                configuration_groups=(),
+                configuration_schema=(),
             ),
         )
     )
