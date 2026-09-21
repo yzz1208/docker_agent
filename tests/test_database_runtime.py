@@ -5,6 +5,7 @@ from alembic import command
 from alembic.config import Config
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
+from sqlalchemy.exc import OperationalError
 
 from docker_agent.config import Settings, get_settings
 from docker_agent.db import (
@@ -281,8 +282,6 @@ def test_database_health_hides_database_exception_details(
     )
 
     def fail_check(_engine: object) -> bool:
-        from sqlalchemy.exc import OperationalError
-
         raise OperationalError(
             "SELECT 1",
             {},
