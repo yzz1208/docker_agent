@@ -17,7 +17,7 @@
 - Upgrade Phase 3B：Persistence + Agent Configuration + Effective Config API ✅
 - Upgrade Phase 4：Vue 3 Web Product Shell ✅（UI/交互细节后续优化）
 - Upgrade Phase 5：Observability + Evaluation Ops ✅
-- Upgrade Phase 6：Production / Deployment Hardening（Step 1–5 已实现：Alembic / DB lifecycle / Containers / Environment Separation / CI）
+- Upgrade Phase 6：Production / Deployment Hardening（Step 1–6 已实现，剩余 Deployment / Monitoring Closeout）
 
 ## 本地环境
 
@@ -305,3 +305,30 @@ Production configuration
 的显式工作流中。
 
 Linux CI/生产容器使用 CPU PyTorch；Windows 本地开发继续使用 cu130。
+
+
+## Manual Evaluation Regression Gate
+
+普通 CI 不消耗模型额度。需要做 release 质量检查时，在 GitHub Actions 手动运行：
+
+~~~text
+Evaluation Regression Gate
+~~~
+
+需要配置：
+
+~~~text
+Variable:
+EVALUATION_MODEL_NAME
+
+Secrets:
+EVALUATION_DATABASE_URL
+EVALUATION_MODEL_BASE_URL
+EVALUATION_MODEL_API_KEY
+~~~
+
+工作流会运行并持久化 candidate evaluation，再与输入的 `baseline_run_id` 比较。Regression 或
+case set incomplete 会让工作流失败。
+
+Evaluation DB 必须已经迁移到 Alembic head；评测脚本不会再通过 `create_all()` 修改长期数据库
+schema。
