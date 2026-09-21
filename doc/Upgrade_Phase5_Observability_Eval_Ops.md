@@ -1184,6 +1184,208 @@ Evaluations
 The dashboard should prioritize inspectability over visual polish.
 
 
+### Step 6 implementation status
+
+**IMPLEMENTED pending final frontend/backend gate**
+
+The Vue product shell now exposes:
+
+~~~text
+/operations
+~~~
+
+and the primary navigation includes:
+
+~~~text
+Chat
+Operations
+Settings
+~~~
+
+### Operations Overview
+
+The default Overview tab consumes:
+
+~~~text
+GET /operations/summary
+GET /operations/runs
+GET /operations/evaluations
+~~~
+
+and displays:
+
+~~~text
+total runs
+running runs
+success rate
+P50 latency
+P95 latency
+route distribution
+worker distribution
+error-category distribution
+recent Agent runs
+~~~
+
+The summary window is selectable from:
+
+~~~text
+1 hour
+6 hours
+24 hours
+7 days
+30 days
+~~~
+
+Distributions use lightweight CSS bars rather than introducing a charting dependency.
+
+### Runs workspace
+
+The Runs tab provides:
+
+- status filtering;
+- recent run list;
+- safe run detail;
+- run/conversation identifiers;
+- route;
+- duration;
+- completed workers;
+- safe error type/message;
+- stale-request protection when switching run details quickly.
+
+The view consumes:
+
+~~~text
+GET /operations/runs
+GET /operations/runs/{run_id}
+~~~
+
+### Evaluation workspace
+
+The Evaluations tab provides:
+
+- persisted evaluation history;
+- suite filtering;
+- evaluation detail;
+- aggregate metrics;
+- per-case status;
+- Baseline/Candidate selection;
+- configurable max-regression threshold.
+
+Evaluation detail consumes:
+
+~~~text
+GET /operations/evaluations
+GET /operations/evaluations/{evaluation_run_id}
+~~~
+
+### Regression comparison UI
+
+The same page exposes the Step 5 gate through:
+
+~~~text
+GET /operations/evaluations/compare
+~~~
+
+The UI displays:
+
+~~~text
+verdict
+common cases
+new failures
+new passes
+metric quality deltas
+route/tool behavior changes
+configuration changes
+~~~
+
+Metric cards distinguish regressions and improvements visually, while preserving the
+backend as the authority for gate semantics.
+
+### Frontend state boundary
+
+Operations state is isolated in:
+
+~~~text
+useOperationsDashboard()
+~~~
+
+It owns:
+
+- Overview parallel loading;
+- filters;
+- summary/run/evaluation state;
+- run-detail stale-request protection;
+- evaluation-detail stale-request protection;
+- Baseline/Candidate selection;
+- regression comparison state;
+- shared API error handling.
+
+### Step 6 frontend coverage
+
+Tests cover:
+
+- Operations API query serialization;
+- summary/run/evaluation parallel loading;
+- status and suite filters;
+- completed-run derived state;
+- stale Run detail protection;
+- stale Evaluation detail protection;
+- regression comparison request construction;
+- Baseline/Candidate selection.
+
+### Phase 5 final validation gate
+
+Backend:
+
+~~~powershell
+uv run ruff check .
+uv run pytest -v
+~~~
+
+Frontend:
+
+~~~powershell
+cd web
+npm run typecheck
+npm test
+npm run build
+~~~
+
+With FastAPI + PostgreSQL running:
+
+~~~powershell
+npm run smoke
+~~~
+
+Manual browser closeout:
+
+1. open `/operations`;
+2. confirm Overview renders summary cards and distributions;
+3. open a Run and inspect detail;
+4. open an Evaluation and inspect persisted cases;
+5. if two compatible evaluation runs exist, select Baseline and Candidate and run Compare.
+
+## Phase 5 Status
+
+**Phase 5 — Observability & Evaluation Ops: COMPLETE pending final local gate**
+
+Phase 5 now provides:
+
+- durable Agent-run lifecycle telemetry;
+- safe Operations read APIs;
+- request/run/conversation correlation;
+- structured JSON logging;
+- Prometheus-compatible metrics;
+- persistent Evaluation Runs and cases;
+- dataset/revision/config provenance;
+- secret-safe evaluation snapshots;
+- baseline-vs-candidate regression comparison;
+- CI-friendly regression exit codes;
+- Operations Web dashboard.
+
+The observability/evaluation architecture is intentionally closed here. Additional visual
+polish can happen later without reopening the Phase 5 contracts.
+
 ## Validation Policy
 
 Normal backend development:
