@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import yaml
@@ -73,3 +74,14 @@ def test_ci_uses_linux_cpu_pytorch_source() -> None:
     assert 'marker = "sys_platform == \'linux\'"' in pyproject
     assert 'index = "pytorch-cu130"' in pyproject
     assert 'marker = "sys_platform == \'win32\'"' in pyproject
+
+
+
+def test_ci_runtime_versions_match_project_contracts() -> None:
+    pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    package = json.loads(
+        (ROOT / "web/package.json").read_text(encoding="utf-8")
+    )
+
+    assert 'required-version = ">=0.8,<1.0"' in pyproject
+    assert package["engines"]["node"] == ">=22 <23"
