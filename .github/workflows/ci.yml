@@ -1,0 +1,97 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      APP_ENV: test
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up uv and Python
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        with:
+          python-version: "3.12"
+          enable-cache: true
+          cache-dependency-glob: pyproject.toml
+
+      - name: Install backend dependencies
+        run: uv sync --all-groups
+
+      - name: Ruff
+        run: uv run ruff check .
+
+      - name: Migration and database runtime contract
+        run: >-
+          uv run pytest -v
+          tests/test_migrations.py
+          tests/test_database_runtime.py
+
+      - name: Backend tests
+        run: >-
+          uv run pytest -v
+          --ignore=tests/test_migrations.py
+          --ignore=tests/test_database_runtime.py
+
+  frontend:
+    name: Frontend quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          package-manager-cache: false
+
+      - name: Install frontend dependencies
+        working-directory: web
+        run: npm install
+
+      - name: Typecheck
+        working-directory: web
+        run: npm run typecheck
+
+      - name: Unit tests
+        working-directory: web
+        run: npm test
+
+      - name: Production build
+        working-directory: web
+        run: npm run build
+
+  production-config:
+    name: Production configuration
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Prepare non-secret validation environment
+        run: cp .env.production.example .env.production
+
+      - name: Validate production Compose
+        run: >-
+          docker compose
+          --env-file .env.production
+          -f compose.prod.yaml
+          config
+          >/dev/null
