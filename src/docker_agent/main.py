@@ -175,9 +175,6 @@ async def app_lifespan(_app: FastAPI):
     finally:
         get_chat_coordinator.cache_clear()
         get_chat_sessions.cache_clear()
-        runtime_agent_factory.invalidate(
-            DOCKER_SUPPORT_DESCRIPTOR.agent_type
-        )
         get_agent.cache_clear()
         runtime_agent_factory.clear()
         engine.dispose()
@@ -546,7 +543,10 @@ def create_agent_configuration_endpoint(
             runtime_settings=request.runtime_settings,
         )
 
-        if request.agent_type.strip() == "docker_support":
+        if (
+            request.agent_type.strip()
+            == DOCKER_SUPPORT_DESCRIPTOR.agent_type
+        ):
             resolve_docker_support_settings(
                 get_settings(),
                 model_settings=request.model_settings,
@@ -579,7 +579,7 @@ def create_agent_configuration_endpoint(
             detail=str(exc),
         ) from exc
 
-    if record.agent_type == "docker_support":
+    if record.agent_type == DOCKER_SUPPORT_DESCRIPTOR.agent_type:
         runtime_agent_factory.invalidate(
             DOCKER_SUPPORT_DESCRIPTOR.agent_type
         )
@@ -606,7 +606,10 @@ def update_agent_configuration_endpoint(
             runtime_settings=request.runtime_settings,
         )
 
-        if agent_type.strip() == "docker_support":
+        if (
+            agent_type.strip()
+            == DOCKER_SUPPORT_DESCRIPTOR.agent_type
+        ):
             current = get_agent_configuration(
                 get_persistence_engine(),
                 agent_type,
@@ -655,7 +658,7 @@ def update_agent_configuration_endpoint(
             detail=str(exc),
         ) from exc
 
-    if record.agent_type == "docker_support":
+    if record.agent_type == DOCKER_SUPPORT_DESCRIPTOR.agent_type:
         runtime_agent_factory.invalidate(
             DOCKER_SUPPORT_DESCRIPTOR.agent_type
         )
