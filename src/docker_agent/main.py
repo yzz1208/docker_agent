@@ -1,4 +1,5 @@
 from functools import lru_cache
+from typing import Annotated
 
 from fastapi import FastAPI, HTTPException, Query, Response, status
 from fastapi.responses import JSONResponse
@@ -403,10 +404,10 @@ def update_agent_configuration_endpoint(
 def operation_runs(
     conversation_id: str | None = None,
     agent_type: str | None = None,
-    run_status: AgentRunStatusQuery | None = Query(
-        default=None,
-        alias="status",
-    ),
+    run_status: Annotated[
+        AgentRunStatusQuery | None,
+        Query(alias="status"),
+    ] = None,
     limit: int = 50,
     offset: int = 0,
 ) -> list[AgentRunResponse]:
