@@ -2,6 +2,7 @@
 
 from docker_agent.persistence.adapter import (
     PersistedAgentTurn,
+    persist_agent_turn,
     persist_langgraph_turn,
 )
 from docker_agent.persistence.agent_config import (
@@ -115,6 +116,7 @@ __all__ = [
     "list_evaluation_cases",
     "list_evaluation_runs",
     "load_conversation",
+    "persist_agent_turn",
     "persist_langgraph_turn",
     "rename_conversation",
     "resolve_git_revision",
