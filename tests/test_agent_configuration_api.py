@@ -410,7 +410,6 @@ def test_agent_configuration_api_rejects_unsupported_runtime_fields(
     assert missing.status_code == 404
 
 
-
 def test_patch_invalid_effective_config_does_not_persist(monkeypatch) -> None:
     engine = _engine()
     create_agent_configuration(
