@@ -228,6 +228,72 @@ def test_registered_future_agent_uses_its_own_configuration_schema(
     assert payload["runtime_settings"] == {}
 
 
+def test_infrastructure_agent_uses_distinct_configuration_schema(
+    monkeypatch,
+) -> None:
+    engine = _engine()
+    monkeypatch.setattr(
+        "docker_agent.main.get_persistence_engine",
+        lambda: engine,
+    )
+    client = TestClient(app)
+
+    rejected = client.post(
+        "/agent-configurations",
+        json={
+            "agent_type": "infrastructure_troubleshooter",
+            "display_name": "Infrastructure Troubleshooter",
+            "retrieval_settings": {
+                "top_k": 10,
+            },
+        },
+    )
+
+    assert rejected.status_code == 400
+    assert "retrieval_settings is not supported" in (
+        rejected.json()["detail"]
+    )
+
+    created = client.post(
+        "/agent-configurations",
+        json={
+            "agent_type": "Infrastructure-Troubleshooter",
+            "display_name": "Infrastructure Troubleshooter",
+            "model_settings": {
+                "temperature": 0.25,
+            },
+            "runtime_settings": {
+                "max_hypotheses": 4,
+                "max_next_steps": 6,
+            },
+        },
+    )
+
+    assert created.status_code == 201
+    assert created.json()["agent_type"] == (
+        "infrastructure_troubleshooter"
+    )
+    assert created.json()["retrieval_settings"] == {}
+    assert created.json()["runtime_settings"] == {
+        "max_hypotheses": 4,
+        "max_next_steps": 6,
+    }
+
+    effective = client.get(
+        "/agent-configurations/"
+        "infrastructure_troubleshooter/effective"
+    )
+    assert effective.status_code == 200
+    payload = effective.json()
+    assert payload["retrieval_settings"] == {}
+    assert payload["runtime_settings"]["max_hypotheses"][
+        "effective_value"
+    ] == 4
+    assert payload["runtime_settings"]["max_next_steps"][
+        "effective_value"
+    ] == 6
+
+
 def test_patch_agent_configuration_is_partial(monkeypatch) -> None:
     engine = _engine()
     create_agent_configuration(
