@@ -18,7 +18,8 @@ x-backend-common: &backend-common
     RERANK_CACHE_DIR: /app/.cache/huggingface
     RERANK_DEVICE: ${CONTAINER_RERANK_DEVICE:-cpu}
     RERANK_USE_FP16: ${CONTAINER_RERANK_USE_FP16:-false}
-    TOOL_MODE: ${TOOL_MODE:-mock}
+    TOOL_MODE: mock
+    ALLOW_LOCAL_DOCKER_TOOLS: "false"
   volumes:
     - model_cache:/app/.cache/huggingface
 
