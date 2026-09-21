@@ -177,3 +177,47 @@ contracts remain unchanged.
 
 The next step is to add SupervisorPlan to graph state and let the supervisor plan, rather
 than route-specific hard-coded edges, determine the worker sequence.
+
+
+## Phase 3A Step 4 — SupervisorPlan Drives the Graph
+
+The unified support graph no longer hard-codes route-specific worker transitions.
+
+The route node now performs:
+
+~~~text
+route_question(...)
+→ AgentRouteDecision
+→ plan_workers(...)
+→ SupervisorPlan
+~~~
+
+Graph transport state now includes:
+
+~~~text
+supervisor_plan
+worker_index
+completed_workers
+~~~
+
+The same conditional transition function is used after route and after every worker:
+
+~~~text
+SupervisorPlan.workers[worker_index]
+→ runtime | knowledge | diagnosis | END
+~~~
+
+Examples:
+
+~~~text
+("knowledge", "diagnosis")
+("runtime", "diagnosis")
+("runtime", "knowledge", "diagnosis")
+()
+~~~
+
+Each worker validates that it is the worker expected at the current plan position, then
+advances the index and records itself in completed_workers.
+
+This removes route-specific worker sequencing from LangGraph edges while keeping the
+existing validated Router as the source of the deterministic supervisor plan.
