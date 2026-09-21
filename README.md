@@ -15,7 +15,7 @@
 - Upgrade Phase 2B：Runtime Loop LangGraph Migration ✅
 - Upgrade Phase 3A：Role Separation / Multi-Agent Architecture ✅
 - Upgrade Phase 3B：Persistence + Agent Configuration + Effective Config API ✅
-- Upgrade Phase 4：Vue 3 Web Product Shell（Step 1–4 已实现，待最终本地 gate）
+- Upgrade Phase 4：Vue 3 Web Product Shell ✅（UI/交互细节后续优化）
 
 ## 本地环境
 
