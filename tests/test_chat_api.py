@@ -117,14 +117,21 @@ def test_chat_endpoint_persists_durable_conversation_across_clarification(
     )
     client = TestClient(app)
 
-    first = client.post("/chat", json={"message": "我的容器为什么一直重启？"})
+    first = client.post(
+        "/chat",
+        json={"message": "我的容器为什么一直重启？"},
+        headers={"X-Request-ID": "chat-request-1"},
+    )
 
     assert first.status_code == 200
+    assert first.headers["X-Request-ID"] == "chat-request-1"
     first_payload = first.json()
     conversation_id = first_payload["conversation_id"]
     session_id = first_payload["session_id"]
     assert conversation_id
     assert session_id
+    assert first.headers["X-Conversation-ID"] == conversation_id
+    assert first.headers["X-Run-ID"]
     assert first_payload["route"] == "clarify"
     assert first_payload["session_active"] is True
     assert first_payload["clarification"] == "请提供容器名称或 ID。"
