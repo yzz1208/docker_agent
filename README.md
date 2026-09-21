@@ -17,7 +17,7 @@
 - Upgrade Phase 3B：Persistence + Agent Configuration + Effective Config API ✅
 - Upgrade Phase 4：Vue 3 Web Product Shell ✅（UI/交互细节后续优化）
 - Upgrade Phase 5：Observability + Evaluation Ops ✅
-- Upgrade Phase 6：Production / Deployment Hardening（Step 1–3 Alembic / DB lifecycle / Production Containers 已实现待本地 gate）
+- Upgrade Phase 6：Production / Deployment Hardening（Step 1–4 Alembic / DB lifecycle / Containers / Environment Separation 已实现待本地 gate）
 
 ## 本地环境
 
@@ -206,9 +206,9 @@ npm run smoke
 完整生产化本地栈：
 
 ~~~powershell
-docker compose -f compose.prod.yaml build
-docker compose -f compose.prod.yaml up -d
-docker compose -f compose.prod.yaml ps
+docker compose --env-file .env.production -f compose.prod.yaml build
+docker compose --env-file .env.production -f compose.prod.yaml up -d
+docker compose --env-file .env.production -f compose.prod.yaml ps
 ~~~
 
 默认只对宿主机暴露 Web：
@@ -246,3 +246,36 @@ Remove-Item Env:BACKEND_URL
 
 Production Compose 只会幂等创建 `document_chunks` / pgvector schema，不会自动清空或重新
 embedding 文档。全新生产数据库需要另行执行显式知识索引流程后，Docs RAG 才具备完整知识数据。
+
+
+## Environment Profiles
+
+应用配置现在按 `APP_ENV` 分层：
+
+~~~text
+development -> .env
+test        -> .env.test
+production  -> .env.production
+~~~
+
+模板：
+
+~~~text
+.env.example
+.env.test.example
+.env.production.example
+~~~
+
+Production 首次准备：
+
+~~~powershell
+Copy-Item .env.production.example .env.production
+~~~
+
+然后修改数据库密码、`DATABASE_URL` 和模型配置。真实 `.env.production` 不会提交 Git。
+
+Production 会拒绝默认 PostgreSQL 密码、SQLite 数据库和未替换的数据库 placeholder。
+FastAPI serving 启动时还会校验 `MODEL_NAME` / `MODEL_BASE_URL`。
+
+`TOOL_MODE=mock` 现在是真正的无 Docker subprocess 模式；`TOOL_MODE=local`
+才调用只读 Docker CLI。默认 production Compose 强制使用 mock 模式。
