@@ -39,6 +39,12 @@ from docker_agent.api.conversations import (
     build_conversation_detail,
     build_conversation_summary,
 )
+from docker_agent.api.evaluations import (
+    EvaluationRunDetailResponse,
+    EvaluationRunResponse,
+    build_evaluation_case_response,
+    build_evaluation_run_response,
+)
 from docker_agent.api.operations import (
     AgentRunResponse,
     AgentRunStatusQuery,
@@ -60,6 +66,7 @@ from docker_agent.persistence import (
     AgentConfigurationNotFound,
     AgentRunNotFound,
     ChatConversationMismatch,
+    EvaluationRunNotFound,
     ConversationAgentTypeMismatch,
     ConversationNotFound,
     PersistentChatCoordinator,
@@ -67,10 +74,13 @@ from docker_agent.persistence import (
     delete_conversation,
     get_agent_configuration,
     get_agent_run,
+    get_evaluation_run,
     init_persistence_store,
     list_agent_configurations,
     list_agent_runs,
     list_conversations,
+    list_evaluation_cases,
+    list_evaluation_runs,
     load_conversation,
     rename_conversation,
     summarize_agent_runs,
@@ -453,6 +463,80 @@ def update_agent_configuration_endpoint(
         get_agent.cache_clear()
 
     return build_agent_configuration_response(record)
+
+
+@app.get(
+    "/operations/evaluations",
+    response_model=list[EvaluationRunResponse],
+    tags=["operations"],
+)
+def evaluation_runs(
+    suite: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> list[EvaluationRunResponse]:
+    """List persisted evaluation runs ordered by newest first."""
+
+    try:
+        records = list_evaluation_runs(
+            get_persistence_engine(),
+            suite=suite,
+            limit=limit,
+            offset=offset,
+        )
+    except SQLAlchemyError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="PostgreSQL is unavailable.",
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+    return [build_evaluation_run_response(record) for record in records]
+
+
+@app.get(
+    "/operations/evaluations/{evaluation_run_id}",
+    response_model=EvaluationRunDetailResponse,
+    tags=["operations"],
+)
+def evaluation_run_detail(
+    evaluation_run_id: str,
+) -> EvaluationRunDetailResponse:
+    """Load one evaluation run with its persisted per-case results."""
+
+    try:
+        run = get_evaluation_run(
+            get_persistence_engine(),
+            evaluation_run_id,
+        )
+        cases = list_evaluation_cases(
+            get_persistence_engine(),
+            evaluation_run_id,
+        )
+    except EvaluationRunNotFound as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Evaluation run was not found.",
+        ) from exc
+    except SQLAlchemyError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="PostgreSQL is unavailable.",
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+    return EvaluationRunDetailResponse(
+        run=build_evaluation_run_response(run),
+        cases=[build_evaluation_case_response(case) for case in cases],
+    )
 
 
 @app.get(
