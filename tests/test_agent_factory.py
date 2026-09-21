@@ -30,7 +30,7 @@ def _descriptor(agent_type: str) -> AgentDescriptor:
         knowledge_sources=(),
         toolsets=(),
         worker_roles=(),
-        configuration_groups=(),
+        configuration_schema=(),
     )
 
 
