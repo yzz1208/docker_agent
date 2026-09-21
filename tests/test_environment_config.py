@@ -135,7 +135,6 @@ def test_get_settings_loads_environment_specific_dotenv(
         get_settings.cache_clear()
 
 
-
 def test_non_production_runtime_does_not_require_model_configuration() -> None:
     settings = Settings(
         app_env="test",
