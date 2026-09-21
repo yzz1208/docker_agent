@@ -9,36 +9,76 @@ def test_agents_api_lists_runtime_supported_agents() -> None:
     response = client.get("/agents")
 
     assert response.status_code == 200
-    assert response.json() == [
-        {
-            "agent_type": "docker_support",
-            "display_name": "Docker Support",
-            "description": (
-                "Docker technical support Agent with documentation "
-                "retrieval, read-only runtime diagnostics, and "
-                "LangGraph worker orchestration."
-            ),
-            "capabilities": [
-                "chat",
-                "documentation_qa",
-                "runtime_diagnostics",
-                "multi_agent_supervision",
-            ],
-            "knowledge_sources": ["docker_docs"],
-            "toolsets": ["docker_read_only"],
-            "worker_roles": [
-                "knowledge",
-                "runtime",
-                "diagnosis",
-            ],
-            "configuration_groups": [
-                "model_settings",
-                "retrieval_settings",
-                "runtime_settings",
-            ],
-            "default_enabled": True,
-        }
+    payload = response.json()
+    assert len(payload) == 1
+
+    descriptor = payload[0]
+    assert descriptor["agent_type"] == "docker_support"
+    assert descriptor["display_name"] == "Docker Support"
+    assert descriptor["capabilities"] == [
+        "chat",
+        "documentation_qa",
+        "runtime_diagnostics",
+        "multi_agent_supervision",
     ]
+    assert descriptor["knowledge_sources"] == ["docker_docs"]
+    assert descriptor["toolsets"] == ["docker_read_only"]
+    assert descriptor["worker_roles"] == [
+        "knowledge",
+        "runtime",
+        "diagnosis",
+    ]
+    assert descriptor["configuration_groups"] == [
+        "model_settings",
+        "retrieval_settings",
+        "runtime_settings",
+    ]
+    assert [
+        group["label"]
+        for group in descriptor["configuration_schema"]
+    ] == [
+        "Model",
+        "Retrieval",
+        "Runtime",
+    ]
+
+    model_fields = descriptor["configuration_schema"][0]["fields"]
+    temperature = next(
+        field
+        for field in model_fields
+        if field["key"] == "temperature"
+    )
+    assert temperature == {
+        "key": "temperature",
+        "label": "Temperature",
+        "description": "Sampling temperature for model responses.",
+        "kind": "number",
+        "minimum": 0.0,
+        "maximum": 2.0,
+    }
+
+    assert descriptor["configuration_rules"] == [
+        {
+            "kind": "less_equal",
+            "group": "retrieval_settings",
+            "fields": ["rerank_top_k", "top_k"],
+            "target_field": "rerank_top_k",
+            "message": (
+                "retrieval_settings.rerank_top_k must not exceed top_k"
+            ),
+        },
+        {
+            "kind": "not_all_zero",
+            "group": "retrieval_settings",
+            "fields": ["dense_weight", "keyword_weight"],
+            "target_field": "keyword_weight",
+            "message": (
+                "retrieval dense_weight and keyword_weight cannot both "
+                "be zero"
+            ),
+        },
+    ]
+    assert descriptor["default_enabled"] is True
 
 
 def test_agent_detail_api_normalizes_agent_type() -> None:
