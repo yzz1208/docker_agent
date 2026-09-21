@@ -406,15 +406,140 @@ Browser smoke test:
 4. turn Override off, save, and confirm the source returns to environment/default;
 5. disable the agent, confirm a new chat is blocked, then re-enable it.
 
+## Step 4 — Integration Hardening and Closeout
+
+Phase 4 now exposes backend reachability directly in the product shell.
+
+### Backend health state
+
+The top bar polls:
+
+~~~text
+GET /health
+GET /health/db
+~~~
+
+and reports four states:
+
+~~~text
+checking
+healthy
+degraded
+offline
+~~~
+
+Interpretation:
+
+~~~text
+healthy  = FastAPI + PostgreSQL reachable
+degraded = FastAPI reachable, PostgreSQL unavailable
+offline  = FastAPI health endpoint unreachable
+~~~
+
+Clicking the health badge triggers an immediate refresh. Normal polling runs every 30
+seconds while the app shell is mounted.
+
+### Route-level failure boundaries
+
+Route components now render inside a reusable Vue error boundary.
+
+Unexpected render/setup errors therefore fall back to a product error surface with:
+
+- retry;
+- full-app reload;
+- automatic reset after navigation.
+
+An explicit catch-all route also provides a product 404 page instead of a blank router
+surface.
+
+### Local integration smoke
+
+A Node smoke script is available:
+
+~~~powershell
+cd web
+npm run smoke
+~~~
+
+The default smoke is intentionally read-only and validates:
+
+~~~text
+/health
+/health/db
+/agent-configurations/docker_support/effective
+/conversations?limit=1&offset=0
+~~~
+
+It checks API/DB reachability, effective-config availability, secret-safe response shape,
+and conversation API availability.
+
+A real Agent turn is opt-in because it can consume model/tool resources:
+
+~~~powershell
+$env:SMOKE_CHAT_MESSAGE="Docker daemon 连不上，先帮我判断可能原因"
+npm run smoke
+Remove-Item Env:SMOKE_CHAT_MESSAGE
+~~~
+
+When the optional chat turn creates a conversation, the smoke script deletes that
+conversation afterward.
+
+### Step 4 automated coverage
+
+Frontend unit coverage now also checks backend-health state transitions:
+
+- API + DB reachable -> healthy;
+- API reachable + DB failure -> degraded;
+- API unreachable -> offline.
+
+### Phase 4 validation gate
+
+Backend:
+
+~~~powershell
+uv run ruff check .
+uv run pytest -v
+~~~
+
+Frontend:
+
+~~~powershell
+cd web
+npm run typecheck
+npm test
+npm run build
+~~~
+
+With FastAPI and PostgreSQL running:
+
+~~~powershell
+npm run smoke
+~~~
+
+The optional real-chat smoke is not part of every development run. Use it at closeout or
+before a demo/release when model/tool credentials are available.
+
+## Phase 4 Status
+
+**Phase 4 — Web Product Shell: COMPLETE pending final local backend/frontend/smoke gate**
+
+The product now has:
+
+- durable conversation history UI;
+- clarification-session continuity;
+- runtime/docs/execution inspection;
+- rename/delete conversation UX;
+- editable allowlisted Agent settings;
+- effective/default/environment source visibility;
+- secret-safe infrastructure visibility;
+- backend health status;
+- route error and 404 boundaries;
+- focused frontend state/API tests;
+- repeatable integration smoke checks.
+
+The first product shell is intentionally closed here rather than expanding indefinitely.
+
 ## Next
 
-Step 4 will close Phase 4 with product-level integration hardening:
-
-- frontend/backend startup and health state;
-- navigation-level error boundaries;
-- settings/chat integration smoke coverage;
-- final UI cleanup;
-- Phase 4 closeout documentation.
-
-After that, the project can move to the next architecture/product capability rather than
-continuing to expand the first web shell indefinitely.
+The next stage should add a new architecture/product capability on top of this stable shell,
+rather than continuing Phase 4 UI polish.
