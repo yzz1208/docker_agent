@@ -1,7 +1,4 @@
 import { readdir, rm, stat } from "node:fs/promises";
-import { extname, join } from "node:path";
-
-const root = new URL("../", import.meta.url);
 const candidates = [
   new URL("../src/", import.meta.url),
   new URL("../vite.config.js", import.meta.url),
@@ -33,9 +30,7 @@ async function cleanDirectory(url) {
 
     if (
       entry.name.endsWith(".js") ||
-      entry.name.endsWith(".js.map") ||
-      entry.name.endsWith(".d.ts") ||
-      entry.name.endsWith(".d.ts.map")
+      entry.name.endsWith(".js.map")
     ) {
       await rm(child, { force: true });
     }
