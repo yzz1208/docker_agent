@@ -7,6 +7,7 @@ type OperationsTab = "overview" | "runs" | "evaluations";
 
 const dashboard = useOperationsDashboard();
 const activeTab = ref<OperationsTab>("overview");
+const tabs: OperationsTab[] = ["overview", "runs", "evaluations"];
 
 const routeRows = computed(() =>
   distributionRows(dashboard.summary.value?.route_distribution ?? {}),
@@ -76,6 +77,11 @@ function selectTab(tab: OperationsTab): void {
   activeTab.value = tab;
 }
 
+async function openRunFromOverview(runId: string): Promise<void> {
+  await dashboard.openRun(runId);
+  selectTab("runs");
+}
+
 onMounted(dashboard.loadOverview);
 </script>
 
@@ -133,7 +139,7 @@ onMounted(dashboard.loadOverview);
 
     <nav class="operations-tabs" aria-label="Operations sections">
       <button
-        v-for="tab in (['overview', 'runs', 'evaluations'] as const)"
+        v-for="tab in tabs"
         :key="tab"
         type="button"
         :class="{ 'operations-tab--active': activeTab === tab }"
@@ -284,10 +290,7 @@ onMounted(dashboard.loadOverview);
             :key="run.id"
             class="operations-table__row operations-table__row--button"
             type="button"
-            @click="
-              dashboard.openRun(run.id);
-              selectTab('runs');
-            "
+            @click="openRunFromOverview(run.id)"
           >
             <span>
               <strong>{{ run.route || "route pending" }}</strong>
