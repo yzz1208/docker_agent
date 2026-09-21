@@ -51,10 +51,24 @@ services:
         condition: service_healthy
     restart: "no"
 
+  rag-schema:
+    <<: *backend-common
+    command:
+      - python
+      - -c
+      - >-
+        from docker_agent.rag.store import init_vector_store;
+        engine = init_vector_store();
+        engine.dispose()
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: "no"
+
   backend:
     <<: *backend-common
     depends_on:
-      migrate:
+      rag-schema:
         condition: service_completed_successfully
     healthcheck:
       test:
