@@ -4,21 +4,21 @@ import json
 import logging
 import re
 from collections import Counter
+from collections.abc import Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar, Token
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from threading import Lock
-from typing import Iterator
 from uuid import uuid4
 
 _REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
 _LOG_SECRET_PATTERNS = (
     re.compile(
-        r"(?i)(api[_-]?key|token|password|secret)\\s*[:=]\\s*[^\\s,;]+"
+        r"(?i)(api[_-]?key|token|password|secret)\s*[:=]\s*[^\s,;]+"
     ),
-    re.compile(r"(?i)bearer\\s+[A-Za-z0-9._~+\\-/=]+"),
-    re.compile(r"\\bsk-[A-Za-z0-9_-]{8,}\\b"),
+    re.compile(r"(?i)bearer\s+[A-Za-z0-9._~+\-/=]+"),
+    re.compile(r"\bsk-[A-Za-z0-9_-]{8,}\b"),
 )
 
 _request_id: ContextVar[str | None] = ContextVar(
@@ -257,7 +257,10 @@ class MetricsRegistry:
             duration_buckets = self._run_duration_buckets.copy()
 
         lines = [
-            "# HELP docker_agent_http_requests_total HTTP requests by method, route, and status.",
+            (
+                "# HELP docker_agent_http_requests_total "
+                "HTTP requests by method, route, and status."
+            ),
             "# TYPE docker_agent_http_requests_total counter",
         ]
         for (method, route, status_code), value in sorted(
@@ -280,7 +283,10 @@ class MetricsRegistry:
 
         lines.extend(
             [
-                "# HELP docker_agent_run_failures_total Failed Agent runs by error type.",
+                (
+                    "# HELP docker_agent_run_failures_total "
+                    "Failed Agent runs by error type."
+                ),
                 "# TYPE docker_agent_run_failures_total counter",
             ]
         )
@@ -306,7 +312,10 @@ class MetricsRegistry:
 
         lines.extend(
             [
-                "# HELP docker_agent_worker_executions_total Completed worker-role executions.",
+                (
+                    "# HELP docker_agent_worker_executions_total "
+                    "Completed worker-role executions."
+                ),
                 "# TYPE docker_agent_worker_executions_total counter",
             ]
         )
