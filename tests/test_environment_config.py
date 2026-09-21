@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from docker_agent.config import Settings, settings_env_file
+from docker_agent.config import Settings, get_settings, settings_env_file
 
 
 def _production_settings(**overrides: object) -> Settings:
@@ -100,3 +100,28 @@ def test_production_local_docker_can_be_explicitly_enabled() -> None:
 
     assert settings.tool_mode == "local"
     assert settings.allow_local_docker_tools is True
+
+
+
+def test_get_settings_loads_environment_specific_dotenv(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    (tmp_path / ".env.test").write_text(
+        "APP_ENV=test\n"
+        "APP_NAME=Loaded From Test Env\n"
+        "DATABASE_URL=sqlite+pysqlite:///:memory:\n",
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("APP_ENV", "test")
+    get_settings.cache_clear()
+
+    try:
+        settings = get_settings()
+
+        assert settings.app_env == "test"
+        assert settings.app_name == "Loaded From Test Env"
+        assert settings.database_url == "sqlite+pysqlite:///:memory:"
+    finally:
+        get_settings.cache_clear()
