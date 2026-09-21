@@ -282,6 +282,5 @@ def _default_title(message: str, *, max_chars: int = 60) -> str:
     return normalized[: max_chars - 1].rstrip() + "…"
 
 
-
 def _duration_ms(started: float) -> int:
     return max(0, round((perf_counter() - started) * 1000))
