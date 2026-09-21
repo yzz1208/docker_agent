@@ -2,7 +2,7 @@
 
 ## Status
 
-**Phase 5 — Observability & Evaluation Ops: COMPLETE pending final local validation**
+**Phase 5 — Observability & Evaluation Ops: COMPLETE**
 
 Phase 5 adds the operational and quality-control layer around the Docker Support Agent.
 
