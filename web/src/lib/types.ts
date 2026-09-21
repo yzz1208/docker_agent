@@ -143,3 +143,119 @@ export type DatabaseHealth = {
   database: string;
   detail?: string;
 };
+
+
+export type AgentRunStatus = "running" | "succeeded" | "failed";
+
+export type AgentRunRecord = {
+  id: string;
+  conversation_id: string;
+  agent_type: string;
+  status: AgentRunStatus;
+  route: string | null;
+  use_docs: boolean | null;
+  planned_workers: string[];
+  completed_workers: string[];
+  duration_ms: number | null;
+  error_type: string | null;
+  error_message: string | null;
+  started_at: string;
+  completed_at: string | null;
+};
+
+export type AgentRunSummary = {
+  window_started_at: string;
+  window_ended_at: string;
+  total_runs: number;
+  running_runs: number;
+  succeeded_runs: number;
+  failed_runs: number;
+  success_rate: number | null;
+  failure_rate: number | null;
+  duration_p50_ms: number | null;
+  duration_p95_ms: number | null;
+  route_distribution: Record<string, number>;
+  worker_distribution: Record<string, number>;
+  error_distribution: Record<string, number>;
+};
+
+export type EvaluationRun = {
+  id: string;
+  suite: string;
+  dataset_name: string;
+  dataset_version: string;
+  git_revision: string | null;
+  status: "running" | "succeeded" | "failed";
+  config_snapshot: Record<string, unknown>;
+  aggregate_metrics: Record<string, unknown>;
+  case_count: number;
+  passed_count: number;
+  failed_count: number;
+  error_type: string | null;
+  error_message: string | null;
+  started_at: string;
+  completed_at: string | null;
+};
+
+export type EvaluationCase = {
+  id: string;
+  evaluation_run_id: string;
+  case_key: string;
+  case_id: string;
+  phase: string | null;
+  repeat: number | null;
+  status: "passed" | "failed" | "error";
+  metrics: Record<string, unknown>;
+  details: Record<string, unknown>;
+  created_at: string;
+};
+
+export type EvaluationRunDetail = {
+  run: EvaluationRun;
+  cases: EvaluationCase[];
+};
+
+export type MetricComparison = {
+  path: string;
+  baseline_value: number;
+  candidate_value: number;
+  delta: number;
+  quality_delta: number;
+  direction: string;
+  threshold: number;
+  regression: boolean;
+  improvement: boolean;
+};
+
+export type BehaviorChange = {
+  case_key: string;
+  field: string;
+  baseline_value: unknown;
+  candidate_value: unknown;
+};
+
+export type ConfigurationChange = {
+  path: string;
+  baseline_value: unknown;
+  candidate_value: unknown;
+};
+
+export type EvaluationComparison = {
+  baseline_run_id: string;
+  candidate_run_id: string;
+  suite: string;
+  dataset_name: string;
+  dataset_version: string;
+  max_regression: number;
+  verdict: "pass" | "regression" | "incomplete";
+  gate_passed: boolean;
+  common_case_count: number;
+  baseline_only_case_keys: string[];
+  candidate_only_case_keys: string[];
+  new_failures: string[];
+  new_passes: string[];
+  unchanged_failures: string[];
+  metric_comparisons: MetricComparison[];
+  behavior_changes: BehaviorChange[];
+  configuration_changes: ConfigurationChange[];
+};
