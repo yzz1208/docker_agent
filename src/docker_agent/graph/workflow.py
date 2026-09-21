@@ -17,6 +17,7 @@ from docker_agent.core.state import AgentState
 from docker_agent.core.tool_result import from_docker_tool_result
 from docker_agent.graph.runtime_loop import run_runtime_loop_graph
 from docker_agent.graph.state import GraphState
+from docker_agent.multi_agent.execution import build_worker_execution_record
 from docker_agent.multi_agent.supervisor import WorkerRole, plan_workers
 from docker_agent.multi_agent.workers import (
     DiagnosisWorker,
@@ -189,6 +190,7 @@ def _initial_graph_state(question: str) -> GraphState:
         supervisor_plan=None,
         worker_index=0,
         completed_workers=(),
+        worker_trace=(),
         docs_context=None,
         runtime_context=RuntimeEvidenceContext(
             text="",
@@ -207,6 +209,7 @@ def _coerce_graph_state(result: dict[str, object]) -> GraphState:
         supervisor_plan=result["supervisor_plan"],
         worker_index=result["worker_index"],
         completed_workers=result["completed_workers"],
+        worker_trace=result["worker_trace"],
         docs_context=result["docs_context"],
         runtime_context=result["runtime_context"],
         runtime_trace=result["runtime_trace"],
@@ -395,6 +398,7 @@ def build_support_graph(
             "supervisor_plan": supervisor_plan,
             "worker_index": 0,
             "completed_workers": (),
+            "worker_trace": (),
         }
 
     def supervisor_edge(state: GraphState) -> SupervisorEdge:
@@ -409,9 +413,10 @@ def build_support_graph(
             return "end"
         return plan.workers[index]
 
-    def advance_worker(
+    def complete_worker(
         state: GraphState,
         role: WorkerRole,
+        updated_state: AgentState,
     ) -> dict[str, object]:
         plan = state["supervisor_plan"]
         if plan is None:
@@ -421,9 +426,16 @@ def build_support_graph(
         if index >= len(plan.workers) or plan.workers[index] != role:
             raise ValueError(f"unexpected worker execution: {role}")
 
+        record = build_worker_execution_record(
+            index=index + 1,
+            role=role,
+            before=state["agent_state"],
+            after=updated_state,
+        )
         return {
             "worker_index": index + 1,
             "completed_workers": (*state["completed_workers"], role),
+            "worker_trace": (*state["worker_trace"], record),
         }
 
     def runtime_node(state: GraphState) -> dict[str, object]:
@@ -437,7 +449,7 @@ def build_support_graph(
             "agent_state": result.state,
             "runtime_context": result.context,
             "runtime_trace": result.trace,
-            **advance_worker(state, "runtime"),
+            **complete_worker(state, "runtime", result.state),
         }
 
     def knowledge_node(state: GraphState) -> dict[str, object]:
@@ -445,7 +457,7 @@ def build_support_graph(
         return {
             "agent_state": result.state,
             "docs_context": result.context,
-            **advance_worker(state, "knowledge"),
+            **complete_worker(state, "knowledge", result.state),
         }
 
     def diagnosis_node(state: GraphState) -> dict[str, object]:
@@ -462,7 +474,7 @@ def build_support_graph(
         return {
             "agent_state": result.state,
             "answer": result.answer,
-            **advance_worker(state, "diagnosis"),
+            **complete_worker(state, "diagnosis", result.state),
         }
 
     worker_edges = {
