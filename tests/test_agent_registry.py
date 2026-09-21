@@ -1,12 +1,12 @@
 import pytest
 
 from docker_agent.agent.registry import (
+    DOCKER_SUPPORT_DESCRIPTOR,
     AgentAlreadyRegistered,
     AgentDescriptor,
     AgentNotRegistered,
     AgentRegistry,
     AgentRegistryError,
-    DOCKER_SUPPORT_DESCRIPTOR,
     build_agent_registry,
 )
 
