@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from docker_agent.agent.service import AgentTurnResult, DockerSupportAgent
+from docker_agent.agent.protocol import AgentProtocol, AgentTurnProtocol
 
 
 @dataclass(slots=True)
@@ -17,14 +17,14 @@ class AgentConversation:
 
     def __init__(
         self,
-        agent: DockerSupportAgent,
+        agent: AgentProtocol,
         *,
         state: ConversationState | None = None,
     ) -> None:
         self.agent = agent
         self.state = state or ConversationState()
 
-    def handle(self, user_message: str) -> AgentTurnResult:
+    def handle(self, user_message: str) -> AgentTurnProtocol:
         message = user_message.strip()
         if not message:
             raise ValueError("user_message must not be empty")
