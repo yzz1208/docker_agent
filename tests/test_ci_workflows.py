@@ -64,6 +64,7 @@ def test_ci_validates_production_compose_with_production_env() -> None:
     assert "cp .env.production.example .env.production" in commands
     assert "--env-file .env.production" in commands
     assert "-f compose.prod.yaml" in commands
+    assert "--profile monitoring" in commands
     assert "config" in commands
 
 
