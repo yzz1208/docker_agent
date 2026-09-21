@@ -1,6 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { ApiError, sendChat } from "./api";
+import {
+  ApiError,
+  createAgentConfiguration,
+  sendChat,
+  updateAgentConfiguration,
+} from "./api";
 
 describe("API client", () => {
   afterEach(() => {
@@ -44,6 +49,68 @@ describe("API client", () => {
       conversation_id: "conversation-1",
       session_id: "session-1",
     });
+  });
+
+  it("serializes agent configuration create and update payloads", async () => {
+    const responseBody = {
+      agent_type: "docker_support",
+      display_name: "Docker Expert",
+      enabled: true,
+      model_settings: { temperature: 0.3 },
+      retrieval_settings: {},
+      runtime_settings: {},
+      created_at: "2026-09-21T03:00:00Z",
+      updated_at: "2026-09-21T03:00:00Z",
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        new Response(JSON.stringify(responseBody), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await createAgentConfiguration({
+      agent_type: "docker_support",
+      display_name: "Docker Expert",
+      enabled: true,
+      model_settings: { temperature: 0.3 },
+      retrieval_settings: {},
+      runtime_settings: {},
+    });
+    await updateAgentConfiguration("docker_support", {
+      enabled: false,
+      runtime_settings: { max_steps: 6 },
+    });
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "/agent-configurations",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          agent_type: "docker_support",
+          display_name: "Docker Expert",
+          enabled: true,
+          model_settings: { temperature: 0.3 },
+          retrieval_settings: {},
+          runtime_settings: {},
+        }),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "/agent-configurations/docker_support",
+      expect.objectContaining({
+        method: "PATCH",
+        body: JSON.stringify({
+          enabled: false,
+          runtime_settings: { max_steps: 6 },
+        }),
+      }),
+    );
   });
 
   it("turns backend detail responses into ApiError", async () => {
