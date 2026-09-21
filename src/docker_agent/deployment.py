@@ -13,12 +13,21 @@ from docker_agent.config import (
 )
 
 
-def production_preflight() -> int:
+def production_preflight(
+    *,
+    env_file: str | None = ".env.production",
+) -> int:
     """Validate production runtime settings and print a secret-safe summary."""
+
+    resolved_env_file = (
+        settings_env_file("production")
+        if env_file == ".env.production"
+        else env_file
+    )
 
     try:
         settings = Settings(
-            _env_file=settings_env_file("production"),
+            _env_file=resolved_env_file,
             app_env="production",
         )
         require_application_runtime_settings(settings)
