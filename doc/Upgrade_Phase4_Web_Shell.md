@@ -235,10 +235,186 @@ npm test
 npm run build
 ~~~
 
+## Step 3 — Editable Agent Settings
+
+The settings workspace now edits the same allowlisted Docker Support preferences that the
+Phase 3B resolver applies at runtime.
+
+### Override model
+
+Each editable field has an explicit:
+
+~~~text
+Override
+~~~
+
+switch.
+
+When Override is off:
+
+~~~text
+persisted field absent
+        ↓
+environment/default baseline
+        ↓
+effective runtime value
+~~~
+
+When Override is on:
+
+~~~text
+persisted preference
+        ↓
+effective runtime value
+~~~
+
+This avoids copying every current default into the database just because the user saved
+one setting.
+
+Turning an existing Override off removes that key from the replacement settings group on
+the next save, restoring the environment/default value.
+
+### First save vs later saves
+
+The UI supports both backend write paths:
+
+~~~text
+no persisted docker_support record
+→ POST /agent-configurations
+
+existing persisted record
+→ PATCH /agent-configurations/docker_support
+~~~
+
+The effective endpoint is reloaded after every successful write. The page therefore shows
+the runtime-resolved value returned by the backend rather than assuming the submitted
+value was accepted unchanged.
+
+### Editable product preferences
+
+Model:
+
+~~~text
+model_name
+temperature
+max_tokens
+timeout_seconds
+max_retries
+retry_backoff_seconds
+~~~
+
+Retrieval:
+
+~~~text
+top_k
+rrf_k
+dense_weight
+keyword_weight
+rerank_top_k
+context_max_chars
+~~~
+
+Runtime:
+
+~~~text
+max_steps
+tool_timeout_seconds
+logs_max_lines
+evidence_max_chars
+~~~
+
+The page also edits:
+
+~~~text
+display_name
+enabled
+~~~
+
+Disabling the agent remains inspectable and reversible through the settings page even
+though new chat sessions are blocked by the backend.
+
+### Validation
+
+The frontend performs immediate shape/range validation and mirrors the two important
+cross-field rules:
+
+~~~text
+rerank_top_k <= top_k
+dense_weight and keyword_weight cannot both be zero
+~~~
+
+The backend remains authoritative and still revalidates every write.
+
+### Secure boundary
+
+Environment/infrastructure fields remain read-only.
+
+Secure values such as:
+
+~~~text
+model_api_key
+model_base_url
+database_url
+~~~
+
+are never placed in an editable input and remain redacted as configured/not-configured.
+
+### State layer
+
+Settings state is isolated in:
+
+~~~text
+useAgentSettings()
+~~~
+
+It owns:
+
+- loading/saving/error/success state;
+- dirty detection;
+- persisted-vs-first-save selection;
+- override state;
+- input parsing;
+- cross-field validation;
+- replacement-group payload construction;
+- effective-config refresh after save.
+
+### Frontend coverage
+
+New tests cover:
+
+- first-save POST with explicit overrides only;
+- later PATCH updates;
+- removing an override from a replacement group;
+- retrieval cross-field validation before network writes;
+- zero dense/keyword weight rejection;
+- agent configuration API request serialization.
+
+### Step 3 Validation Gate
+
+~~~powershell
+cd web
+npm run typecheck
+npm test
+npm run build
+~~~
+
+Browser smoke test:
+
+1. open Settings with no persisted configuration and save one override;
+2. refresh and confirm the field source becomes persisted;
+3. change the same value and save again;
+4. turn Override off, save, and confirm the source returns to environment/default;
+5. disable the agent, confirm a new chat is blocked, then re-enable it.
+
 ## Next
 
-Step 3 will make supported Docker Support preferences editable from the settings page.
+Step 4 will close Phase 4 with product-level integration hardening:
 
-The form will use the persisted configuration API for writes and the effective
-configuration API for source/effective-value feedback. Secure environment-owned fields
-will remain read-only and redacted.
+- frontend/backend startup and health state;
+- navigation-level error boundaries;
+- settings/chat integration smoke coverage;
+- final UI cleanup;
+- Phase 4 closeout documentation.
+
+After that, the project can move to the next architecture/product capability rather than
+continuing to expand the first web shell indefinitely.
