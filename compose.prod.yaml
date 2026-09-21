@@ -1,3 +1,5 @@
+name: docker-agent-prod
+
 x-backend-common: &backend-common
   build:
     context: .
@@ -9,7 +11,8 @@ x-backend-common: &backend-common
     APP_ENV: production
     APP_HOST: 0.0.0.0
     APP_PORT: 8000
-    DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-docker_agent}
+    DATABASE_URL: >-
+      postgresql+psycopg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-docker_agent}
     EMBEDDING_CACHE_DIR: /app/.cache/huggingface
     EMBEDDING_DEVICE: ${CONTAINER_EMBEDDING_DEVICE:-cpu}
     RERANK_CACHE_DIR: /app/.cache/huggingface
@@ -59,7 +62,8 @@ services:
           "CMD",
           "python",
           "-c",
-          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=3)",
+          "import urllib.request; urllib.request.urlopen(
+          'http://127.0.0.1:8000/health/ready', timeout=3)",
         ]
       interval: 10s
       timeout: 5s
