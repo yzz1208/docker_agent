@@ -28,28 +28,32 @@ class EffectiveDockerSupportConfiguration:
     configuration_updated_at: datetime | None
 
 
-_MODEL_KEYS = {
-    "model_name",
-    "temperature",
-    "max_tokens",
-    "timeout_seconds",
-    "max_retries",
-    "retry_backoff_seconds",
+DOCKER_SUPPORT_MODEL_PREFERENCE_FIELDS = {
+    "model_name": "model_name",
+    "temperature": "model_temperature",
+    "max_tokens": "model_max_tokens",
+    "timeout_seconds": "model_timeout_seconds",
+    "max_retries": "model_max_retries",
+    "retry_backoff_seconds": "model_retry_backoff_seconds",
 }
-_RETRIEVAL_KEYS = {
-    "top_k",
-    "rrf_k",
-    "dense_weight",
-    "keyword_weight",
-    "rerank_top_k",
-    "context_max_chars",
+DOCKER_SUPPORT_RETRIEVAL_PREFERENCE_FIELDS = {
+    "top_k": "retrieval_candidate_k",
+    "rrf_k": "retrieval_rrf_k",
+    "dense_weight": "retrieval_dense_weight",
+    "keyword_weight": "retrieval_keyword_weight",
+    "rerank_top_k": "rerank_top_k",
+    "context_max_chars": "rag_context_max_chars",
 }
-_RUNTIME_KEYS = {
-    "max_steps",
-    "tool_timeout_seconds",
-    "logs_max_lines",
-    "evidence_max_chars",
+DOCKER_SUPPORT_RUNTIME_PREFERENCE_FIELDS = {
+    "max_steps": "dynamic_runtime_max_steps",
+    "tool_timeout_seconds": "docker_tool_timeout_seconds",
+    "logs_max_lines": "docker_logs_max_lines",
+    "evidence_max_chars": "runtime_evidence_max_chars",
 }
+
+_MODEL_KEYS = set(DOCKER_SUPPORT_MODEL_PREFERENCE_FIELDS)
+_RETRIEVAL_KEYS = set(DOCKER_SUPPORT_RETRIEVAL_PREFERENCE_FIELDS)
+_RUNTIME_KEYS = set(DOCKER_SUPPORT_RUNTIME_PREFERENCE_FIELDS)
 
 
 def resolve_docker_support_configuration(
