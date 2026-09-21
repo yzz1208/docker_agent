@@ -1,6 +1,6 @@
 from functools import lru_cache
 
-from fastapi import FastAPI, HTTPException, Response, status
+from fastapi import FastAPI, HTTPException, Query, Response, status
 from fastapi.responses import JSONResponse
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import SQLAlchemyError
@@ -36,12 +36,20 @@ from docker_agent.api.conversations import (
     build_conversation_detail,
     build_conversation_summary,
 )
+from docker_agent.api.operations import (
+    AgentRunResponse,
+    AgentRunStatusQuery,
+    AgentRunSummaryResponse,
+    build_agent_run_response,
+    build_agent_run_summary_response,
+)
 from docker_agent.config import get_settings
 from docker_agent.db import check_database, create_db_engine
 from docker_agent.graph.service import LangGraphDockerSupportAgent
 from docker_agent.persistence import (
     AgentConfigurationAlreadyExists,
     AgentConfigurationNotFound,
+    AgentRunNotFound,
     ChatConversationMismatch,
     ConversationAgentTypeMismatch,
     ConversationNotFound,
@@ -49,11 +57,14 @@ from docker_agent.persistence import (
     create_agent_configuration,
     delete_conversation,
     get_agent_configuration,
+    get_agent_run,
     init_persistence_store,
     list_agent_configurations,
+    list_agent_runs,
     list_conversations,
     load_conversation,
     rename_conversation,
+    summarize_agent_runs,
     update_agent_configuration,
     validate_agent_configuration_settings,
 )
@@ -382,6 +393,107 @@ def update_agent_configuration_endpoint(
         get_agent.cache_clear()
 
     return build_agent_configuration_response(record)
+
+
+@app.get(
+    "/operations/runs",
+    response_model=list[AgentRunResponse],
+    tags=["operations"],
+)
+def operation_runs(
+    conversation_id: str | None = None,
+    agent_type: str | None = None,
+    run_status: AgentRunStatusQuery | None = Query(
+        default=None,
+        alias="status",
+    ),
+    limit: int = 50,
+    offset: int = 0,
+) -> list[AgentRunResponse]:
+    """List safe Agent run telemetry ordered by newest first."""
+
+    try:
+        records = list_agent_runs(
+            get_persistence_engine(),
+            conversation_id=conversation_id,
+            agent_type=agent_type,
+            status=run_status,
+            limit=limit,
+            offset=offset,
+        )
+    except SQLAlchemyError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="PostgreSQL is unavailable.",
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+    return [build_agent_run_response(record) for record in records]
+
+
+@app.get(
+    "/operations/runs/{run_id}",
+    response_model=AgentRunResponse,
+    tags=["operations"],
+)
+def operation_run_detail(run_id: str) -> AgentRunResponse:
+    """Load one safe Agent run telemetry record."""
+
+    try:
+        record = get_agent_run(
+            get_persistence_engine(),
+            run_id,
+        )
+    except AgentRunNotFound as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Agent run was not found.",
+        ) from exc
+    except SQLAlchemyError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="PostgreSQL is unavailable.",
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+    return build_agent_run_response(record)
+
+
+@app.get(
+    "/operations/summary",
+    response_model=AgentRunSummaryResponse,
+    tags=["operations"],
+)
+def operations_summary(
+    hours: int = 24,
+) -> AgentRunSummaryResponse:
+    """Summarize Agent runs over a bounded recent time window."""
+
+    try:
+        summary = summarize_agent_runs(
+            get_persistence_engine(),
+            hours=hours,
+        )
+    except SQLAlchemyError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="PostgreSQL is unavailable.",
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+    return build_agent_run_summary_response(summary)
 
 
 @app.get(
