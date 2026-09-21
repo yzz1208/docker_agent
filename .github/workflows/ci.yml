@@ -95,3 +95,12 @@ jobs:
           -f compose.prod.yaml
           config
           >/dev/null
+
+      - name: Validate monitoring profile
+        run: >-
+          docker compose
+          --env-file .env.production
+          -f compose.prod.yaml
+          --profile monitoring
+          config
+          >/dev/null
