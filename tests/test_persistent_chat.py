@@ -326,7 +326,6 @@ def test_persistent_chat_records_failed_run_and_reraises_original_error() -> Non
     assert run.completed_at is not None
 
 
-
 def _telemetry_database_error() -> OperationalError:
     return OperationalError(
         "UPDATE agent_runs",
@@ -386,7 +385,6 @@ def test_successful_turn_survives_telemetry_finalize_failure(
     assert len(snapshot.executions) == 1
 
 
-
 def test_persistent_chat_records_success_metrics() -> None:
     metrics.reset()
     engine = _engine()
@@ -427,7 +425,6 @@ def test_persistent_chat_records_failure_metrics() -> None:
         'docker_agent_run_failures_total{error_type="RuntimeError"} 1'
         in output
     )
-
 
 
 def test_agent_handle_inherits_request_run_and_conversation_correlation() -> None:
