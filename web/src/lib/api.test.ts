@@ -62,11 +62,9 @@ describe("API client", () => {
 
     await expect(
       sendChat({ message: "hello" }),
-    ).rejects.toEqual(
-      expect.objectContaining<ApiError>({
-        status: 409,
-        detail: "Agent is disabled.",
-      }),
-    );
+    ).rejects.toMatchObject({
+      status: 409,
+      detail: "Agent is disabled.",
+    } satisfies Partial<ApiError>);
   });
 });
