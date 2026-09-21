@@ -18,6 +18,15 @@ from docker_agent.agent.workflow_judge import (
     summarize_workflow_judges,
 )
 from docker_agent.config import get_settings
+from docker_agent.db import create_db_engine
+from docker_agent.persistence import (
+    add_evaluation_case,
+    create_evaluation_run,
+    dataset_version,
+    finalize_evaluation_run_success,
+    init_persistence_store,
+    resolve_git_revision,
+)
 from docker_agent.rag.answer import CitationValidationError
 from docker_agent.rag.context import CitationSource, RagContext
 from docker_agent.rag.llm import ModelRequestError, OpenAICompatibleChatClient
@@ -91,6 +100,11 @@ def parse_args() -> argparse.Namespace:
         "--judge",
         action="store_true",
         help="Run an additional evidence-grounded LLM judge for completed answers.",
+    )
+    parser.add_argument(
+        "--persist",
+        action="store_true",
+        help="Persist this evaluation run and per-case results to PostgreSQL.",
     )
     return parser.parse_args()
 
@@ -430,6 +444,54 @@ def main() -> None:
             "Judge scores are diagnostic because the configured model may also be used "
             "for answer generation."
         )
+
+    if args.persist:
+        settings = get_settings()
+        engine = create_db_engine(register_pgvector_types=False)
+        init_persistence_store(engine)
+        evaluation_run = create_evaluation_run(
+            engine,
+            suite="agent_workflow",
+            dataset_name=args.input.name,
+            dataset_version_value=dataset_version(args.input),
+            git_revision=resolve_git_revision(),
+            config_snapshot={
+                "model_name": settings.model_name,
+                "model_base_url": settings.model_base_url,
+                "model_api_key": settings.model_api_key,
+                "router_temperature": 0.0,
+                "answer_temperature": 0.0,
+                "judge_enabled": args.judge,
+                "limit": args.limit,
+            },
+        )
+
+        for row in output_rows:
+            metrics_row = row.get("metrics")
+            if not isinstance(metrics_row, dict):
+                metrics_row = {}
+            exact_match = metrics_row.get("exact_workflow_match") is True
+            case_id = str(row.get("id") or "")
+            add_evaluation_case(
+                engine,
+                evaluation_run_id=evaluation_run.id,
+                case_key=case_id,
+                case_id=case_id,
+                status="passed" if exact_match else "failed",
+                metrics=metrics_row,
+                details={
+                    key: value
+                    for key, value in row.items()
+                    if key not in {"metrics", "question", "answer"}
+                },
+            )
+
+        evaluation_run = finalize_evaluation_run_success(
+            engine,
+            evaluation_run.id,
+            aggregate_metrics=summary,
+        )
+        summary["evaluation_run_id"] = evaluation_run.id
 
     print("\nSummary")
     print(json.dumps(summary, ensure_ascii=False, indent=2))
