@@ -104,6 +104,7 @@ class DockerSupportAgent:
             api_key=self.settings.model_api_key,
             timeout_seconds=self.settings.model_timeout_seconds,
             temperature=temperature,
+            max_tokens=self.settings.model_max_tokens,
             max_retries=self.settings.model_max_retries,
             retry_backoff_seconds=self.settings.model_retry_backoff_seconds,
         )

@@ -2,10 +2,26 @@ from functools import lru_cache
 
 from fastapi import FastAPI, HTTPException, Response, status
 from fastapi.responses import JSONResponse
+from sqlalchemy.engine import Engine
 from sqlalchemy.exc import SQLAlchemyError
 
+from docker_agent.agent.configuration import (
+    AgentConfigurationResolutionError,
+    AgentDisabledError,
+    require_enabled,
+    resolve_docker_support_configuration,
+    resolve_docker_support_settings,
+)
 from docker_agent.agent.router import AgentRoutingError
 from docker_agent.agent.service import DockerSupportAgent
+from docker_agent.api.agent_configurations import (
+    AgentConfigurationCreateRequest,
+    AgentConfigurationResponse,
+    AgentConfigurationUpdateRequest,
+    EffectiveAgentConfigurationResponse,
+    build_agent_configuration_response,
+    build_effective_agent_configuration_response,
+)
 from docker_agent.api.chat import (
     ChatRequest,
     ChatResponse,
@@ -13,8 +29,34 @@ from docker_agent.api.chat import (
     ChatSessionNotFound,
     build_chat_response,
 )
+from docker_agent.api.conversations import (
+    ConversationDetailResponse,
+    ConversationRenameRequest,
+    ConversationSummaryResponse,
+    build_conversation_detail,
+    build_conversation_summary,
+)
 from docker_agent.config import get_settings
-from docker_agent.db import check_database
+from docker_agent.db import check_database, create_db_engine
+from docker_agent.graph.service import LangGraphDockerSupportAgent
+from docker_agent.persistence import (
+    AgentConfigurationAlreadyExists,
+    AgentConfigurationNotFound,
+    ChatConversationMismatch,
+    ConversationAgentTypeMismatch,
+    ConversationNotFound,
+    PersistentChatCoordinator,
+    create_agent_configuration,
+    delete_conversation,
+    get_agent_configuration,
+    init_persistence_store,
+    list_agent_configurations,
+    list_conversations,
+    load_conversation,
+    rename_conversation,
+    update_agent_configuration,
+    validate_agent_configuration_settings,
+)
 from docker_agent.rag.answer import CitationValidationError
 from docker_agent.tools.docker_cli import DockerToolTimeout
 
@@ -29,12 +71,46 @@ app = FastAPI(
 
 @lru_cache
 def get_agent() -> DockerSupportAgent:
-    """Create the expensive agent stack lazily on the first chat request."""
+    """Create the LangGraph agent from secure settings plus product preferences."""
 
-    return DockerSupportAgent()
+    base_settings = get_settings()
+    try:
+        record = get_agent_configuration(
+            get_persistence_engine(),
+            "docker_support",
+        )
+    except AgentConfigurationNotFound:
+        record = None
+
+    effective = require_enabled(
+        resolve_docker_support_configuration(
+            base_settings,
+            record,
+        )
+    )
+    return LangGraphDockerSupportAgent(settings=effective.settings)
 
 
 chat_sessions = ChatSessionManager(agent_factory=get_agent)
+
+
+@lru_cache
+def get_persistence_engine() -> Engine:
+    """Create the product persistence engine and tables lazily."""
+
+    engine = create_db_engine(register_pgvector_types=False)
+    init_persistence_store(engine)
+    return engine
+
+
+@lru_cache
+def get_chat_coordinator() -> PersistentChatCoordinator:
+    """Create the durable chat coordinator lazily."""
+
+    return PersistentChatCoordinator(
+        engine=get_persistence_engine(),
+        sessions=chat_sessions,
+    )
 
 
 @app.get("/health", tags=["system"])
@@ -62,19 +138,412 @@ def database_health() -> JSONResponse:
     )
 
 
-@app.post("/chat", response_model=ChatResponse, tags=["agent"])
-def chat(request: ChatRequest) -> ChatResponse:
-    """Run one agent turn, optionally continuing a pending clarification session."""
+
+
+
+@app.get(
+    "/agent-configurations",
+    response_model=list[AgentConfigurationResponse],
+    tags=["agent-configurations"],
+)
+def agent_configurations() -> list[AgentConfigurationResponse]:
+    """List persisted agent configuration records."""
 
     try:
-        session_id, active, result = chat_sessions.chat(
-            message=request.message,
-            session_id=request.session_id,
+        records = list_agent_configurations(get_persistence_engine())
+    except SQLAlchemyError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="PostgreSQL is unavailable.",
+        ) from exc
+
+    return [
+        build_agent_configuration_response(record)
+        for record in records
+    ]
+
+
+@app.get(
+    "/agent-configurations/{agent_type}/effective",
+    response_model=EffectiveAgentConfigurationResponse,
+    tags=["agent-configurations"],
+)
+def effective_agent_configuration(
+    agent_type: str,
+) -> EffectiveAgentConfigurationResponse:
+    """Resolve one agent's safe product preferences into runtime values."""
+
+    normalized_agent_type = agent_type.strip()
+    if normalized_agent_type != "docker_support":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "Effective configuration is not supported for agent type "
+                f"{normalized_agent_type!r}."
+            ),
         )
-    except ChatSessionNotFound as exc:
+
+    base_settings = get_settings()
+    try:
+        record = get_agent_configuration(
+            get_persistence_engine(),
+            normalized_agent_type,
+        )
+    except AgentConfigurationNotFound:
+        record = None
+    except SQLAlchemyError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="PostgreSQL is unavailable.",
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+    try:
+        effective = resolve_docker_support_configuration(
+            base_settings,
+            record,
+        )
+    except AgentConfigurationResolutionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Invalid effective agent configuration: {exc}",
+        ) from exc
+
+    return build_effective_agent_configuration_response(
+        base=base_settings,
+        effective=effective,
+        record=record,
+    )
+
+
+@app.get(
+    "/agent-configurations/{agent_type}",
+    response_model=AgentConfigurationResponse,
+    tags=["agent-configurations"],
+)
+def agent_configuration_detail(
+    agent_type: str,
+) -> AgentConfigurationResponse:
+    """Load one persisted agent configuration."""
+
+    try:
+        record = get_agent_configuration(
+            get_persistence_engine(),
+            agent_type,
+        )
+    except AgentConfigurationNotFound as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Chat session was not found or has already completed.",
+            detail="Agent configuration was not found.",
+        ) from exc
+    except SQLAlchemyError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="PostgreSQL is unavailable.",
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+    return build_agent_configuration_response(record)
+
+
+@app.post(
+    "/agent-configurations",
+    response_model=AgentConfigurationResponse,
+    status_code=status.HTTP_201_CREATED,
+    tags=["agent-configurations"],
+)
+def create_agent_configuration_endpoint(
+    request: AgentConfigurationCreateRequest,
+) -> AgentConfigurationResponse:
+    """Create a product-facing agent configuration."""
+
+    try:
+        validate_agent_configuration_settings(
+            model_settings=request.model_settings,
+            retrieval_settings=request.retrieval_settings,
+            runtime_settings=request.runtime_settings,
+        )
+
+        if request.agent_type.strip() == "docker_support":
+            resolve_docker_support_settings(
+                get_settings(),
+                model_settings=request.model_settings,
+                retrieval_settings=request.retrieval_settings,
+                runtime_settings=request.runtime_settings,
+            )
+
+        record = create_agent_configuration(
+            get_persistence_engine(),
+            agent_type=request.agent_type,
+            display_name=request.display_name,
+            enabled=request.enabled,
+            model_settings=request.model_settings,
+            retrieval_settings=request.retrieval_settings,
+            runtime_settings=request.runtime_settings,
+        )
+    except AgentConfigurationAlreadyExists as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Agent configuration already exists.",
+        ) from exc
+    except SQLAlchemyError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="PostgreSQL is unavailable.",
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+    if record.agent_type == "docker_support":
+        get_agent.cache_clear()
+
+    return build_agent_configuration_response(record)
+
+
+@app.patch(
+    "/agent-configurations/{agent_type}",
+    response_model=AgentConfigurationResponse,
+    tags=["agent-configurations"],
+)
+def update_agent_configuration_endpoint(
+    agent_type: str,
+    request: AgentConfigurationUpdateRequest,
+) -> AgentConfigurationResponse:
+    """Partially update persisted agent preferences."""
+
+    try:
+        validate_agent_configuration_settings(
+            model_settings=request.model_settings,
+            retrieval_settings=request.retrieval_settings,
+            runtime_settings=request.runtime_settings,
+        )
+
+        if agent_type.strip() == "docker_support":
+            current = get_agent_configuration(
+                get_persistence_engine(),
+                agent_type,
+            )
+            resolve_docker_support_settings(
+                get_settings(),
+                model_settings=(
+                    request.model_settings
+                    if request.model_settings is not None
+                    else current.model_settings
+                ),
+                retrieval_settings=(
+                    request.retrieval_settings
+                    if request.retrieval_settings is not None
+                    else current.retrieval_settings
+                ),
+                runtime_settings=(
+                    request.runtime_settings
+                    if request.runtime_settings is not None
+                    else current.runtime_settings
+                ),
+            )
+
+        record = update_agent_configuration(
+            get_persistence_engine(),
+            agent_type,
+            display_name=request.display_name,
+            enabled=request.enabled,
+            model_settings=request.model_settings,
+            retrieval_settings=request.retrieval_settings,
+            runtime_settings=request.runtime_settings,
+        )
+    except AgentConfigurationNotFound as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Agent configuration was not found.",
+        ) from exc
+    except SQLAlchemyError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="PostgreSQL is unavailable.",
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+    if record.agent_type == "docker_support":
+        get_agent.cache_clear()
+
+    return build_agent_configuration_response(record)
+
+
+@app.get(
+    "/conversations",
+    response_model=list[ConversationSummaryResponse],
+    tags=["conversations"],
+)
+def conversations(
+    limit: int = 50,
+    offset: int = 0,
+) -> list[ConversationSummaryResponse]:
+    """List durable conversations ordered by most recently updated."""
+
+    try:
+        records = list_conversations(
+            get_persistence_engine(),
+            limit=limit,
+            offset=offset,
+        )
+    except SQLAlchemyError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="PostgreSQL is unavailable.",
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+    return [build_conversation_summary(record) for record in records]
+
+
+@app.get(
+    "/conversations/{conversation_id}",
+    response_model=ConversationDetailResponse,
+    tags=["conversations"],
+)
+def conversation_detail(conversation_id: str) -> ConversationDetailResponse:
+    """Load one durable conversation with messages and execution metadata."""
+
+    try:
+        snapshot = load_conversation(
+            get_persistence_engine(),
+            conversation_id,
+        )
+    except ConversationNotFound as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Conversation was not found.",
+        ) from exc
+    except SQLAlchemyError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="PostgreSQL is unavailable.",
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+    return build_conversation_detail(snapshot)
+
+@app.patch(
+    "/conversations/{conversation_id}",
+    response_model=ConversationSummaryResponse,
+    tags=["conversations"],
+)
+def rename_conversation_endpoint(
+    conversation_id: str,
+    request: ConversationRenameRequest,
+) -> ConversationSummaryResponse:
+    """Rename one durable conversation."""
+
+    try:
+        record = rename_conversation(
+            get_persistence_engine(),
+            conversation_id,
+            title=request.title,
+        )
+    except ConversationNotFound as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Conversation was not found.",
+        ) from exc
+    except SQLAlchemyError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="PostgreSQL is unavailable.",
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+    return build_conversation_summary(record)
+
+
+@app.delete(
+    "/conversations/{conversation_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    tags=["conversations"],
+)
+def delete_conversation_endpoint(conversation_id: str) -> Response:
+    """Delete one durable conversation and its persisted history."""
+
+    try:
+        get_chat_coordinator().reset_conversation_sessions(conversation_id)
+        delete_conversation(
+            get_persistence_engine(),
+            conversation_id,
+        )
+    except ConversationNotFound as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Conversation was not found.",
+        ) from exc
+    except SQLAlchemyError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="PostgreSQL is unavailable.",
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@app.post("/chat", response_model=ChatResponse, tags=["agent"])
+def chat(request: ChatRequest) -> ChatResponse:
+    """Run and persist one product chat turn."""
+
+    try:
+        turn = get_chat_coordinator().chat(
+            message=request.message,
+            conversation_id=request.conversation_id,
+            session_id=request.session_id,
+        )
+    except (ChatSessionNotFound, ConversationNotFound) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Conversation or chat session was not found.",
+        ) from exc
+    except (ChatConversationMismatch, ConversationAgentTypeMismatch) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
+    except AgentDisabledError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
+    except AgentConfigurationResolutionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Invalid effective agent configuration: {exc}",
         ) from exc
     except AgentRoutingError as exc:
         raise HTTPException(
@@ -102,7 +571,12 @@ def chat(request: ChatRequest) -> ChatResponse:
             detail=str(exc),
         ) from exc
 
-    return build_chat_response(session_id, active, result)
+    return build_chat_response(
+        turn.session_id,
+        turn.session_active,
+        turn.result,
+        conversation_id=turn.conversation.id,
+    )
 
 
 @app.delete(
@@ -111,10 +585,10 @@ def chat(request: ChatRequest) -> ChatResponse:
     tags=["agent"],
 )
 def reset_chat_session(session_id: str) -> Response:
-    """Discard a pending clarification session."""
+    """Discard clarification state without deleting conversation history."""
 
     try:
-        removed = chat_sessions.reset(session_id)
+        removed = get_chat_coordinator().reset(session_id)
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

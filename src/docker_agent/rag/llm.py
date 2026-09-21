@@ -29,6 +29,7 @@ class OpenAICompatibleChatClient:
         api_key: str = "",
         timeout_seconds: float = 60.0,
         temperature: float = 0.1,
+        max_tokens: int | None = None,
         max_retries: int = 2,
         retry_backoff_seconds: float = 0.5,
         client: httpx.Client | None = None,
@@ -38,6 +39,7 @@ class OpenAICompatibleChatClient:
         self.api_key = api_key.strip()
         self.timeout_seconds = timeout_seconds
         self.temperature = temperature
+        self.max_tokens = max_tokens
         self.max_retries = max_retries
         self.retry_backoff_seconds = retry_backoff_seconds
         self._client = client
@@ -48,6 +50,8 @@ class OpenAICompatibleChatClient:
             raise ValueError("base_url must not be empty")
         if timeout_seconds <= 0:
             raise ValueError("timeout_seconds must be positive")
+        if max_tokens is not None and max_tokens <= 0:
+            raise ValueError("max_tokens must be positive when configured")
         if max_retries < 0:
             raise ValueError("max_retries must not be negative")
         if retry_backoff_seconds < 0:
@@ -78,6 +82,8 @@ class OpenAICompatibleChatClient:
             ],
             "temperature": self.temperature,
         }
+        if self.max_tokens is not None:
+            payload["max_tokens"] = self.max_tokens
 
         response = self._post_with_retry(headers=headers, payload=payload)
         data = response.json()
