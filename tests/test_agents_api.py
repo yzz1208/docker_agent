@@ -10,9 +10,10 @@ def test_agents_api_lists_runtime_supported_agents() -> None:
 
     assert response.status_code == 200
     payload = response.json()
-    assert len(payload) == 1
+    assert len(payload) == 2
 
     descriptor = payload[0]
+    infrastructure = payload[1]
     assert descriptor["agent_type"] == "docker_support"
     assert descriptor["display_name"] == "Docker Support"
     assert descriptor["capabilities"] == [
@@ -79,6 +80,39 @@ def test_agents_api_lists_runtime_supported_agents() -> None:
         },
     ]
     assert descriptor["default_enabled"] is True
+
+    assert infrastructure["agent_type"] == (
+        "infrastructure_troubleshooter"
+    )
+    assert infrastructure["display_name"] == (
+        "Infrastructure Troubleshooter"
+    )
+    assert infrastructure["capabilities"] == [
+        "chat",
+        "incident_triage",
+        "hypothesis_generation",
+        "next_step_planning",
+    ]
+    assert infrastructure["knowledge_sources"] == [
+        "embedded_incident_playbook"
+    ]
+    assert infrastructure["toolsets"] == []
+    assert infrastructure["worker_roles"] == [
+        "triage",
+        "diagnosis",
+    ]
+    assert infrastructure["configuration_groups"] == [
+        "model_settings",
+        "runtime_settings",
+    ]
+    assert [
+        group["label"]
+        for group in infrastructure["configuration_schema"]
+    ] == [
+        "Model",
+        "Triage",
+    ]
+    assert infrastructure["configuration_rules"] == []
 
 
 def test_agent_detail_api_normalizes_agent_type() -> None:
