@@ -6,8 +6,11 @@
   "scripts": {
     "dev": "vite",
     "clean:generated": "node scripts/clean-generated.mjs",
+    "prebuild": "npm run clean:generated",
     "build": "vue-tsc --noEmit && vite build",
+    "pretypecheck": "npm run clean:generated",
     "typecheck": "vue-tsc --noEmit",
+    "pretest": "npm run clean:generated",
     "test": "vitest run",
     "preview": "vite preview"
   },
