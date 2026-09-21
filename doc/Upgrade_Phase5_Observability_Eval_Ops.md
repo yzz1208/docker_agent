@@ -229,6 +229,145 @@ error-category distribution
 No raw secret/runtime payloads should be exposed.
 
 
+### Step 2 implementation status
+
+**IMPLEMENTED pending local Ruff/pytest gate**
+
+Operations read APIs are now available:
+
+~~~text
+GET /operations/runs
+GET /operations/runs/{run_id}
+GET /operations/summary
+~~~
+
+Run listing supports:
+
+~~~text
+conversation_id
+agent_type
+status
+limit
+offset
+~~~
+
+The run response exposes only the compact telemetry contract:
+
+~~~text
+id
+conversation_id
+agent_type
+status
+route
+use_docs
+planned_workers
+completed_workers
+duration_ms
+error_type
+error_message
+started_at
+completed_at
+~~~
+
+No prompt, raw model response, retrieved context, Docker stdout, or secret field is added to
+the read API.
+
+### Summary window and metric semantics
+
+~~~text
+GET /operations/summary?hours=24
+~~~
+
+uses a bounded recent window:
+
+~~~text
+minimum: > 0 hours
+maximum: 720 hours (30 days)
+default: 24 hours
+~~~
+
+Summary fields:
+
+~~~text
+total_runs
+running_runs
+succeeded_runs
+failed_runs
+success_rate
+failure_rate
+duration_p50_ms
+duration_p95_ms
+route_distribution
+worker_distribution
+error_distribution
+~~~
+
+Rate denominator:
+
+~~~text
+completed_runs = succeeded_runs + failed_runs
+
+success_rate = succeeded_runs / completed_runs
+failure_rate = failed_runs / completed_runs
+~~~
+
+Running runs are counted separately and do not dilute success/failure rates.
+
+Latency percentiles use completed runs with a recorded duration. The current implementation
+uses linear interpolation between sorted duration samples.
+
+Route distribution counts finalized runs with a known route.
+
+Worker distribution counts completed worker-role occurrences.
+
+Error distribution counts failed runs by stored safe error type.
+
+### Integration wiring
+
+The Vite development proxy now includes:
+
+~~~text
+/operations
+~~~
+
+and the normal read-only smoke script checks:
+
+~~~text
+/operations/summary?hours=24
+~~~
+
+in addition to health, effective configuration, and conversation APIs.
+
+### Step 2 coverage
+
+Tests cover:
+
+- safe run listing;
+- failure error redaction through the HTTP API;
+- status/agent/conversation filtering;
+- pagination;
+- run detail;
+- unknown-run 404;
+- running-vs-completed rate semantics;
+- P50/P95 latency;
+- route/worker/error distributions;
+- empty-completed-run behavior;
+- invalid pagination/window bounds.
+
+Focused local gate:
+
+~~~powershell
+uv run ruff check .
+uv run pytest -v tests/test_agent_run_telemetry.py tests/test_operations_api.py tests/test_persistent_chat.py tests/test_chat_api.py
+~~~
+
+With local FastAPI + PostgreSQL running:
+
+~~~powershell
+cd web
+npm run smoke
+~~~
+
 ## Step 3 — Structured Logs and Metrics
 
 Add request/run correlation:
