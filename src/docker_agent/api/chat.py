@@ -70,6 +70,7 @@ class ChatSessionManager:
     """Keep only active clarification sessions in memory."""
 
     agent_factory: Callable[[], AgentProtocol]
+    agent_type: str = "docker_support"
     _sessions: dict[str, AgentConversation] = field(default_factory=dict)
     _lock: Lock = field(default_factory=Lock)
 
