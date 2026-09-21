@@ -555,14 +555,14 @@ uv run pytest -v tests/test_production_containers.py tests/test_database_runtime
 Build:
 
 ~~~powershell
-docker compose -f compose.prod.yaml build
+docker compose --env-file .env.production -f compose.prod.yaml build
 ~~~
 
 Start:
 
 ~~~powershell
-docker compose -f compose.prod.yaml up -d
-docker compose -f compose.prod.yaml ps
+docker compose --env-file .env.production -f compose.prod.yaml up -d
+docker compose --env-file .env.production -f compose.prod.yaml ps
 ~~~
 
 The migration service should exit successfully after applying Alembic head. Backend and Web
@@ -600,13 +600,13 @@ http://127.0.0.1:8080/settings
 Stop the stack without deleting data:
 
 ~~~powershell
-docker compose -f compose.prod.yaml down
+docker compose --env-file .env.production -f compose.prod.yaml down
 ~~~
 
 Delete the production Compose database/cache volumes only when intentionally resetting:
 
 ~~~powershell
-docker compose -f compose.prod.yaml down -v
+docker compose --env-file .env.production -f compose.prod.yaml down -v
 ~~~
 
 ## Step 4 — Environment Separation
@@ -623,6 +623,189 @@ Production must reject obviously unsafe defaults where appropriate, including de
 database credentials when policy requires it.
 
 Document required secrets and environment variables without checking secrets into Git.
+
+### Step 4 implementation status
+
+**IMPLEMENTED pending local gate**
+
+Configuration is now explicitly separated into:
+
+~~~text
+development
+    APP_ENV=development
+    dotenv=.env
+
+test
+    APP_ENV=test
+    dotenv=.env.test
+
+production
+    APP_ENV=production
+    dotenv=.env.production
+~~~
+
+`get_settings()` selects the dotenv file from `APP_ENV`. Direct `Settings(...)`
+construction remains deterministic for tests and utility code and does not implicitly load
+the development dotenv file.
+
+Templates:
+
+~~~text
+.env.example
+.env.test.example
+.env.production.example
+~~~
+
+Private runtime files:
+
+~~~text
+.env
+.env.test
+.env.production
+~~~
+
+are ignored by Git.
+
+### Production database contract
+
+Production settings reject:
+
+- non-PostgreSQL `DATABASE_URL`;
+- the old `postgres:postgres` default;
+- empty/known weak database passwords;
+- unreplaced database URL placeholders.
+
+This validation is global because migration, RAG schema bootstrap, and the API all require
+a safe production database configuration.
+
+### Serving-runtime contract
+
+Model configuration is validated separately when FastAPI enters its lifespan.
+
+Production serving requires:
+
+~~~text
+MODEL_NAME
+MODEL_BASE_URL
+~~~
+
+and rejects unreplaced placeholders in:
+
+~~~text
+MODEL_NAME
+MODEL_BASE_URL
+MODEL_API_KEY
+~~~
+
+The split is intentional:
+
+~~~text
+migrate / rag-schema
+    need safe database config
+    do not need an active model
+
+backend serving
+    needs safe database config
+    + valid model runtime config
+~~~
+
+This allows schema migration to run independently during deployment while still making a
+misconfigured API fail before accepting traffic.
+
+### Tool-mode contract
+
+`TOOL_MODE` is now implemented rather than being a documentation-only setting.
+
+~~~text
+TOOL_MODE=mock
+    deterministic in-process Docker diagnostic results
+    no subprocess
+    no Docker daemon access
+
+TOOL_MODE=local
+    existing allowlisted read-only Docker CLI
+~~~
+
+Production `TOOL_MODE=local` additionally requires:
+
+~~~text
+ALLOW_LOCAL_DOCKER_TOOLS=true
+~~~
+
+The default production Compose file is stricter and forcibly sets:
+
+~~~text
+TOOL_MODE=mock
+ALLOW_LOCAL_DOCKER_TOOLS=false
+~~~
+
+It still does not mount the Docker socket. A future privileged Docker-diagnostics deployment
+must use a separate explicit profile instead of weakening the safe default stack.
+
+### Production dotenv workflow
+
+Create the private file once:
+
+~~~powershell
+Copy-Item .env.production.example .env.production
+~~~
+
+Before starting containers, replace at minimum:
+
+~~~text
+POSTGRES_PASSWORD
+DATABASE_URL
+MODEL_NAME
+MODEL_BASE_URL
+MODEL_API_KEY   # when the selected provider requires one
+~~~
+
+`POSTGRES_PASSWORD` is required by Compose. `DATABASE_URL` is read directly by backend
+services from `.env.production` instead of being assembled by Compose, so URL-encoded
+database credentials remain valid.
+
+Validate interpolation/configuration:
+
+~~~powershell
+docker compose --env-file .env.production -f compose.prod.yaml config
+~~~
+
+Then use the same env-file flag for build/up/ps/down commands.
+
+### Step 4 coverage
+
+Tests cover:
+
+- explicit environment-to-dotenv mapping;
+- actual `.env.test` selection by `get_settings()`;
+- invalid environment rejection;
+- log-level normalization;
+- safe production configuration acceptance;
+- default/weak production database rejection;
+- SQLite production rejection;
+- production runtime model requirements;
+- runtime placeholder rejection;
+- explicit local-Docker production opt-in;
+- real `mock` vs `local` tool-mode behavior;
+- production Compose use of `.env.production`;
+- required production database password;
+- fixed safe production Compose tool mode;
+- environment secret files excluded from Git.
+
+Focused gate:
+
+~~~powershell
+uv run ruff check .
+uv run pytest -v tests/test_environment_config.py tests/test_docker_tools.py tests/test_database_runtime.py tests/test_production_containers.py
+~~~
+
+Production configuration gate:
+
+~~~powershell
+Copy-Item .env.production.example .env.production
+# edit .env.production
+docker compose --env-file .env.production -f compose.prod.yaml config
+~~~
 
 ## Step 5 — CI
 
