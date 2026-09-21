@@ -8,12 +8,12 @@ from time import perf_counter
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import SQLAlchemyError
 
+from docker_agent.agent.protocol import PersistableAgentTurnProtocol
 from docker_agent.api.chat import ChatSessionManager
-from docker_agent.graph.service import LangGraphAgentTurnResult
 from docker_agent.observability import correlation_context, metrics
 from docker_agent.persistence.adapter import (
     PersistedAgentTurn,
-    persist_langgraph_turn,
+    persist_agent_turn,
 )
 from docker_agent.persistence.store import (
     ConversationRecord,
@@ -53,7 +53,7 @@ class PersistentChatTurn:
     conversation: ConversationRecord
     session_id: str
     session_active: bool
-    result: LangGraphAgentTurnResult
+    result: PersistableAgentTurnProtocol
     persisted: PersistedAgentTurn
     run: AgentRunRecord
 
@@ -120,7 +120,7 @@ class PersistentChatCoordinator:
         session_id: str | None,
     ) -> PersistentChatTurn:
         started = perf_counter()
-        result: LangGraphAgentTurnResult | None = None
+        result: PersistableAgentTurnProtocol | None = None
 
         logger.info(
             "Agent run started",
@@ -135,13 +135,14 @@ class PersistentChatCoordinator:
                 message=normalized_message,
                 session_id=session_id,
             )
-            if not isinstance(raw_result, LangGraphAgentTurnResult):
+            if not isinstance(raw_result, PersistableAgentTurnProtocol):
                 raise TypeError(
-                    "PersistentChatCoordinator requires LangGraphAgentTurnResult"
+                    "PersistentChatCoordinator requires "
+                    "PersistableAgentTurnProtocol"
                 )
             result = raw_result
 
-            persisted = persist_langgraph_turn(
+            persisted = persist_agent_turn(
                 self.engine,
                 conversation_id=conversation.id,
                 user_message=normalized_message,
