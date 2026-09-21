@@ -158,6 +158,42 @@ def test_agent_configuration_api_rejects_secret_fields(monkeypatch) -> None:
     assert "must not contain secret field" in response.json()["detail"]
 
 
+def test_patch_agent_configuration_rejects_secret_fields_before_allowlist(
+    monkeypatch,
+) -> None:
+    engine = _engine()
+    create_agent_configuration(
+        engine,
+        agent_type="docker_support",
+        display_name="Docker Support",
+        model_settings={"temperature": 0.1},
+    )
+    monkeypatch.setattr(
+        "docker_agent.main.get_persistence_engine",
+        lambda: engine,
+    )
+    client = TestClient(app)
+
+    response = client.patch(
+        "/agent-configurations/docker_support",
+        json={
+            "model_settings": {
+                "provider": {
+                    "api_key": "must-not-be-stored",
+                }
+            },
+        },
+    )
+
+    assert response.status_code == 400
+    assert "api_key" in response.json()["detail"]
+    assert "must not contain secret field" in response.json()["detail"]
+
+    loaded = client.get("/agent-configurations/docker_support")
+    assert loaded.status_code == 200
+    assert loaded.json()["model_settings"] == {"temperature": 0.1}
+
+
 def test_duplicate_agent_configuration_returns_409(monkeypatch) -> None:
     engine = _engine()
     create_agent_configuration(
