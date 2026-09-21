@@ -5,10 +5,12 @@ from docker_agent.persistence import (
     MessageNotFound,
     append_message,
     create_conversation,
+    delete_conversation,
     get_conversation,
     init_persistence_store,
     list_conversations,
     load_conversation,
+    rename_conversation,
     save_execution,
 )
 
@@ -168,3 +170,74 @@ def test_save_execution_rejects_unknown_message() -> None:
         assert exc.args == ("missing",)
     else:
         raise AssertionError("MessageNotFound was not raised")
+
+
+
+def test_rename_conversation_updates_title() -> None:
+    engine = _engine()
+    conversation = create_conversation(
+        engine,
+        title="Old title",
+        conversation_id="conversation-rename",
+    )
+
+    updated = rename_conversation(
+        engine,
+        conversation.id,
+        title="  New title  ",
+    )
+
+    assert updated.id == conversation.id
+    assert updated.title == "New title"
+    assert updated.updated_at >= conversation.updated_at
+
+
+def test_delete_conversation_removes_messages_and_executions() -> None:
+    engine = _engine()
+    conversation = create_conversation(
+        engine,
+        conversation_id="conversation-delete",
+    )
+    assistant = append_message(
+        engine,
+        conversation_id=conversation.id,
+        role="assistant",
+        content="answer",
+        message_id="message-delete",
+    )
+    save_execution(
+        engine,
+        message_id=assistant.id,
+        planned_workers=("diagnosis",),
+        completed_workers=("diagnosis",),
+        worker_trace=(),
+        execution_id="execution-delete",
+    )
+
+    delete_conversation(engine, conversation.id)
+
+    try:
+        load_conversation(engine, conversation.id)
+    except ConversationNotFound as exc:
+        assert exc.args == (conversation.id,)
+    else:
+        raise AssertionError("ConversationNotFound was not raised")
+
+
+def test_rename_conversation_rejects_blank_title() -> None:
+    engine = _engine()
+    conversation = create_conversation(
+        engine,
+        conversation_id="conversation-blank-title",
+    )
+
+    try:
+        rename_conversation(
+            engine,
+            conversation.id,
+            title="   ",
+        )
+    except ValueError as exc:
+        assert str(exc) == "title must not be empty"
+    else:
+        raise AssertionError("ValueError was not raised")
