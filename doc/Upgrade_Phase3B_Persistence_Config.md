@@ -520,3 +520,89 @@ PATCH /agent-configurations/{agent_type}
 
 The initial API will manage persisted product preferences only. It will not return or
 accept provider API keys.
+
+
+## Step 8 — Agent Configuration API
+
+The backend now exposes product-facing configuration endpoints suitable for a settings page:
+
+~~~text
+GET   /agent-configurations
+GET   /agent-configurations/{agent_type}
+POST  /agent-configurations
+PATCH /agent-configurations/{agent_type}
+~~~
+
+### Create
+
+Example request:
+
+~~~json
+{
+  "agent_type": "docker_support",
+  "display_name": "Docker Support",
+  "enabled": true,
+  "model_settings": {
+    "model_name": "example-model",
+    "temperature": 0.2,
+    "max_tokens": 4096
+  },
+  "retrieval_settings": {
+    "top_k": 8,
+    "rerank_top_k": 4
+  },
+  "runtime_settings": {
+    "max_steps": 5
+  }
+}
+~~~
+
+Duplicate agent types return HTTP 409.
+
+### Read and list
+
+The list endpoint returns configurations ordered by display name. The detail endpoint
+returns one agent type or HTTP 404 when no configuration exists.
+
+### Partial update
+
+PATCH updates only supplied fields. Unspecified model/retrieval/runtime groups keep their
+stored values, while an explicitly supplied empty object clears that group.
+
+### Security behavior
+
+All requests still pass through the repository secret guard. Nested fields such as
+`api_key`, `token`, `password`, or `private_key` return HTTP 400 and are never
+persisted.
+
+The response schema does not contain any provider credential field.
+
+### Targeted API coverage
+
+Step 8 tests cover:
+
+- create + detail round trip;
+- configuration listing;
+- partial PATCH semantics;
+- nested secret rejection;
+- duplicate create conflict;
+- unknown configuration 404;
+- valid `max_tokens` and `token_budget` settings.
+
+## Next
+
+Step 9 will connect persisted configuration to agent construction through a typed
+configuration resolver.
+
+The first resolver will merge:
+
+~~~text
+secure environment settings
+        +
+persisted non-secret product preferences
+        =
+effective Docker Support configuration
+~~~
+
+Provider credentials will always come from the secure environment side. Persisted
+configuration will only override explicitly supported non-secret fields.
