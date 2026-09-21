@@ -16,6 +16,7 @@ from docker_agent.api.chat import (
 )
 from docker_agent.api.conversations import (
     ConversationDetailResponse,
+    ConversationRenameRequest,
     ConversationSummaryResponse,
     build_conversation_detail,
     build_conversation_summary,
@@ -28,9 +29,11 @@ from docker_agent.persistence import (
     ConversationAgentTypeMismatch,
     ConversationNotFound,
     PersistentChatCoordinator,
+    delete_conversation,
     init_persistence_store,
     list_conversations,
     load_conversation,
+    rename_conversation,
 )
 from docker_agent.rag.answer import CitationValidationError
 from docker_agent.tools.docker_cli import DockerToolTimeout
@@ -162,6 +165,75 @@ def conversation_detail(conversation_id: str) -> ConversationDetailResponse:
         ) from exc
 
     return build_conversation_detail(snapshot)
+
+@app.patch(
+    "/conversations/{conversation_id}",
+    response_model=ConversationSummaryResponse,
+    tags=["conversations"],
+)
+def rename_conversation_endpoint(
+    conversation_id: str,
+    request: ConversationRenameRequest,
+) -> ConversationSummaryResponse:
+    """Rename one durable conversation."""
+
+    try:
+        record = rename_conversation(
+            get_persistence_engine(),
+            conversation_id,
+            title=request.title,
+        )
+    except ConversationNotFound as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Conversation was not found.",
+        ) from exc
+    except SQLAlchemyError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="PostgreSQL is unavailable.",
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+    return build_conversation_summary(record)
+
+
+@app.delete(
+    "/conversations/{conversation_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    tags=["conversations"],
+)
+def delete_conversation_endpoint(conversation_id: str) -> Response:
+    """Delete one durable conversation and its persisted history."""
+
+    try:
+        get_chat_coordinator().reset_conversation_sessions(conversation_id)
+        delete_conversation(
+            get_persistence_engine(),
+            conversation_id,
+        )
+    except ConversationNotFound as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Conversation was not found.",
+        ) from exc
+    except SQLAlchemyError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="PostgreSQL is unavailable.",
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
 
 @app.post("/chat", response_model=ChatResponse, tags=["agent"])
 def chat(request: ChatRequest) -> ChatResponse:
