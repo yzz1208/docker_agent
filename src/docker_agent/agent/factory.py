@@ -2,21 +2,8 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from threading import Lock
-from typing import Protocol
-
-from docker_agent.agent.registry import (
-    AgentAlreadyRegistered,
-    AgentNotRegistered,
-    AgentRegistry,
-)
-from docker_agent.agent.service import AgentTurnResult
-
-
-class AgentProtocol(Protocol):
-    """Minimal runtime contract shared by platform Agents."""
-
-    def handle(self, question: str) -> AgentTurnResult:
-        """Handle one user turn."""
+from docker_agent.agent.protocol import AgentProtocol
+from docker_agent.agent.registry import AgentRegistry
 
 
 AgentBuilder = Callable[[], AgentProtocol]
@@ -109,13 +96,6 @@ def validate_factory_registration(
         raise AgentBuilderNotRegistered(
             ", ".join(missing)
         )
-
-    unknown = sorted(builder_types - runtime_types)
-    if unknown:
-        raise AgentNotRegistered(
-            ", ".join(unknown)
-        )
-
 
 __all__ = [
     "AgentBuilder",
