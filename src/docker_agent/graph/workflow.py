@@ -17,6 +17,7 @@ from docker_agent.core.state import AgentState
 from docker_agent.core.tool_result import from_docker_tool_result
 from docker_agent.graph.runtime_loop import run_runtime_loop_graph
 from docker_agent.graph.state import GraphState
+from docker_agent.multi_agent.supervisor import WorkerRole, plan_workers
 from docker_agent.multi_agent.workers import (
     DiagnosisWorker,
     KnowledgeWorker,
@@ -29,6 +30,7 @@ from docker_agent.tools.docker_cli import DockerReadOnlyTools
 RouteNode = Callable[[GraphState], dict[str, object]]
 DocsRetriever = Callable[[str], RagContext]
 RouteEdge = Literal["docs", "runtime", "answer", "end"]
+SupervisorEdge = Literal["knowledge", "runtime", "diagnosis", "end"]
 
 
 def build_route_graph(router_model: ChatModel):
@@ -184,6 +186,9 @@ def _initial_graph_state(question: str) -> GraphState:
     return GraphState(
         agent_state=AgentState(question=question),
         decision=None,
+        supervisor_plan=None,
+        worker_index=0,
+        completed_workers=(),
         docs_context=None,
         runtime_context=RuntimeEvidenceContext(
             text="",
@@ -199,6 +204,9 @@ def _coerce_graph_state(result: dict[str, object]) -> GraphState:
     return GraphState(
         agent_state=result["agent_state"],
         decision=result["decision"],
+        supervisor_plan=result["supervisor_plan"],
+        worker_index=result["worker_index"],
+        completed_workers=result["completed_workers"],
         docs_context=result["docs_context"],
         runtime_context=result["runtime_context"],
         runtime_trace=result["runtime_trace"],
@@ -361,7 +369,7 @@ def build_support_graph(
     max_steps: int = 4,
     evidence_max_chars: int = 8_000,
 ):
-    """Compile the unified support graph using explicit worker services."""
+    """Compile the unified support graph driven by a SupervisorPlan."""
 
     knowledge_worker = KnowledgeWorker(docs_retriever)
     runtime_worker = RuntimeWorker(
@@ -375,6 +383,7 @@ def build_support_graph(
     def route_node(state: GraphState) -> dict[str, object]:
         current = state["agent_state"]
         decision = route_question(current.question, router_model)
+        supervisor_plan = plan_workers(decision)
         updated = current.with_route(
             decision.route,
             container_ref=decision.container_ref,
@@ -383,19 +392,39 @@ def build_support_graph(
         return {
             "agent_state": updated,
             "decision": decision,
+            "supervisor_plan": supervisor_plan,
+            "worker_index": 0,
+            "completed_workers": (),
         }
 
-    def route_edge(state: GraphState) -> RouteEdge:
-        decision = state["decision"]
-        if decision is None:
-            raise ValueError("route decision is missing")
-        if decision.route == "clarify":
+    def supervisor_edge(state: GraphState) -> SupervisorEdge:
+        plan = state["supervisor_plan"]
+        if plan is None:
+            raise ValueError("supervisor plan is missing")
+
+        index = state["worker_index"]
+        if index < 0 or index > len(plan.workers):
+            raise ValueError("worker index is outside supervisor plan bounds")
+        if index == len(plan.workers):
             return "end"
-        if decision.route == "docs_only":
-            return "docs"
-        if decision.route == "runtime_tools":
-            return "runtime"
-        raise ValueError(f"unsupported route: {decision.route}")
+        return plan.workers[index]
+
+    def advance_worker(
+        state: GraphState,
+        role: WorkerRole,
+    ) -> dict[str, object]:
+        plan = state["supervisor_plan"]
+        if plan is None:
+            raise ValueError("supervisor plan is missing")
+
+        index = state["worker_index"]
+        if index >= len(plan.workers) or plan.workers[index] != role:
+            raise ValueError(f"unexpected worker execution: {role}")
+
+        return {
+            "worker_index": index + 1,
+            "completed_workers": (*state["completed_workers"], role),
+        }
 
     def runtime_node(state: GraphState) -> dict[str, object]:
         current = state["agent_state"]
@@ -408,22 +437,18 @@ def build_support_graph(
             "agent_state": result.state,
             "runtime_context": result.context,
             "runtime_trace": result.trace,
+            **advance_worker(state, "runtime"),
         }
 
-    def after_runtime_edge(state: GraphState) -> RouteEdge:
-        decision = state["decision"]
-        if decision is None:
-            raise ValueError("route decision is missing")
-        return "docs" if decision.use_docs else "answer"
-
-    def docs_node(state: GraphState) -> dict[str, object]:
+    def knowledge_node(state: GraphState) -> dict[str, object]:
         result = knowledge_worker.run(state["agent_state"])
         return {
             "agent_state": result.state,
             "docs_context": result.context,
+            **advance_worker(state, "knowledge"),
         }
 
-    def answer_node(state: GraphState) -> dict[str, object]:
+    def diagnosis_node(state: GraphState) -> dict[str, object]:
         decision = state["decision"]
         if decision is None:
             raise ValueError("route decision is missing")
@@ -437,36 +462,28 @@ def build_support_graph(
         return {
             "agent_state": result.state,
             "answer": result.answer,
+            **advance_worker(state, "diagnosis"),
         }
+
+    worker_edges = {
+        "knowledge": "knowledge",
+        "runtime": "runtime",
+        "diagnosis": "diagnosis",
+        "end": END,
+    }
 
     builder = StateGraph(GraphState)
     builder.add_node("route", route_node)
     builder.add_node("runtime", runtime_node)
-    builder.add_node("docs", docs_node)
-    builder.add_node("answer", answer_node)
+    builder.add_node("knowledge", knowledge_node)
+    builder.add_node("diagnosis", diagnosis_node)
 
     builder.add_edge(START, "route")
-    builder.add_conditional_edges(
-        "route",
-        route_edge,
-        {
-            "docs": "docs",
-            "runtime": "runtime",
-            "end": END,
-        },
-    )
-    builder.add_conditional_edges(
-        "runtime",
-        after_runtime_edge,
-        {
-            "docs": "docs",
-            "answer": "answer",
-        },
-    )
-    builder.add_edge("docs", "answer")
-    builder.add_edge("answer", END)
+    builder.add_conditional_edges("route", supervisor_edge, worker_edges)
+    builder.add_conditional_edges("runtime", supervisor_edge, worker_edges)
+    builder.add_conditional_edges("knowledge", supervisor_edge, worker_edges)
+    builder.add_conditional_edges("diagnosis", supervisor_edge, worker_edges)
     return builder.compile()
-
 
 def run_support_graph(
     question: str,
