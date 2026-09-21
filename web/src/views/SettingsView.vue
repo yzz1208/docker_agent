@@ -2,7 +2,6 @@
 import { computed, onMounted } from "vue";
 
 import {
-  SETTING_GROUP_LABELS,
   type EditableSettingField,
   type SettingGroupKey,
   useAgentSettings,
@@ -11,14 +10,19 @@ import type { EffectiveConfigurationField } from "../lib/types";
 
 const settings = useAgentSettings();
 
-const editableGroups = computed(
-  () =>
-    (
-      Object.keys(SETTING_GROUP_LABELS) as SettingGroupKey[]
-    ).map((key) => ({
-      key,
-      label: SETTING_GROUP_LABELS[key],
-      fields: settings.fields.value[key],
+const editableGroups = computed(() =>
+  (settings.descriptor.value?.configuration_schema ?? [])
+    .filter((group) =>
+      [
+        "model_settings",
+        "retrieval_settings",
+        "runtime_settings",
+      ].includes(group.key),
+    )
+    .map((group) => ({
+      key: group.key as SettingGroupKey,
+      label: group.label,
+      fields: settings.fields.value[group.key as SettingGroupKey],
     })),
 );
 
@@ -74,7 +78,13 @@ onMounted(settings.load);
     <div class="settings-hero panel">
       <div>
         <p class="section-label">Agent configuration</p>
-        <h2>Docker Support settings</h2>
+        <h2>
+          {{
+            settings.descriptor.value?.display_name ??
+            "Agent"
+          }}
+          settings
+        </h2>
         <p>
           Persist only the preferences you want to override. Fields without
           an override continue to inherit their environment or application
