@@ -80,6 +80,7 @@ def test_chat_endpoint_continues_pending_clarification(monkeypatch) -> None:
     assert second_payload["session_active"] is False
     assert second_payload["answer"] == "web 的日志显示启动失败。[R1]"
     assert second_payload["runtime_sources"][0]["tool"] == "docker_logs"
+    assert second_payload["execution"] is None
 
     expired = client.post(
         "/chat",
