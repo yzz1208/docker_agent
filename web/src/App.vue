@@ -38,6 +38,7 @@ onBeforeUnmount(() => {
 
         <nav class="topbar__nav" aria-label="Primary">
           <RouterLink to="/">Chat</RouterLink>
+          <RouterLink to="/operations">Operations</RouterLink>
           <RouterLink to="/settings">Settings</RouterLink>
         </nav>
       </div>
