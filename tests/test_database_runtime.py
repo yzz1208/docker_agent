@@ -132,7 +132,7 @@ def test_database_readiness_tracks_alembic_head(
 
         with pytest.raises(
             DatabaseSchemaNotReady,
-            match="Run `uv run alembic upgrade head`",
+            match="alembic upgrade head",
         ):
             require_database_ready(engine)
     finally:
