@@ -130,3 +130,16 @@ export type AgentConfigurationCreate = AgentConfigurationMutation & {
   agent_type: string;
   display_name: string;
 };
+
+
+export type SystemHealth = {
+  status: string;
+  app: string;
+  env: string;
+};
+
+export type DatabaseHealth = {
+  status: string;
+  database: string;
+  detail?: string;
+};
