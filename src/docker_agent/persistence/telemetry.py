@@ -116,6 +116,8 @@ def list_agent_runs(
     engine: Engine,
     *,
     conversation_id: str | None = None,
+    agent_type: str | None = None,
+    status: AgentRunStatus | None = None,
     limit: int = 50,
     offset: int = 0,
 ) -> tuple[AgentRunRecord, ...]:
@@ -132,6 +134,19 @@ def list_agent_runs(
         statement = statement.where(
             AgentRun.conversation_id == normalized_conversation_id
         )
+
+    if agent_type is not None:
+        normalized_agent_type = agent_type.strip()
+        if not normalized_agent_type:
+            raise ValueError("agent_type must not be empty")
+        statement = statement.where(
+            AgentRun.agent_type == normalized_agent_type
+        )
+
+    if status is not None:
+        if status not in {"running", "succeeded", "failed"}:
+            raise ValueError(f"unsupported agent run status: {status}")
+        statement = statement.where(AgentRun.status == status)
 
     statement = (
         statement.order_by(AgentRun.started_at.desc(), AgentRun.id)
