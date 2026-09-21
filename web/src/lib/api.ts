@@ -1,6 +1,7 @@
 import type {
   AgentConfiguration,
   AgentConfigurationCreate,
+  AgentDescriptor,
   AgentConfigurationMutation,
   AgentRunRecord,
   AgentRunStatus,
@@ -132,6 +133,18 @@ export function resetChatSession(
   return request<void>(
     `/chat/${encodeURIComponent(sessionId)}`,
     { method: "DELETE" },
+  );
+}
+
+export function listAgents(): Promise<AgentDescriptor[]> {
+  return request<AgentDescriptor[]>("/agents");
+}
+
+export function getAgentDescriptor(
+  agentType: string,
+): Promise<AgentDescriptor> {
+  return request<AgentDescriptor>(
+    `/agents/${encodeURIComponent(agentType)}`,
   );
 }
 
