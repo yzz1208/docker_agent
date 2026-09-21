@@ -6,8 +6,8 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def _workflow() -> dict[str, object]:
-    text = (ROOT / ".github/workflows/ci.yml").read_text(
+def _workflow(name: str = "ci.yml") -> dict[str, object]:
+    text = (ROOT / ".github/workflows" / name).read_text(
         encoding="utf-8"
     )
     return yaml.load(text, Loader=yaml.BaseLoader)
@@ -85,3 +85,62 @@ def test_ci_runtime_versions_match_project_contracts() -> None:
 
     assert 'required-version = ">=0.8,<1.0"' in pyproject
     assert package["engines"]["node"] == ">=22 <23"
+
+
+
+def test_evaluation_gate_is_manual_and_read_only() -> None:
+    workflow = _workflow("evaluation-gate.yml")
+
+    assert set(workflow["on"]) == {"workflow_dispatch"}
+    assert workflow["permissions"] == {"contents": "read"}
+    assert "pull_request" not in workflow["on"]
+    assert "push" not in workflow["on"]
+
+
+def test_evaluation_gate_requires_baseline_and_runs_persisted_candidate() -> None:
+    workflow = _workflow("evaluation-gate.yml")
+    dispatch = workflow["on"]["workflow_dispatch"]
+    inputs = dispatch["inputs"]
+
+    assert inputs["suite"]["type"] == "choice"
+    assert inputs["baseline_run_id"]["required"] == "true"
+
+    job = workflow["jobs"]["evaluate"]
+    commands = "\n".join(
+        step.get("run", "")
+        for step in job["steps"]
+        if isinstance(step, dict)
+    )
+
+    assert "--persist --summary-output reports/evaluation-summary.json" in commands
+    assert "scripts/eval_agent_router.py" in commands
+    assert "scripts/eval_agent_workflow.py" in commands
+    assert "candidate_run_id" in commands
+    assert "scripts/compare_evaluations.py" in commands
+    assert "--output reports/evaluation-comparison.json" in commands
+
+
+def test_evaluation_gate_uses_secrets_without_embedding_values() -> None:
+    workflow_text = (
+        ROOT / ".github/workflows/evaluation-gate.yml"
+    ).read_text(encoding="utf-8")
+
+    assert "secrets.EVALUATION_DATABASE_URL" in workflow_text
+    assert "secrets.EVALUATION_MODEL_BASE_URL" in workflow_text
+    assert "secrets.EVALUATION_MODEL_API_KEY" in workflow_text
+    assert "vars.EVALUATION_MODEL_NAME" in workflow_text
+    assert "pull_request_target" not in workflow_text
+
+
+def test_persisted_evaluators_require_migrated_database() -> None:
+    for script_name in (
+        "eval_agent_router.py",
+        "eval_agent_workflow.py",
+    ):
+        script = (ROOT / "scripts" / script_name).read_text(
+            encoding="utf-8"
+        )
+
+        assert "require_database_ready(engine)" in script
+        assert "init_persistence_store" not in script
+        assert "--summary-output" in script
