@@ -261,10 +261,10 @@ AgentConversation
 ChatSessionManager
 ~~~
 
-The durable persistence coordinator still requires `LangGraphAgentTurnResult` because the
-current persistence adapter stores supervisor/worker execution metadata. That specialization
-is intentionally retained until a second real Agent proves a broader persistence contract is
-needed.
+At Step 2, durable persistence still required `LangGraphAgentTurnResult` because the
+persistence adapter stored supervisor/worker execution metadata. Step 5 later generalized
+this into `PersistableAgentTurnProtocol` once the second real Agent required a non-Docker
+execution result.
 
 ### AgentFactory
 
@@ -864,6 +864,301 @@ The second Agent must differ in at least:
 - graph/factory path.
 
 It must not be a renamed Docker Support Agent.
+
+### Step 5 implementation status
+
+**IMPLEMENTED pending local gate**
+
+The platform now contains two genuinely different runtime Agents:
+
+~~~text
+docker_support
+infrastructure_troubleshooter
+~~~
+
+### Infrastructure Troubleshooter
+
+Added:
+
+~~~text
+InfrastructureTroubleshooterAgent
+InfrastructureRouteDecision
+InfrastructureExecutionPlan
+InfrastructureWorkerExecutionRecord
+InfrastructureAgentTurnResult
+~~~
+
+The Agent is designed for service-level incident triage from user-provided observations.
+
+It deliberately has **no live infrastructure access** and does not reuse:
+
+~~~text
+Docker Router
+Docker Docs RAG
+Docker CLI tools
+Docker LangGraph workflow
+~~~
+
+Its runtime path is:
+
+~~~text
+user incident report
+        ↓
+triage router model
+        ↓
+clarify
+or
+triage
+        ↓
+diagnosis model
+        ↓
+facts / hypotheses / next checks
+~~~
+
+The embedded incident playbook covers:
+
+- scope and blast radius;
+- timeline and recent changes;
+- dependency failures;
+- resource pressure;
+- network/DNS;
+- authentication/authorization;
+- storage;
+- external-service degradation;
+- smallest discriminating next checks.
+
+The prompt explicitly forbids claiming live logs, metrics, host state, container state, or
+root cause that the user did not provide.
+
+### Different capability and knowledge contract
+
+The new descriptor declares:
+
+~~~text
+agent_type
+    infrastructure_troubleshooter
+
+capabilities
+    chat
+    incident_triage
+    hypothesis_generation
+    next_step_planning
+
+knowledge_sources
+    embedded_incident_playbook
+
+toolsets
+    <none>
+
+worker_roles
+    triage
+    diagnosis
+~~~
+
+This is intentionally different from Docker Support:
+
+~~~text
+Docker Support
+    Docker Docs RAG
+    Docker read-only tools
+    LangGraph
+    knowledge/runtime/diagnosis workers
+
+Infrastructure Troubleshooter
+    embedded incident playbook
+    no live tools
+    direct two-stage runtime
+    triage/diagnosis workers
+~~~
+
+### Different configuration schema
+
+Infrastructure Troubleshooter uses:
+
+~~~text
+Model
+Triage
+~~~
+
+and does **not** expose a Retrieval group.
+
+Agent-specific Triage settings:
+
+~~~text
+max_hypotheses
+    -> incident_max_hypotheses
+    default 3
+    range 1..10
+
+max_next_steps
+    -> incident_max_next_steps
+    default 5
+    range 1..20
+~~~
+
+The Agent uses these values directly when constructing the diagnosis prompt.
+
+This proves the Step 4 descriptor-driven Settings contract with a real second Agent rather
+than only a synthetic test fixture.
+
+### Generic persistence contract
+
+The second Agent exposed the last major Docker-specific runtime coupling in persistence.
+
+Added:
+
+~~~text
+AgentDecisionProtocol
+AgentExecutionPlanProtocol
+AgentWorkerExecutionProtocol
+PersistableAgentTurnProtocol
+persist_agent_turn()
+~~~
+
+Durable chat no longer checks:
+
+~~~text
+isinstance(result, LangGraphAgentTurnResult)
+~~~
+
+Instead, any Agent turn that structurally provides:
+
+~~~text
+decision
+answer
+supervisor_plan
+worker_trace
+~~~
+
+can be persisted and included in run telemetry.
+
+`persist_langgraph_turn()` remains as a compatibility wrapper for existing Docker tests and
+callers.
+
+The generic execution contract persists arbitrary string route/worker identities, so:
+
+~~~text
+Docker
+    runtime_tools
+    knowledge/runtime/diagnosis
+
+Infrastructure
+    triage
+    triage/diagnosis
+~~~
+
+coexist without schema changes.
+
+### Runtime registration
+
+The default Registry now contains:
+
+~~~text
+docker_support
+infrastructure_troubleshooter
+~~~
+
+and AgentFactory startup validation requires builders for both.
+
+Infrastructure runtime construction follows the same product preference path:
+
+~~~text
+base Settings
+    ↓
+persisted Agent configuration
+    ↓
+resolve_agent_configuration()
+    ↓
+require_enabled()
+    ↓
+InfrastructureTroubleshooterAgent
+~~~
+
+Configuration changes invalidate the Infrastructure runtime instance through the same generic
+Factory invalidation path used by Docker Support.
+
+### Chat and clarification behavior
+
+The existing Agent-aware Chat contract from Step 3 now runs a real second Agent:
+
+~~~json
+{
+  "message": "checkout-api 从 10:20 开始持续返回 503",
+  "agent_type": "infrastructure_troubleshooter"
+}
+~~~
+
+The resulting durable conversation is permanently bound to:
+
+~~~text
+infrastructure_troubleshooter
+~~~
+
+The second Agent also supports the existing clarification-session contract:
+
+~~~text
+vague incident
+    ↓
+clarify
+    ↓
+pending question
+    ↓
+user supplies missing symptom
+    ↓
+triage
+    ↓
+session completes
+~~~
+
+### Step 5 coverage
+
+Tests cover:
+
+- vague-incident clarification;
+- clarification follow-up context;
+- direct incident triage;
+- hypothesis/next-step configuration limits in prompts;
+- no Docker/doc source output;
+- generic ChatResponse execution serialization;
+- generic persistence execution metadata;
+- Infrastructure Agent run telemetry;
+- Registry descriptor metadata;
+- Agent catalog API exposure;
+- distinct Infrastructure configuration schema;
+- rejection of Docker Retrieval settings;
+- canonical Infrastructure Agent configuration identity;
+- real `POST /chat` execution through an Infrastructure coordinator;
+- integration smoke requiring both real Agent descriptors.
+
+Focused backend gate:
+
+~~~powershell
+uv run ruff check .
+uv run pytest -v tests/test_infrastructure_agent.py tests/test_agent_registry.py tests/test_agents_api.py tests/test_agent_configuration_api.py tests/test_chat_api.py tests/test_persistent_chat.py
+~~~
+
+Then run the full backend suite:
+
+~~~powershell
+uv run pytest -v
+~~~
+
+Frontend has no selector change in Step 5, but the shared catalog/types still need validation:
+
+~~~powershell
+cd web
+npm run typecheck
+npm test
+cd ..
+~~~
+
+Optional integration smoke with the running stack:
+
+~~~powershell
+cd web
+npm run smoke
+cd ..
+~~~
 
 ## Step 6 — Web Agent Selector
 
