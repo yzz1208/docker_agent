@@ -355,6 +355,228 @@ Requirements:
 - frontend SPA fallback;
 - API proxying.
 
+### Step 3 implementation status
+
+**IMPLEMENTED pending local Docker build/smoke gate**
+
+Production-oriented container files are now available:
+
+~~~text
+docker/Dockerfile.backend
+docker/Dockerfile.web
+docker/nginx/default.conf
+compose.prod.yaml
+.dockerignore
+~~~
+
+### Backend image
+
+The backend image uses:
+
+~~~text
+python:3.12-slim
+uv project sync
+non-root app user
+/app/.venv
+/app/.cache/huggingface
+~~~
+
+The image contains application code plus Alembic migrations and runs:
+
+~~~text
+uvicorn docker_agent.main:app --host 0.0.0.0 --port 8000 --no-access-log
+~~~
+
+Uvicorn access logging is disabled because Phase 5 already emits structured request logs.
+
+### Web image
+
+The Web image is multi-stage:
+
+~~~text
+node:22-alpine
+    ↓
+npm install
+npm run build
+    ↓
+nginx:1.27-alpine
+~~~
+
+Nginx serves the built Vue SPA and proxies same-origin API traffic to the backend.
+
+Important routing rule:
+
+~~~text
+/operations
+    = Vue SPA page
+
+/operations/summary
+/operations/runs...
+/operations/evaluations...
+    = FastAPI APIs
+~~~
+
+This preserves the Phase 5 fix that prevents the `/operations` page from being swallowed
+by the API proxy.
+
+### Production Compose topology
+
+~~~text
+postgres
+   ↓ health
+migrate
+   ↓ completed successfully
+backend
+   ↓ /health/ready
+web/nginx
+   ↓ public :8080
+user/browser
+~~~
+
+Services:
+
+~~~text
+postgres
+    pgvector/pgvector:pg16
+    persistent named volume
+
+migrate
+    same backend image
+    alembic upgrade head
+    one-shot job
+
+backend
+    waits for migration completion
+    no host port by default
+    readiness healthcheck
+
+web
+    only public service port
+    waits for healthy backend
+~~~
+
+The default public URL is:
+
+~~~text
+http://127.0.0.1:8080
+~~~
+
+Override with:
+
+~~~text
+WEB_PORT
+~~~
+
+### Docker host security
+
+The production template intentionally does **not** mount:
+
+~~~text
+/var/run/docker.sock
+~~~
+
+and therefore defaults to:
+
+~~~text
+TOOL_MODE=mock
+~~~
+
+Real host-Docker control is a privileged deployment choice and will not be enabled
+implicitly by the production template.
+
+### Model cache
+
+A persistent named volume is mounted at:
+
+~~~text
+/app/.cache/huggingface
+~~~
+
+and both embedding/reranker cache paths are overridden to this Linux-safe location.
+
+This avoids accidentally propagating development Windows paths into the container.
+
+### Container topology tests
+
+Static tests verify:
+
+- migration service waits for healthy PostgreSQL;
+- backend waits for migration completion;
+- web waits for backend readiness;
+- only the Web service publishes a host port;
+- Docker socket is not mounted;
+- Nginx preserves the `/operations` SPA route;
+- Operations APIs are proxied;
+- backend runs as non-root;
+- web image is multi-stage;
+- Docker build context excludes secrets/generated directories.
+
+Focused gate:
+
+~~~powershell
+uv run ruff check .
+uv run pytest -v tests/test_production_containers.py tests/test_database_runtime.py tests/test_migrations.py
+~~~
+
+### Production-stack build and smoke
+
+Build:
+
+~~~powershell
+docker compose -f compose.prod.yaml build
+~~~
+
+Start:
+
+~~~powershell
+docker compose -f compose.prod.yaml up -d
+docker compose -f compose.prod.yaml ps
+~~~
+
+The migration service should exit successfully after applying Alembic head. Backend and Web
+should become healthy.
+
+Run the existing read-only smoke **through Nginx**:
+
+~~~powershell
+cd web
+$env:BACKEND_URL="http://127.0.0.1:8080"
+npm run smoke
+Remove-Item Env:BACKEND_URL
+~~~
+
+This verifies the complete path:
+
+~~~text
+browser-like client
+    ↓
+Nginx
+    ↓
+FastAPI
+    ↓
+PostgreSQL
+~~~
+
+The Vue SPA is available at:
+
+~~~text
+http://127.0.0.1:8080/
+http://127.0.0.1:8080/operations
+http://127.0.0.1:8080/settings
+~~~
+
+Stop the stack without deleting data:
+
+~~~powershell
+docker compose -f compose.prod.yaml down
+~~~
+
+Delete the production Compose database/cache volumes only when intentionally resetting:
+
+~~~powershell
+docker compose -f compose.prod.yaml down -v
+~~~
+
 ## Step 4 — Environment Separation
 
 Define explicit configuration profiles/contracts for:
