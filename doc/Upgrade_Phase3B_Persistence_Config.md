@@ -163,3 +163,47 @@ It does not persist GraphState, raw Docker stdout, or complete evidence contexts
 The adapter is still independent from the HTTP chat endpoint. Step 3 will connect durable
 conversation identity to chat handling without reusing the temporary clarification
 session id as the long-lived conversation id.
+
+
+## Step 3 — Durable Conversation Identity
+
+The product chat layer now has a dedicated coordinator:
+
+~~~text
+PersistentChatCoordinator
+~~~
+
+It separates two identities that previously looked similar but have different lifetimes:
+
+~~~text
+conversation_id
+= durable product conversation
+= survives completed turns
+= owns persisted messages and executions
+
+session_id
+= temporary clarification state
+= exists only while AgentConversation has a pending question
+= in-memory only
+~~~
+
+A first turn without a conversation id creates a durable conversation. If the agent asks
+for clarification, the temporary session is bound to that conversation.
+
+A clarification follow-up must provide both ids:
+
+~~~text
+conversation_id
+session_id
+~~~
+
+and the coordinator rejects attempts to use an active session with another conversation.
+
+After clarification completes, the session is discarded while the conversation remains.
+The same durable conversation can later receive another independent turn with no session id.
+
+The coordinator also validates `agent_type` so a Docker Support request cannot
+accidentally append messages to a conversation owned by a future agent type.
+
+Step 3 still leaves the current HTTP `/chat` endpoint unchanged. Step 4 will expose the
+durable conversation id in the API and switch the endpoint to this coordinator.
