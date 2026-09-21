@@ -382,7 +382,7 @@ def test_chat_endpoint_rejects_unregistered_agent_without_creating_conversation(
     assert response.json()["detail"] == (
         "Agent type is not registered."
     )
-    assert list_conversations(engine) == []
+    assert list_conversations(engine) == ()
 
 
 
