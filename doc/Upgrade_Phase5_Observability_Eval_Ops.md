@@ -134,6 +134,74 @@ If telemetry persistence itself fails, the product request should still preserve
 original agent/database failure semantics whenever possible.
 
 
+### Step 1 implementation status
+
+**IMPLEMENTED pending local Ruff/pytest gate**
+
+Current implementation adds:
+
+~~~text
+agent_runs
+~~~
+
+with durable lifecycle fields for:
+
+~~~text
+conversation_id
+agent_type
+status
+route
+use_docs
+planned_workers
+completed_workers
+duration_ms
+error_type
+error_message
+started_at
+completed_at
+~~~
+
+`PersistentChatCoordinator` now creates a run before agent execution and finalizes it
+after the persisted chat turn succeeds.
+
+Failure behavior is deliberate:
+
+~~~text
+agent/persistence exception
+        ↓
+best-effort failed-run finalization
+        ↓
+original exception is re-raised unchanged
+~~~
+
+A successful product chat is also not converted into a failure if telemetry finalization
+itself fails after messages were already persisted.
+
+Error messages stored in telemetry are compacted and redact common API-key/token/password
+patterns. Full prompts, retrieved contexts, Docker stdout, and model responses are not
+stored in the run table.
+
+Conversation deletion removes associated run telemetry.
+
+Step 1 tests cover:
+
+- running -> succeeded lifecycle;
+- running -> failed lifecycle;
+- duplicate finalization rejection;
+- secret-like error redaction;
+- bounded error messages;
+- run listing/filtering;
+- conversation-delete cleanup;
+- successful clarification/runtime turns producing successful runs;
+- failed Agent calls producing failed runs while preserving the original exception.
+
+Local focused gate:
+
+~~~powershell
+uv run ruff check .
+uv run pytest -v tests/test_agent_run_telemetry.py tests/test_persistent_chat.py tests/test_persistence_store.py tests/test_chat_api.py
+~~~
+
 ## Step 2 — Operations Read API
 
 Add product-facing read endpoints:
