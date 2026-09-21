@@ -875,6 +875,289 @@ Report:
 This creates a real release-quality gate instead of relying on ad-hoc report reading.
 
 
+### Step 5 implementation status
+
+**IMPLEMENTED pending local Ruff/pytest gate**
+
+Phase 5 can now compare two persisted evaluation runs and turn the result into a release
+quality gate.
+
+### Comparability rules
+
+A comparison is accepted only when:
+
+~~~text
+baseline != candidate
+baseline.status == succeeded
+candidate.status == succeeded
+baseline.suite == candidate.suite
+baseline.dataset_version == candidate.dataset_version
+~~~
+
+This prevents accidental comparisons across different suites or dataset revisions.
+
+The two runs may have different:
+
+~~~text
+git_revision
+config_snapshot
+model configuration
+implementation revision
+~~~
+
+because those differences are often exactly what the comparison is intended to measure.
+
+### Case alignment
+
+Cases are aligned by the persisted:
+
+~~~text
+case_key
+~~~
+
+The comparison reports:
+
+~~~text
+common_case_count
+baseline_only_case_keys
+candidate_only_case_keys
+new_failures
+new_passes
+unchanged_failures
+~~~
+
+Status semantics:
+
+~~~text
+baseline passed -> candidate failed/error
+    = new failure
+
+baseline failed/error -> candidate passed
+    = new pass
+~~~
+
+If the case sets are not identical, the comparison verdict is:
+
+~~~text
+incomplete
+~~~
+
+and the gate fails.
+
+This prevents a candidate evaluated with a different `--limit`, repeat count, or partial
+case set from appearing artificially better.
+
+### Aggregate metric comparison
+
+Numeric aggregate metrics are recursively discovered from both runs.
+
+Only quality-like metric paths are compared. Current name hints include:
+
+~~~text
+accuracy
+coverage
+f1
+match
+precision
+rate
+recall
+score
+~~~
+
+Direction defaults to:
+
+~~~text
+higher_is_better
+~~~
+
+Metrics containing:
+
+~~~text
+error_rate
+failure_rate
+latency
+duration
+~~~
+
+use:
+
+~~~text
+lower_is_better
+~~~
+
+Each metric reports:
+
+~~~text
+baseline_value
+candidate_value
+delta
+quality_delta
+direction
+threshold
+regression
+improvement
+~~~
+
+`delta` is always:
+
+~~~text
+candidate - baseline
+~~~
+
+`quality_delta` normalizes direction so:
+
+~~~text
+positive = improvement
+negative = degradation
+~~~
+
+The default allowed absolute regression is:
+
+~~~text
+0.02
+~~~
+
+For rate metrics in the 0..1 range, this corresponds to two percentage points.
+
+The threshold can be changed per comparison with:
+
+~~~text
+max_regression
+~~~
+
+A quality metric becomes a regression when:
+
+~~~text
+quality_delta < -max_regression
+~~~
+
+### Gate verdict
+
+The final verdict is one of:
+
+~~~text
+pass
+regression
+incomplete
+~~~
+
+The gate fails when any of the following is true:
+
+- at least one common case becomes a new failure;
+- at least one quality metric exceeds the allowed regression threshold;
+- the baseline and candidate case-key sets differ.
+
+New passes can offset neither new failures nor metric regressions. They are reported
+separately so improvements remain visible.
+
+### Behavior and configuration diagnostics
+
+For common cases, the comparison reports changes in available actual behavior fields:
+
+~~~text
+route
+tools / tools_called
+container
+~~~
+
+These changes are diagnostic only. They do not automatically fail the gate because a route
+or tool change can be an intentional implementation improvement.
+
+Sanitized configuration snapshots are also flattened and compared, producing:
+
+~~~text
+configuration_changes
+~~~
+
+This helps answer:
+
+~~~text
+What configuration changed between the baseline and candidate?
+~~~
+
+without exposing secrets.
+
+### Comparison API
+
+The Operations API now exposes:
+
+~~~text
+GET /operations/evaluations/compare
+~~~
+
+Query parameters:
+
+~~~text
+baseline_id
+candidate_id
+max_regression=0.02
+~~~
+
+The endpoint returns:
+
+- verdict and gate_passed;
+- case transitions;
+- aggregate metric deltas;
+- route/tool behavior changes;
+- safe configuration changes.
+
+### CI / release CLI gate
+
+A CI-friendly CLI is available:
+
+~~~powershell
+uv run python scripts/compare_evaluations.py --baseline <BASELINE_RUN_ID> --candidate <CANDIDATE_RUN_ID>
+~~~
+
+Optional threshold:
+
+~~~powershell
+uv run python scripts/compare_evaluations.py --baseline <BASELINE_RUN_ID> --candidate <CANDIDATE_RUN_ID> --max-regression 0.01
+~~~
+
+Exit codes:
+
+~~~text
+0 = gate passed
+1 = regression or incomplete case set
+2 = invalid comparison / missing run / invalid arguments
+~~~
+
+The command prints the complete comparison as JSON, making it suitable for CI artifacts
+and later GitHub Actions integration.
+
+### Step 5 coverage
+
+Tests cover:
+
+- new failures and new passes;
+- higher-is-better regression metrics;
+- lower-is-better regression metrics;
+- tolerated metric degradation below the configured threshold;
+- route/tool behavior changes;
+- safe configuration changes;
+- incomplete case-set detection;
+- incompatible suite rejection;
+- missing-run API behavior;
+- invalid threshold handling;
+- comparison API response contract.
+
+Focused local gate:
+
+~~~powershell
+uv run ruff check .
+uv run pytest -v tests/test_evaluation_comparison.py tests/test_evaluation_comparison_api.py tests/test_evaluation_persistence.py tests/test_evaluation_api.py
+~~~
+
+Example persisted evaluation workflow:
+
+~~~powershell
+uv run python scripts/eval_agent_router.py --persist
+# change code/config
+uv run python scripts/eval_agent_router.py --persist
+uv run python scripts/compare_evaluations.py --baseline <OLD_RUN_ID> --candidate <NEW_RUN_ID>
+~~~
+
 ## Step 6 — Operations Web Surface
 
 Add an Operations route to the Vue shell.
