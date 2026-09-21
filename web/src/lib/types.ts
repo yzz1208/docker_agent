@@ -116,3 +116,17 @@ export type EffectiveAgentConfiguration = {
   runtime_settings: Record<string, EffectiveConfigurationField>;
   environment_settings: Record<string, EffectiveConfigurationField>;
 };
+
+
+export type AgentConfigurationMutation = {
+  display_name?: string;
+  enabled?: boolean;
+  model_settings?: Record<string, unknown>;
+  retrieval_settings?: Record<string, unknown>;
+  runtime_settings?: Record<string, unknown>;
+};
+
+export type AgentConfigurationCreate = AgentConfigurationMutation & {
+  agent_type: string;
+  display_name: string;
+};
