@@ -100,6 +100,13 @@ def test_supervisor_drives_docs_only_worker_sequence() -> None:
     assert plan.workers == ("knowledge", "diagnosis")
     assert result["completed_workers"] == ("knowledge", "diagnosis")
     assert result["worker_index"] == 2
+    assert [record.role for record in result["worker_trace"]] == [
+        "knowledge",
+        "diagnosis",
+    ]
+    assert result["worker_trace"][0].evidence_added == 1
+    assert result["worker_trace"][0].tool_results_added == 0
+    assert result["worker_trace"][1].answer_created is True
     assert docs.calls == ["Docker volume 是什么？"]
     assert tools.calls == []
     assert planner.calls == 0
@@ -146,6 +153,15 @@ def test_supervisor_drives_runtime_only_worker_sequence() -> None:
     assert plan.workers == ("runtime", "diagnosis")
     assert result["completed_workers"] == ("runtime", "diagnosis")
     assert result["worker_index"] == 2
+    assert [record.role for record in result["worker_trace"]] == [
+        "runtime",
+        "diagnosis",
+    ]
+    runtime_record = result["worker_trace"][0]
+    assert runtime_record.tool_results_added == 1
+    assert runtime_record.evidence_added == 1
+    assert runtime_record.runtime_steps_added == 2
+    assert result["worker_trace"][1].answer_created is True
     assert tools.calls == ["docker_stats"]
     assert docs.calls == []
     assert answer.calls == 1
@@ -198,6 +214,14 @@ def test_supervisor_drives_runtime_then_knowledge_then_diagnosis() -> None:
         "diagnosis",
     )
     assert result["worker_index"] == 3
+    assert [record.role for record in result["worker_trace"]] == [
+        "runtime",
+        "knowledge",
+        "diagnosis",
+    ]
+    assert result["worker_trace"][0].tool_results_added == 1
+    assert result["worker_trace"][1].evidence_added == 1
+    assert result["worker_trace"][2].answer_created is True
     assert tools.calls == ["docker_stats"]
     assert docs.calls == [question]
     assert answer.calls == 1
@@ -233,6 +257,7 @@ def test_supervisor_clarification_plan_executes_no_workers() -> None:
     assert plan.clarification == "请提供容器名称。"
     assert result["completed_workers"] == ()
     assert result["worker_index"] == 0
+    assert result["worker_trace"] == ()
     assert result["answer"] is None
     assert tools.calls == []
     assert docs.calls == []
