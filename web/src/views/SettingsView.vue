@@ -12,13 +12,7 @@ const settings = useAgentSettings();
 
 const editableGroups = computed(() =>
   (settings.descriptor.value?.configuration_schema ?? [])
-    .filter((group) =>
-      [
-        "model_settings",
-        "retrieval_settings",
-        "runtime_settings",
-      ].includes(group.key),
-    )
+    .filter((group) => group.key in settings.fields.value)
     .map((group) => ({
       key: group.key as SettingGroupKey,
       label: group.label,
