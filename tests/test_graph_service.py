@@ -232,3 +232,12 @@ def test_detailed_graph_turn_remains_chat_response_compatible() -> None:
     assert response.route == "runtime_tools"
     assert response.answer == "api-prod 当前使用 96MiB 内存。[R1]"
     assert response.runtime_sources[0].tool == "docker_stats"
+    assert response.execution is not None
+    assert response.execution.planned_workers == ["runtime", "diagnosis"]
+    assert response.execution.completed_workers == ["runtime", "diagnosis"]
+    assert [step.role for step in response.execution.worker_trace] == [
+        "runtime",
+        "diagnosis",
+    ]
+    assert response.execution.worker_trace[0].tool_results_added == 1
+    assert response.execution.worker_trace[1].answer_created is True
