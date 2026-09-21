@@ -3,12 +3,16 @@ import { computed, ref } from "vue";
 import {
   ApiError,
   createAgentConfiguration,
+  getAgentDescriptor,
   getEffectiveAgentConfiguration,
   updateAgentConfiguration,
 } from "../lib/api";
 import type {
   AgentConfigurationCreate,
   AgentConfigurationMutation,
+  AgentDescriptor,
+  ConfigurationFieldDescriptor,
+  ConfigurationRuleDescriptor,
   ConfigurationScalar,
   EffectiveAgentConfiguration,
   EffectiveConfigurationField,
@@ -19,149 +23,11 @@ export type SettingGroupKey =
   | "retrieval_settings"
   | "runtime_settings";
 
-type SettingValueKind = "string" | "integer" | "number";
-
-type SettingSpec = {
-  key: string;
-  label: string;
-  description: string;
-  kind: SettingValueKind;
-  minimum?: number;
-  maximum?: number;
-};
-
-export type EditableSettingField = SettingSpec & {
+export type EditableSettingField = ConfigurationFieldDescriptor & {
   override: boolean;
   input: string;
   effective: EffectiveConfigurationField;
   error: string;
-};
-
-const GROUP_SPECS: Record<SettingGroupKey, SettingSpec[]> = {
-  model_settings: [
-    {
-      key: "model_name",
-      label: "Model name",
-      description: "OpenAI-compatible model identifier used by the agent.",
-      kind: "string",
-    },
-    {
-      key: "temperature",
-      label: "Temperature",
-      description: "Sampling temperature for model responses.",
-      kind: "number",
-      minimum: 0,
-      maximum: 2,
-    },
-    {
-      key: "max_tokens",
-      label: "Max tokens",
-      description: "Maximum generated tokens when the provider supports it.",
-      kind: "integer",
-      minimum: 1,
-    },
-    {
-      key: "timeout_seconds",
-      label: "Model timeout",
-      description: "Maximum seconds allowed for one model request.",
-      kind: "number",
-      minimum: 0.001,
-    },
-    {
-      key: "max_retries",
-      label: "Model retries",
-      description: "Retry attempts after a retryable model failure.",
-      kind: "integer",
-      minimum: 0,
-    },
-    {
-      key: "retry_backoff_seconds",
-      label: "Retry backoff",
-      description: "Delay between model retries in seconds.",
-      kind: "number",
-      minimum: 0,
-    },
-  ],
-  retrieval_settings: [
-    {
-      key: "top_k",
-      label: "Candidate top K",
-      description: "Hybrid retrieval candidates kept before reranking.",
-      kind: "integer",
-      minimum: 1,
-    },
-    {
-      key: "rrf_k",
-      label: "RRF K",
-      description: "Reciprocal-rank-fusion smoothing constant.",
-      kind: "integer",
-      minimum: 0,
-    },
-    {
-      key: "dense_weight",
-      label: "Dense weight",
-      description: "Weight applied to dense retrieval ranking.",
-      kind: "number",
-      minimum: 0,
-    },
-    {
-      key: "keyword_weight",
-      label: "Keyword weight",
-      description: "Weight applied to keyword retrieval ranking.",
-      kind: "number",
-      minimum: 0,
-    },
-    {
-      key: "rerank_top_k",
-      label: "Rerank top K",
-      description: "Final candidates retained after reranking.",
-      kind: "integer",
-      minimum: 1,
-    },
-    {
-      key: "context_max_chars",
-      label: "Context max chars",
-      description: "Maximum documentation context passed to the answer model.",
-      kind: "integer",
-      minimum: 1,
-    },
-  ],
-  runtime_settings: [
-    {
-      key: "max_steps",
-      label: "Runtime max steps",
-      description: "Maximum dynamic runtime workflow steps.",
-      kind: "integer",
-      minimum: 1,
-    },
-    {
-      key: "tool_timeout_seconds",
-      label: "Docker tool timeout",
-      description: "Maximum seconds allowed for one Docker tool call.",
-      kind: "number",
-      minimum: 0.001,
-    },
-    {
-      key: "logs_max_lines",
-      label: "Log line limit",
-      description: "Maximum Docker log lines collected per tool call.",
-      kind: "integer",
-      minimum: 1,
-    },
-    {
-      key: "evidence_max_chars",
-      label: "Evidence max chars",
-      description: "Maximum runtime evidence characters retained for synthesis.",
-      kind: "integer",
-      minimum: 1,
-    },
-  ],
-};
-
-export const SETTING_GROUP_LABELS: Record<SettingGroupKey, string> = {
-  model_settings: "Model",
-  retrieval_settings: "Retrieval",
-  runtime_settings: "Runtime",
 };
 
 function displayValue(value: ConfigurationScalar): string {
@@ -176,6 +42,14 @@ function errorText(error: unknown): string {
     return error.message;
   }
   return "Something went wrong.";
+}
+
+function isSettingGroupKey(value: string): value is SettingGroupKey {
+  return (
+    value === "model_settings" ||
+    value === "retrieval_settings" ||
+    value === "runtime_settings"
+  );
 }
 
 function parseField(field: EditableSettingField): ConfigurationScalar {
@@ -199,12 +73,18 @@ function parseField(field: EditableSettingField): ConfigurationScalar {
   if (field.kind === "integer" && !Number.isInteger(parsed)) {
     throw new Error(`${field.label} must be an integer.`);
   }
-  if (field.minimum !== undefined && parsed < field.minimum) {
+  if (
+    field.minimum !== null &&
+    parsed < field.minimum
+  ) {
     throw new Error(
       `${field.label} must be at least ${field.minimum}.`,
     );
   }
-  if (field.maximum !== undefined && parsed > field.maximum) {
+  if (
+    field.maximum !== null &&
+    parsed > field.maximum
+  ) {
     throw new Error(
       `${field.label} must not exceed ${field.maximum}.`,
     );
@@ -212,9 +92,12 @@ function parseField(field: EditableSettingField): ConfigurationScalar {
   return parsed;
 }
 
-export function useAgentSettings() {
+export function useAgentSettings(
+  agentType = "docker_support",
+) {
+  const descriptor = ref<AgentDescriptor | null>(null);
   const configuration = ref<EffectiveAgentConfiguration | null>(null);
-  const displayName = ref("Docker Support");
+  const displayName = ref("");
   const enabled = ref(true);
   const fields = ref<Record<SettingGroupKey, EditableSettingField[]>>({
     model_settings: [],
@@ -236,23 +119,36 @@ export function useAgentSettings() {
     () => Boolean(configuration.value) && snapshot() !== baseline.value,
   );
 
-  function hydrate(next: EffectiveAgentConfiguration): void {
+  function hydrate(
+    nextDescriptor: AgentDescriptor,
+    next: EffectiveAgentConfiguration,
+  ): void {
+    descriptor.value = nextDescriptor;
     configuration.value = next;
     displayName.value = next.display_name;
     enabled.value = next.enabled;
 
-    const nextFields = {} as Record<
+    const nextFields: Record<
       SettingGroupKey,
       EditableSettingField[]
-    >;
+    > = {
+      model_settings: [],
+      retrieval_settings: [],
+      runtime_settings: [],
+    };
 
-    for (const groupKey of Object.keys(GROUP_SPECS) as SettingGroupKey[]) {
-      const effectiveGroup = next[groupKey];
-      nextFields[groupKey] = GROUP_SPECS[groupKey].map((spec) => {
+    for (const group of nextDescriptor.configuration_schema) {
+      if (!isSettingGroupKey(group.key)) {
+        throw new Error(
+          `Unsupported configuration group ${group.key}.`,
+        );
+      }
+      const effectiveGroup = next[group.key];
+      nextFields[group.key] = group.fields.map((spec) => {
         const effective = effectiveGroup[spec.key];
         if (!effective) {
           throw new Error(
-            `Effective configuration is missing ${groupKey}.${spec.key}.`,
+            `Effective configuration is missing ${group.key}.${spec.key}.`,
           );
         }
         return {
@@ -276,10 +172,11 @@ export function useAgentSettings() {
     errorMessage.value = "";
     successMessage.value = "";
     try {
-      const next = await getEffectiveAgentConfiguration(
-        "docker_support",
-      );
-      hydrate(next);
+      const [nextDescriptor, next] = await Promise.all([
+        getAgentDescriptor(agentType),
+        getEffectiveAgentConfiguration(agentType),
+      ]);
+      hydrate(nextDescriptor, next);
     } catch (error) {
       errorMessage.value = errorText(error);
     } finally {
@@ -330,40 +227,45 @@ export function useAgentSettings() {
       }
     }
 
-    const retrieval = fields.value.retrieval_settings;
-    const topK = resolvedNumber(retrieval, "top_k");
-    const rerankTopK = resolvedNumber(retrieval, "rerank_top_k");
-    if (
-      topK !== null &&
-      rerankTopK !== null &&
-      rerankTopK > topK
-    ) {
-      const field = retrieval.find(
-        (item) => item.key === "rerank_top_k",
-      );
-      if (field) {
-        field.error = "Rerank top K must not exceed candidate top K.";
+    for (const rule of descriptor.value?.configuration_rules ?? []) {
+      if (!validateRule(rule)) {
+        valid = false;
       }
-      valid = false;
-    }
-
-    const denseWeight = resolvedNumber(retrieval, "dense_weight");
-    const keywordWeight = resolvedNumber(
-      retrieval,
-      "keyword_weight",
-    );
-    if (denseWeight === 0 && keywordWeight === 0) {
-      const field = retrieval.find(
-        (item) => item.key === "keyword_weight",
-      );
-      if (field) {
-        field.error =
-          "Dense weight and keyword weight cannot both be zero.";
-      }
-      valid = false;
     }
 
     return valid;
+  }
+
+  function validateRule(rule: ConfigurationRuleDescriptor): boolean {
+    if (!isSettingGroupKey(rule.group)) {
+      return false;
+    }
+    const group = fields.value[rule.group];
+    const target = group.find(
+      (field) => field.key === rule.target_field,
+    );
+    const values = rule.fields.map((key) =>
+      resolvedNumber(group, key),
+    );
+
+    if (values.some((value) => value === null)) {
+      return true;
+    }
+
+    let failed = false;
+    if (rule.kind === "less_equal") {
+      failed = (
+        values.length === 2 &&
+        (values[0] as number) > (values[1] as number)
+      );
+    } else if (rule.kind === "not_all_zero") {
+      failed = values.every((value) => value === 0);
+    }
+
+    if (failed && target) {
+      target.error = rule.message;
+    }
+    return !failed;
   }
 
   function resolvedNumber(
@@ -424,12 +326,18 @@ export function useAgentSettings() {
     try {
       const mutation = buildMutation();
       if (persisted.value) {
-        await updateAgentConfiguration("docker_support", mutation);
+        await updateAgentConfiguration(agentType, mutation);
       } else {
         const createBody: AgentConfigurationCreate = {
-          agent_type: "docker_support",
-          display_name: mutation.display_name ?? "Docker Support",
-          enabled: mutation.enabled ?? true,
+          agent_type: agentType,
+          display_name:
+            mutation.display_name ??
+            descriptor.value?.display_name ??
+            agentType,
+          enabled:
+            mutation.enabled ??
+            descriptor.value?.default_enabled ??
+            true,
           model_settings: mutation.model_settings ?? {},
           retrieval_settings: mutation.retrieval_settings ?? {},
           runtime_settings: mutation.runtime_settings ?? {},
@@ -437,11 +345,13 @@ export function useAgentSettings() {
         await createAgentConfiguration(createBody);
       }
 
-      const next = await getEffectiveAgentConfiguration(
-        "docker_support",
-      );
-      hydrate(next);
-      successMessage.value = "Agent settings saved and applied to new sessions.";
+      const next = await getEffectiveAgentConfiguration(agentType);
+      if (!descriptor.value) {
+        throw new Error("Agent descriptor is unavailable.");
+      }
+      hydrate(descriptor.value, next);
+      successMessage.value =
+        "Agent settings saved and applied to new sessions.";
       return true;
     } catch (error) {
       errorMessage.value = errorText(error);
@@ -453,6 +363,7 @@ export function useAgentSettings() {
 
   function snapshot(): string {
     return JSON.stringify({
+      agentType,
       displayName: displayName.value,
       enabled: enabled.value,
       fields: (Object.keys(fields.value) as SettingGroupKey[]).map(
@@ -469,6 +380,7 @@ export function useAgentSettings() {
   }
 
   return {
+    descriptor,
     configuration,
     displayName,
     enabled,
