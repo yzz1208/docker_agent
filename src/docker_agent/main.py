@@ -10,6 +10,7 @@ from docker_agent.agent.configuration import (
     AgentDisabledError,
     require_enabled,
     resolve_docker_support_configuration,
+    resolve_docker_support_settings,
 )
 from docker_agent.agent.router import AgentRoutingError
 from docker_agent.agent.service import DockerSupportAgent
@@ -205,6 +206,14 @@ def create_agent_configuration_endpoint(
     """Create a product-facing agent configuration."""
 
     try:
+        if request.agent_type.strip() == "docker_support":
+            resolve_docker_support_settings(
+                get_settings(),
+                model_settings=request.model_settings,
+                retrieval_settings=request.retrieval_settings,
+                runtime_settings=request.runtime_settings,
+            )
+
         record = create_agent_configuration(
             get_persistence_engine(),
             agent_type=request.agent_type,
@@ -248,6 +257,30 @@ def update_agent_configuration_endpoint(
     """Partially update persisted agent preferences."""
 
     try:
+        if agent_type.strip() == "docker_support":
+            current = get_agent_configuration(
+                get_persistence_engine(),
+                agent_type,
+            )
+            resolve_docker_support_settings(
+                get_settings(),
+                model_settings=(
+                    request.model_settings
+                    if request.model_settings is not None
+                    else current.model_settings
+                ),
+                retrieval_settings=(
+                    request.retrieval_settings
+                    if request.retrieval_settings is not None
+                    else current.retrieval_settings
+                ),
+                runtime_settings=(
+                    request.runtime_settings
+                    if request.runtime_settings is not None
+                    else current.runtime_settings
+                ),
+            )
+
         record = update_agent_configuration(
             get_persistence_engine(),
             agent_type,
