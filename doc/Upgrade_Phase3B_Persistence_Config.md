@@ -731,19 +731,116 @@ Step 9 tests cover:
 - `max_tokens` in the outbound model request;
 - invalid configuration API writes are rejected before persistence.
 
-## Next
+## Step 10 — Effective Configuration API
 
-Step 10 will expose an **effective configuration** read endpoint for the settings UI.
-
-The settings page should be able to distinguish:
+The settings backend now exposes a safe runtime view:
 
 ~~~text
-persisted preference
-environment/default value
-effective runtime value
-editable vs secure/non-editable field
+GET /agent-configurations/{agent_type}/effective
 ~~~
 
-without ever receiving secret values such as API keys.
+The first effective resolver is available for:
 
-After that, Phase 3B can move toward closeout and the frontend shell.
+~~~text
+docker_support
+~~~
+
+The endpoint works even when no persisted Docker Support configuration exists. In that
+case it returns environment/default-backed runtime values so a settings page can render
+the full configuration surface before the user saves any preference.
+
+### Per-field contract
+
+Editable model/retrieval/runtime fields expose:
+
+~~~text
+persisted_value
+base_value
+effective_value
+source
+editable
+secure
+configured
+~~~
+
+The source field is one of:
+
+~~~text
+persisted
+environment
+default
+~~~
+
+This lets the UI explain whether a runtime value comes from a saved product preference or
+from the secure application Settings baseline.
+
+### Secure and environment-owned fields
+
+Environment-owned runtime infrastructure is returned under:
+
+~~~text
+environment_settings
+~~~
+
+Visible non-editable fields include examples such as:
+
+~~~text
+model_provider
+embedding_model
+rerank_model
+tool_mode
+~~~
+
+Sensitive values are never returned. The following fields are represented only by source
+metadata and a configured flag:
+
+~~~text
+model_api_key
+model_base_url
+database_url
+~~~
+
+Their base_value and effective_value are always null in the API response.
+
+### Disabled agents
+
+The effective configuration endpoint still returns HTTP 200 for a persisted
+`enabled = false` configuration. This is deliberate: a settings page must be able to inspect
+and re-enable a disabled agent.
+
+Actual new agent construction remains blocked by `get_agent()` through `require_enabled()`.
+
+### Shared field mapping
+
+The Docker Support allowlist now exposes the preference-to-Settings field mapping used by
+both runtime validation and the effective configuration serializer. This reduces the risk
+that the settings UI documents a preference that the runtime does not actually consume.
+
+### Targeted coverage
+
+Step 10 tests cover:
+
+- no persisted record: environment/default effective view;
+- persisted model/retrieval/runtime overrides;
+- disabled configuration remains inspectable;
+- secret values are never serialized;
+- visible environment-owned runtime fields are marked non-editable;
+- unsupported agent types return HTTP 400.
+
+## Next
+
+Phase 3B now has the persistence/configuration backend foundation required by the product
+shell:
+
+~~~text
+persistent conversations
+persistent messages
+execution history
+conversation CRUD
+agent configuration persistence
+effective runtime configuration
+secret-safe settings metadata
+~~~
+
+The next task is Phase 3B closeout: run the full regression suite, record the final backend
+contract, and define the frontend-shell handoff before starting UI implementation.
