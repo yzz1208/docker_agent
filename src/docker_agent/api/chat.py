@@ -128,7 +128,7 @@ def build_chat_response(
     session_active: bool,
     result: AgentTurnProtocol,
     *,
-    agent_type: str,
+    agent_type: str = "docker_support",
     conversation_id: str | None = None,
 ) -> ChatResponse:
     """Serialize an agent turn without exposing raw runtime output."""
