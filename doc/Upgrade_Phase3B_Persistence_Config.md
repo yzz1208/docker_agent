@@ -429,3 +429,94 @@ updated_at
 ~~~
 
 Secrets such as API keys will not be stored in the general JSON configuration payload.
+
+
+## Step 7 — Agent Configuration Persistence
+
+The product persistence layer now includes:
+
+~~~text
+agent_configurations
+~~~
+
+The first configuration contract is intentionally one base configuration per `agent_type`.
+
+Stored fields:
+
+~~~text
+agent_type
+display_name
+enabled
+model_settings
+retrieval_settings
+runtime_settings
+created_at
+updated_at
+~~~
+
+The three settings groups are separated so future UI sections can map cleanly to product
+controls instead of exposing one unstructured settings blob.
+
+### Secret boundary
+
+General agent configuration is not a secret store.
+
+Nested configuration payloads are recursively checked and reject fields such as:
+
+~~~text
+api_key
+token
+access_token
+refresh_token
+password
+client_secret
+private_key
+credentials
+~~~
+
+Normal model controls such as `max_tokens` and `token_budget` remain valid because the
+guard matches secret field names rather than arbitrary substrings.
+
+Provider credentials continue to come from environment variables or a future dedicated
+secret provider.
+
+### Repository operations
+
+~~~text
+create_agent_configuration
+get_agent_configuration
+list_agent_configurations
+update_agent_configuration
+~~~
+
+Configuration records are immutable product DTOs and JSON settings are deep-copied at the
+repository boundary so caller-side mutation cannot silently change stored values.
+
+### Targeted coverage
+
+Step 7 tests cover:
+
+- create/get round trip;
+- multiple agent types;
+- display-name ordering;
+- partial update semantics;
+- enabled flag;
+- nested secret rejection;
+- normal token-related model settings;
+- input settings copy isolation;
+- duplicate configuration rejection;
+- unknown configuration handling.
+
+## Next
+
+Step 8 will expose configuration APIs suitable for a settings page:
+
+~~~text
+GET   /agent-configurations
+GET   /agent-configurations/{agent_type}
+POST  /agent-configurations
+PATCH /agent-configurations/{agent_type}
+~~~
+
+The initial API will manage persisted product preferences only. It will not return or
+accept provider API keys.
