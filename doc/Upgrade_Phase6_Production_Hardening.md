@@ -426,6 +426,8 @@ postgres
    ↓ health
 migrate
    ↓ completed successfully
+rag-schema
+   ↓ completed successfully
 backend
    ↓ /health/ready
 web/nginx
@@ -445,8 +447,12 @@ migrate
     alembic upgrade head
     one-shot job
 
+rag-schema
+    idempotently creates pgvector/document_chunks schema
+    never clears or re-indexes chunks
+
 backend
-    waits for migration completion
+    waits for RAG schema bootstrap
     no host port by default
     readiness healthcheck
 
@@ -495,6 +501,32 @@ A persistent named volume is mounted at:
 and both embedding/reranker cache paths are overridden to this Linux-safe location.
 
 This avoids accidentally propagating development Windows paths into the container.
+
+### RAG schema vs knowledge indexing
+
+The production startup chain guarantees that the pgvector extension and
+`document_chunks` table exist before FastAPI starts.
+
+It does **not** automatically run:
+
+~~~text
+index_chunks.py --reset
+~~~
+
+or download/re-embed the Docker documentation corpus.
+
+This separation is intentional:
+
+~~~text
+service startup
+    = schema readiness
+
+knowledge provisioning
+    = explicit indexing workflow
+~~~
+
+Existing indexed chunks are preserved. A fresh production database starts with an empty
+knowledge table until the indexing workflow is run deliberately.
 
 ### Container topology tests
 
