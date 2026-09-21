@@ -108,7 +108,6 @@ class AgentExecution(PersistenceBase):
     )
 
 
-
 class AgentRun(PersistenceBase):
     __tablename__ = "agent_runs"
 
@@ -120,7 +119,11 @@ class AgentRun(PersistenceBase):
     )
     agent_type: Mapped[str] = mapped_column(String(64), index=True)
     status: Mapped[str] = mapped_column(String(16), index=True)
-    route: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    route: Mapped[str | None] = mapped_column(
+        String(32),
+        nullable=True,
+        index=True,
+    )
     use_docs: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     planned_workers: Mapped[list[str]] = mapped_column(JSON, default=list)
     completed_workers: Mapped[list[str]] = mapped_column(JSON, default=list)
