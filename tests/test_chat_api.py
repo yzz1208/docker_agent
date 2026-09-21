@@ -385,7 +385,6 @@ def test_chat_endpoint_rejects_unregistered_agent_without_creating_conversation(
     assert list_conversations(engine) == ()
 
 
-
 def test_delete_chat_session_routes_reset_by_agent_type(
     monkeypatch,
 ) -> None:
