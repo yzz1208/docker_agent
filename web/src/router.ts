@@ -2,6 +2,7 @@ import { createRouter, createWebHistory } from "vue-router";
 
 import ChatView from "./views/ChatView.vue";
 import SettingsView from "./views/SettingsView.vue";
+import NotFoundView from "./views/NotFoundView.vue";
 
 const router = createRouter({
   history: createWebHistory(),
@@ -15,6 +16,11 @@ const router = createRouter({
       path: "/settings",
       name: "settings",
       component: SettingsView,
+    },
+    {
+      path: "/:pathMatch(.*)*",
+      name: "not-found",
+      component: NotFoundView,
     },
   ],
 });
