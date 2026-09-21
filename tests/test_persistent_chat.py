@@ -5,7 +5,11 @@ from docker_agent.agent.answer import AgentAnswer
 from docker_agent.agent.router import AgentRouteDecision
 from docker_agent.api.chat import ChatSessionManager
 from docker_agent.graph.service import LangGraphAgentTurnResult
-from docker_agent.observability import metrics
+from docker_agent.observability import (
+    correlation_context,
+    current_correlation,
+    metrics,
+)
 from docker_agent.multi_agent.execution import WorkerExecutionRecord
 from docker_agent.multi_agent.supervisor import SupervisorPlan
 from docker_agent.persistence import (
@@ -423,3 +427,30 @@ def test_persistent_chat_records_failure_metrics() -> None:
         'docker_agent_run_failures_total{error_type="RuntimeError"} 1'
         in output
     )
+
+
+
+def test_agent_handle_inherits_request_run_and_conversation_correlation() -> None:
+    observed = []
+
+    class CorrelationCaptureAgent:
+        def handle(self, question: str) -> LangGraphAgentTurnResult:
+            observed.append(current_correlation())
+            return ImmediateAnswerAgent().handle(question)
+
+    engine = _engine()
+    coordinator = PersistentChatCoordinator(
+        engine=engine,
+        sessions=ChatSessionManager(
+            agent_factory=CorrelationCaptureAgent,
+        ),
+    )
+
+    with correlation_context(request_id="request-correlation"):
+        turn = coordinator.chat(message="Docker volume 是什么？")
+
+    assert len(observed) == 1
+    correlation = observed[0]
+    assert correlation.request_id == "request-correlation"
+    assert correlation.run_id == turn.run.id
+    assert correlation.conversation_id == turn.conversation.id
