@@ -22,6 +22,7 @@ describe("API client", () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(
         JSON.stringify({
+          agent_type: "docker_support",
           conversation_id: "conversation-1",
           session_id: "session-1",
           session_active: true,
@@ -52,8 +53,48 @@ describe("API client", () => {
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(JSON.parse(String(init.body))).toEqual({
       message: "It failed",
+      agent_type: null,
       conversation_id: "conversation-1",
       session_id: "session-1",
+    });
+  });
+
+  it("serializes an explicitly selected Agent for a new chat", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          agent_type: "future_agent",
+          conversation_id: "conversation-2",
+          session_id: "session-2",
+          session_active: false,
+          route: "docs_only",
+          reason: "Handled by future Agent",
+          use_docs: true,
+          clarification: null,
+          answer: "Done",
+          runtime_sources: [],
+          doc_sources: [],
+          execution: null,
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await sendChat({
+      message: "Hello",
+      agentType: "future_agent",
+    });
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(JSON.parse(String(init.body))).toEqual({
+      message: "Hello",
+      agent_type: "future_agent",
+      conversation_id: null,
+      session_id: null,
     });
   });
 
