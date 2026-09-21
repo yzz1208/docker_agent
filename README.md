@@ -15,7 +15,7 @@
 - Upgrade Phase 2B：Runtime Loop LangGraph Migration ✅
 - Upgrade Phase 3A：Role Separation / Multi-Agent Architecture ✅
 - Upgrade Phase 3B：Persistence + Agent Configuration + Effective Config API ✅
-- Upgrade Phase 4：Vue 3 Web Product Shell（Step 1 进行中）
+- Upgrade Phase 4：Vue 3 Web Product Shell（Step 1–2 ✅，Step 3 设置编辑下一步）
 
 ## 本地环境
 
@@ -160,5 +160,6 @@ npm run dev
 
 ```powershell
 npm run typecheck
+npm test
 npm run build
 ```
