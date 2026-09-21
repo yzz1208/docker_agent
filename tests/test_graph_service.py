@@ -229,6 +229,7 @@ def test_detailed_graph_turn_remains_chat_response_compatible() -> None:
         result,
     )
 
+    assert response.agent_type == "docker_support"
     assert response.route == "runtime_tools"
     assert response.answer == "api-prod 当前使用 96MiB 内存。[R1]"
     assert response.runtime_sources[0].tool == "docker_stats"
