@@ -256,3 +256,41 @@ for later:
 - debugging and audit views.
 
 Raw evidence continues to live only in the existing canonical state/context structures.
+
+
+## Phase 3A Step 6 — Stable Internal Turn Result
+
+The LangGraph service now returns a richer internal result:
+
+~~~text
+LangGraphAgentTurnResult
+~~~
+
+It keeps the legacy fields:
+
+~~~text
+decision
+answer
+runtime_trace
+~~~
+
+and adds:
+
+~~~text
+supervisor_plan
+worker_trace
+~~~
+
+Because it extends the existing dynamic turn result contract, current conversation handling
+and ChatResponse serialization remain compatible.
+
+This creates a stable boundary for future product work:
+
+~~~text
+GraphState
+  -> internal LangGraphAgentTurnResult
+  -> API / persistence / frontend DTOs
+~~~
+
+Future public APIs should depend on the turn result contract rather than reading GraphState
+directly.
