@@ -380,9 +380,130 @@ DOCKER_SUPPORT_DESCRIPTOR = AgentDescriptor(
 )
 
 
+INFRASTRUCTURE_TROUBLESHOOTER_DESCRIPTOR = AgentDescriptor(
+    agent_type="infrastructure_troubleshooter",
+    display_name="Infrastructure Troubleshooter",
+    description=(
+        "Service incident triage Agent that reasons from user-provided "
+        "observations without claiming live infrastructure access."
+    ),
+    capabilities=(
+        "chat",
+        "incident_triage",
+        "hypothesis_generation",
+        "next_step_planning",
+    ),
+    knowledge_sources=("embedded_incident_playbook",),
+    toolsets=(),
+    worker_roles=(
+        "triage",
+        "diagnosis",
+    ),
+    configuration_schema=(
+        ConfigurationGroupDescriptor(
+            key="model_settings",
+            label="Model",
+            fields=(
+                ConfigurationFieldDescriptor(
+                    key="model_name",
+                    settings_name="model_name",
+                    label="Model name",
+                    description=(
+                        "OpenAI-compatible model identifier used by the Agent."
+                    ),
+                    kind="string",
+                ),
+                ConfigurationFieldDescriptor(
+                    key="temperature",
+                    settings_name="model_temperature",
+                    label="Temperature",
+                    description=(
+                        "Sampling temperature for incident diagnosis."
+                    ),
+                    kind="number",
+                    minimum=0,
+                    maximum=2,
+                ),
+                ConfigurationFieldDescriptor(
+                    key="max_tokens",
+                    settings_name="model_max_tokens",
+                    label="Max tokens",
+                    description=(
+                        "Maximum generated tokens when the provider supports it."
+                    ),
+                    kind="integer",
+                    minimum=1,
+                ),
+                ConfigurationFieldDescriptor(
+                    key="timeout_seconds",
+                    settings_name="model_timeout_seconds",
+                    label="Model timeout",
+                    description=(
+                        "Maximum seconds allowed for one model request."
+                    ),
+                    kind="number",
+                    minimum=0.001,
+                ),
+                ConfigurationFieldDescriptor(
+                    key="max_retries",
+                    settings_name="model_max_retries",
+                    label="Model retries",
+                    description=(
+                        "Retry attempts after a retryable model failure."
+                    ),
+                    kind="integer",
+                    minimum=0,
+                ),
+                ConfigurationFieldDescriptor(
+                    key="retry_backoff_seconds",
+                    settings_name="model_retry_backoff_seconds",
+                    label="Retry backoff",
+                    description="Delay between model retries in seconds.",
+                    kind="number",
+                    minimum=0,
+                ),
+            ),
+        ),
+        ConfigurationGroupDescriptor(
+            key="runtime_settings",
+            label="Triage",
+            fields=(
+                ConfigurationFieldDescriptor(
+                    key="max_hypotheses",
+                    settings_name="incident_max_hypotheses",
+                    label="Max hypotheses",
+                    description=(
+                        "Maximum plausible hypotheses included in one triage."
+                    ),
+                    kind="integer",
+                    minimum=1,
+                    maximum=10,
+                ),
+                ConfigurationFieldDescriptor(
+                    key="max_next_steps",
+                    settings_name="incident_max_next_steps",
+                    label="Max next checks",
+                    description=(
+                        "Maximum follow-up checks recommended per triage."
+                    ),
+                    kind="integer",
+                    minimum=1,
+                    maximum=20,
+                ),
+            ),
+        ),
+    ),
+)
+
+
 def build_agent_registry() -> AgentRegistry:
     """Build the default runtime Agent registry."""
 
-    return AgentRegistry((DOCKER_SUPPORT_DESCRIPTOR,))
+    return AgentRegistry(
+        (
+            DOCKER_SUPPORT_DESCRIPTOR,
+            INFRASTRUCTURE_TROUBLESHOOTER_DESCRIPTOR,
+        )
+    )
 
 
