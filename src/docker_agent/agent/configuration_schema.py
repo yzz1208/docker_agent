@@ -46,6 +46,54 @@ class ConfigurationRuleDescriptor:
     message: str
 
 
+def validate_configuration_schema(
+    *,
+    schema: tuple[ConfigurationGroupDescriptor, ...],
+    rules: tuple[ConfigurationRuleDescriptor, ...],
+) -> None:
+    group_keys = [group.key for group in schema]
+    if len(set(group_keys)) != len(group_keys):
+        raise ConfigurationSchemaError(
+            "configuration schema contains duplicate groups"
+        )
+
+    field_keys_by_group: dict[str, set[str]] = {}
+    for group in schema:
+        field_keys = [field.key for field in group.fields]
+        if len(set(field_keys)) != len(field_keys):
+            raise ConfigurationSchemaError(
+                f"{group.key} contains duplicate fields"
+            )
+        field_keys_by_group[group.key] = set(field_keys)
+
+    for rule in rules:
+        if rule.group not in field_keys_by_group:
+            raise ConfigurationSchemaError(
+                f"configuration rule references unknown group "
+                f"{rule.group!r}"
+            )
+
+        field_keys = field_keys_by_group[rule.group]
+        missing = [
+            field
+            for field in (*rule.fields, rule.target_field)
+            if field not in field_keys
+        ]
+        if missing:
+            raise ConfigurationSchemaError(
+                "configuration rule references unknown fields: "
+                + ", ".join(sorted(set(missing)))
+            )
+
+        if rule.kind == "less_equal" and len(rule.fields) != 2:
+            raise ConfigurationSchemaError(
+                "less_equal rule requires exactly two fields"
+            )
+        if rule.kind == "not_all_zero" and not rule.fields:
+            raise ConfigurationSchemaError(
+                "not_all_zero rule requires at least one field"
+            )
+
 def resolve_settings_from_schema(
     base: Settings,
     *,
