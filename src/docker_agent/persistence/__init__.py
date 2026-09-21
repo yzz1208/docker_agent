@@ -20,19 +20,6 @@ from docker_agent.persistence.chat import (
     PersistentChatCoordinator,
     PersistentChatTurn,
 )
-from docker_agent.persistence.telemetry import (
-    AgentRunNotFound,
-    AgentRunRecord,
-    AgentRunStateError,
-    AgentRunSummary,
-    create_agent_run,
-    finalize_agent_run_failure,
-    finalize_agent_run_success,
-    get_agent_run,
-    list_agent_runs,
-    safe_error_message,
-    summarize_agent_runs,
-)
 from docker_agent.persistence.store import (
     ConversationNotFound,
     ConversationRecord,
@@ -49,6 +36,19 @@ from docker_agent.persistence.store import (
     load_conversation,
     rename_conversation,
     save_execution,
+)
+from docker_agent.persistence.telemetry import (
+    AgentRunNotFound,
+    AgentRunRecord,
+    AgentRunStateError,
+    AgentRunSummary,
+    create_agent_run,
+    finalize_agent_run_failure,
+    finalize_agent_run_success,
+    get_agent_run,
+    list_agent_runs,
+    safe_error_message,
+    summarize_agent_runs,
 )
 
 __all__ = [
