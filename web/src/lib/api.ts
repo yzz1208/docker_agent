@@ -5,7 +5,9 @@ import type {
   ChatResponse,
   ConversationDetail,
   ConversationSummary,
+  DatabaseHealth,
   EffectiveAgentConfiguration,
+  SystemHealth,
 } from "./types";
 
 export class ApiError extends Error {
@@ -163,4 +165,13 @@ export function updateAgentConfiguration(
       body: jsonBody(body),
     },
   );
+}
+
+
+export function getSystemHealth(): Promise<SystemHealth> {
+  return request<SystemHealth>("/health");
+}
+
+export function getDatabaseHealth(): Promise<DatabaseHealth> {
+  return request<DatabaseHealth>("/health/db");
 }
