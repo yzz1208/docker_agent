@@ -84,6 +84,15 @@ assert(
 );
 console.log("✓ Operations summary");
 
+const evaluations = await request(
+  "/operations/evaluations?limit=1&offset=0",
+);
+assert(
+  Array.isArray(evaluations),
+  "Evaluation history did not return an array.",
+);
+console.log("✓ Evaluation history");
+
 const prometheus = await request("/metrics");
 assert(
   typeof prometheus === "string",
