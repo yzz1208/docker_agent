@@ -248,8 +248,6 @@ def _parse_value(
 def _minimum_message(minimum: float) -> str:
     if minimum == 0:
         return "non-negative"
-    if minimum > 0:
-        return "positive"
     return f"at least {minimum:g}"
 
 
