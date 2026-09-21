@@ -7,6 +7,7 @@ from docker_agent.agent.dynamic_workflow import DynamicRuntimeStep
 from docker_agent.agent.evidence import RuntimeEvidenceContext
 from docker_agent.agent.router import AgentRouteDecision
 from docker_agent.core.state import AgentState
+from docker_agent.multi_agent.supervisor import SupervisorPlan, WorkerRole
 from docker_agent.rag.context import RagContext
 
 
@@ -19,6 +20,9 @@ class GraphState(TypedDict):
 
     agent_state: AgentState
     decision: AgentRouteDecision | None
+    supervisor_plan: SupervisorPlan | None
+    worker_index: int
+    completed_workers: tuple[WorkerRole, ...]
     docs_context: RagContext | None
     runtime_context: RuntimeEvidenceContext | None
     runtime_trace: tuple[DynamicRuntimeStep, ...]
