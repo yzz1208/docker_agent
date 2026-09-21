@@ -83,7 +83,7 @@ def test_production_preflight_hides_invalid_input_values(
 
 def test_prometheus_example_scrapes_internal_backend_metrics() -> None:
     config = yaml.safe_load(
-        (ROOT / "deploy/prometheus.yml").read_text(
+        (ROOT / "docker/prometheus/prometheus.yml").read_text(
             encoding="utf-8"
         )
     )
@@ -97,7 +97,7 @@ def test_prometheus_example_scrapes_internal_backend_metrics() -> None:
     ]
 
 
-def test_production_smoke_checks_spa_readiness_and_metrics() -> None:
+def test_production_smoke_checks_spa_readiness_and_private_metrics() -> None:
     smoke = (ROOT / "web/scripts/production-smoke.mjs").read_text(
         encoding="utf-8"
     )
@@ -105,20 +105,19 @@ def test_production_smoke_checks_spa_readiness_and_metrics() -> None:
     assert '["/", "/operations", "/settings"]' in smoke
     assert "/health/ready" in smoke
     assert "/metrics" in smoke
-    assert "docker_agent_run_duration_seconds" in smoke
-
+    assert "status === 404" in smoke
 
 
 def test_deployment_runbook_covers_backup_rollback_and_restore() -> None:
-    runbook = (ROOT / "doc/Production_Deployment_Runbook.md").read_text(
+    runbook = (ROOT / "doc/Production_Runbook.md").read_text(
         encoding="utf-8"
     )
 
     assert "production_preflight.py" in runbook
     assert "pg_dump" in runbook
-    assert "alembic downgrade <target_revision>" in runbook
-    assert "Restore from logical backup" in runbook
-    assert "smoke:production" in runbook
+    assert "alembic downgrade -1" in runbook
+    assert "## 9. Database Restore" in runbook
+    assert "Final Production Smoke" in runbook
     assert "Evaluation Regression Gate" in runbook
     assert "down -v" in runbook
 
