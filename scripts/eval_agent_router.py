@@ -47,6 +47,12 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Persist this evaluation run and per-case results to PostgreSQL.",
     )
+    parser.add_argument(
+        "--summary-output",
+        type=Path,
+        default=None,
+        help="Optionally write the aggregate summary JSON to this path.",
+    )
     return parser.parse_args()
 
 
@@ -362,6 +368,13 @@ def main() -> None:
             aggregate_metrics=summary,
         )
         summary["evaluation_run_id"] = evaluation_run.id
+
+    if args.summary_output is not None:
+        args.summary_output.parent.mkdir(parents=True, exist_ok=True)
+        args.summary_output.write_text(
+            json.dumps(summary, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
 
     print("\nSummary")
     print(json.dumps(summary, ensure_ascii=False, indent=2))
