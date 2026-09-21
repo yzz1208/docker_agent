@@ -17,7 +17,7 @@
 - Upgrade Phase 3B：Persistence + Agent Configuration + Effective Config API ✅
 - Upgrade Phase 4：Vue 3 Web Product Shell ✅（UI/交互细节后续优化）
 - Upgrade Phase 5：Observability + Evaluation Ops ✅
-- Upgrade Phase 6：Production / Deployment Hardening（Step 1–6 已实现，剩余 Deployment / Monitoring Closeout）
+- Upgrade Phase 6：Production / Deployment Hardening ✅（Step 1–7 已实现，待最终 production gate）
 
 ## 本地环境
 
@@ -332,3 +332,35 @@ case set incomplete 会让工作流失败。
 
 Evaluation DB 必须已经迁移到 Alembic head；评测脚本不会再通过 `create_all()` 修改长期数据库
 schema。
+
+
+## Production Runbook & Monitoring
+
+完整生产运维流程见：
+
+~~~text
+doc/Production_Runbook.md
+~~~
+
+可选 Prometheus monitoring profile：
+
+~~~powershell
+docker compose --env-file .env.production -f compose.prod.yaml --profile monitoring up -d
+~~~
+
+默认 Prometheus：
+
+~~~text
+http://127.0.0.1:9090
+~~~
+
+Prometheus 通过 Compose 内部网络抓取：
+
+~~~text
+backend:8000/metrics
+~~~
+
+公共 Nginx 不再代理 `/metrics`。
+
+Production runbook 同时包含 PostgreSQL backup/restore、Alembic upgrade/downgrade、安全
+rollback、最终 smoke 和故障检查流程。
