@@ -496,6 +496,20 @@ def effective_agent_configuration(
     )
 
 
+def _configuration_agent_type(agent_type: str) -> str:
+    try:
+        return agent_registry.get(agent_type).agent_type
+    except AgentNotRegistered:
+        return agent_type
+
+
+def _invalidate_registered_agent_runtime(agent_type: str) -> None:
+    if agent_type not in runtime_agent_factory.registered_types():
+        return
+    runtime_agent_factory.invalidate(agent_type)
+    get_agent.cache_clear()
+
+
 @app.get(
     "/agent-configurations/{agent_type}",
     response_model=AgentConfigurationResponse,
@@ -509,7 +523,7 @@ def agent_configuration_detail(
     try:
         record = get_agent_configuration(
             get_persistence_engine(),
-            agent_type,
+            _configuration_agent_type(agent_type),
         )
     except AgentConfigurationNotFound as exc:
         raise HTTPException(
@@ -582,7 +596,9 @@ def create_agent_configuration_endpoint(
 
         record = create_agent_configuration(
             get_persistence_engine(),
-            agent_type=request.agent_type,
+            agent_type=_configuration_agent_type(
+                request.agent_type
+            ),
             display_name=request.display_name,
             enabled=request.enabled,
             model_settings=request.model_settings,
@@ -605,11 +621,7 @@ def create_agent_configuration_endpoint(
             detail=str(exc),
         ) from exc
 
-    if record.agent_type == DOCKER_SUPPORT_DESCRIPTOR.agent_type:
-        runtime_agent_factory.invalidate(
-            DOCKER_SUPPORT_DESCRIPTOR.agent_type
-        )
-        get_agent.cache_clear()
+    _invalidate_registered_agent_runtime(record.agent_type)
 
     return build_agent_configuration_response(record)
 
@@ -640,7 +652,7 @@ def update_agent_configuration_endpoint(
         if descriptor is not None:
             current = get_agent_configuration(
                 get_persistence_engine(),
-                agent_type,
+                descriptor.agent_type,
             )
             _validate_registered_agent_preferences(
                 agent_type=descriptor.agent_type,
@@ -663,7 +675,7 @@ def update_agent_configuration_endpoint(
 
         record = update_agent_configuration(
             get_persistence_engine(),
-            agent_type,
+            _configuration_agent_type(agent_type),
             display_name=request.display_name,
             enabled=request.enabled,
             model_settings=request.model_settings,
@@ -686,11 +698,7 @@ def update_agent_configuration_endpoint(
             detail=str(exc),
         ) from exc
 
-    if record.agent_type == DOCKER_SUPPORT_DESCRIPTOR.agent_type:
-        runtime_agent_factory.invalidate(
-            DOCKER_SUPPORT_DESCRIPTOR.agent_type
-        )
-        get_agent.cache_clear()
+    _invalidate_registered_agent_runtime(record.agent_type)
 
     return build_agent_configuration_response(record)
 
