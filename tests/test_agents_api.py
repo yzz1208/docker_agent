@@ -59,3 +59,13 @@ def test_agent_detail_api_returns_404_for_unregistered_type() -> None:
     assert response.json()["detail"] == (
         "Agent type is not registered."
     )
+
+
+
+def test_agent_detail_api_rejects_malformed_type() -> None:
+    client = TestClient(app)
+
+    response = client.get("/agents/bad%20agent")
+
+    assert response.status_code == 400
+    assert "agent_type may contain only" in response.json()["detail"]
