@@ -5,12 +5,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from docker_agent.agent.configuration import (
-    EffectiveAgentConfiguration,
-)
-from docker_agent.agent.configuration_schema import (
-    ConfigurationGroupDescriptor,
-)
+from docker_agent.agent.configuration import EffectiveAgentConfiguration
+from docker_agent.agent.configuration_schema import ConfigurationGroupDescriptor
 from docker_agent.agent.registry import AgentDescriptor
 from docker_agent.config import Settings
 from docker_agent.persistence.agent_config import AgentConfigurationRecord
