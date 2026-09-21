@@ -17,6 +17,7 @@ def test_production_compose_orders_migration_before_backend() -> None:
     assert set(services) == {
         "postgres",
         "migrate",
+        "rag-schema",
         "backend",
         "web",
     }
@@ -29,7 +30,10 @@ def test_production_compose_orders_migration_before_backend() -> None:
     assert services["migrate"]["depends_on"]["postgres"] == {
         "condition": "service_healthy"
     }
-    assert services["backend"]["depends_on"]["migrate"] == {
+    assert services["rag-schema"]["depends_on"]["migrate"] == {
+        "condition": "service_completed_successfully"
+    }
+    assert services["backend"]["depends_on"]["rag-schema"] == {
         "condition": "service_completed_successfully"
     }
     assert services["web"]["depends_on"]["backend"] == {
@@ -102,3 +106,13 @@ def test_dockerignore_excludes_secrets_and_generated_artifacts() -> None:
     assert ".venv" in dockerignore
     assert "web/node_modules" in dockerignore
     assert "web/dist" in dockerignore
+
+
+
+def test_production_compose_bootstraps_rag_schema_without_resetting_chunks() -> None:
+    compose = yaml.safe_load(_read("compose.prod.yaml"))
+    command = " ".join(compose["services"]["rag-schema"]["command"])
+
+    assert "init_vector_store" in command
+    assert "clear_chunks" not in command
+    assert "--reset" not in command
