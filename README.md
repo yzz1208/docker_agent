@@ -15,7 +15,7 @@
 - Upgrade Phase 2B：Runtime Loop LangGraph Migration ✅
 - Upgrade Phase 3A：Role Separation / Multi-Agent Architecture ✅
 - Upgrade Phase 3B：Persistence + Agent Configuration + Effective Config API ✅
-- Upgrade Phase 4：Vue 3 Web Product Shell（Step 1–2 ✅，Step 3 已实现待本地门禁）
+- Upgrade Phase 4：Vue 3 Web Product Shell（Step 1–4 已实现，待最终本地 gate）
 
 ## 本地环境
 
@@ -162,4 +162,10 @@ npm run dev
 npm run typecheck
 npm test
 npm run build
+```
+
+后端与 PostgreSQL 启动后可运行只读集成检查：
+
+```powershell
+npm run smoke
 ```
