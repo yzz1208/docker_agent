@@ -502,7 +502,7 @@ Step 7 tests cover:
 - partial update semantics;
 - enabled flag;
 - nested secret rejection;
-- normal token-related model settings;
+- supported non-secret model settings such as `max_tokens`;
 - input settings copy isolation;
 - duplicate configuration rejection;
 - unknown configuration handling.
@@ -587,7 +587,7 @@ Step 8 tests cover:
 - nested secret rejection;
 - duplicate create conflict;
 - unknown configuration 404;
-- valid `max_tokens` and `token_budget` settings.
+- valid `max_tokens` and rejection of unsupported runtime fields.
 
 ## Next
 
@@ -606,3 +606,144 @@ effective Docker Support configuration
 
 Provider credentials will always come from the secure environment side. Persisted
 configuration will only override explicitly supported non-secret fields.
+
+
+## Step 9 — Effective Agent Configuration Resolver
+
+Persisted product preferences now affect real Docker Support Agent construction.
+
+The runtime merge is:
+
+~~~text
+secure environment Settings
+        +
+allowlisted persisted preferences
+        ↓
+EffectiveDockerSupportConfiguration
+        ↓
+LangGraphDockerSupportAgent
+~~~
+
+### Secure values remain environment-owned
+
+Persisted configuration cannot override:
+
+~~~text
+model_api_key
+model_base_url
+database_url
+embedding/reranker model infrastructure
+~~~
+
+The resolver only maps explicitly supported product preferences.
+
+### Supported Docker Support preferences
+
+Model:
+
+~~~text
+model_name
+temperature
+max_tokens
+timeout_seconds
+max_retries
+retry_backoff_seconds
+~~~
+
+Retrieval:
+
+~~~text
+top_k
+rrf_k
+dense_weight
+keyword_weight
+rerank_top_k
+context_max_chars
+~~~
+
+Runtime:
+
+~~~text
+max_steps
+tool_timeout_seconds
+logs_max_lines
+evidence_max_chars
+~~~
+
+Unknown Docker Support fields are rejected before persistence. This intentionally tightens
+the generic JSON storage contract: a field being non-secret does not mean the current
+runtime knows how to apply it.
+
+For example, `token_budget` is not secret, but it is currently unsupported and therefore
+returns HTTP 400 instead of being stored as a no-op preference.
+
+### Cross-field validation
+
+The resolver also validates effective combinations:
+
+~~~text
+rerank_top_k <= top_k
+dense_weight and keyword_weight cannot both be zero
+positive timeout/count/size values
+temperature in [0, 2]
+~~~
+
+PATCH validation happens before the repository update, so an invalid effective
+configuration does not partially overwrite the last working configuration.
+
+### Runtime application
+
+`get_agent()` now resolves the persisted `docker_support` record before constructing
+`LangGraphDockerSupportAgent`.
+
+If no persisted record exists, environment defaults are used exactly as before.
+
+If the persisted configuration has:
+
+~~~text
+enabled = false
+~~~
+
+new agent sessions are blocked.
+
+After successful POST/PATCH of the Docker Support configuration, the cached agent instance
+is cleared. The next new agent session therefore uses the updated settings. An already
+active clarification session keeps the agent instance it started with until that session
+finishes.
+
+### max_tokens
+
+`model_max_tokens` is now part of secure application Settings and
+`OpenAICompatibleChatClient` adds `max_tokens` to the outgoing request only when it is
+configured.
+
+### Targeted coverage
+
+Step 9 tests cover:
+
+- secure environment values cannot be overridden by persisted preferences;
+- model/retrieval/runtime preference mapping;
+- unsupported field rejection;
+- invalid rerank pool rejection;
+- disabled-agent behavior;
+- real `get_agent()` construction using persisted preferences;
+- Docker tool timeout/runtime-step overrides;
+- `max_tokens` in the outbound model request;
+- invalid configuration API writes are rejected before persistence.
+
+## Next
+
+Step 10 will expose an **effective configuration** read endpoint for the settings UI.
+
+The settings page should be able to distinguish:
+
+~~~text
+persisted preference
+environment/default value
+effective runtime value
+editable vs secure/non-editable field
+~~~
+
+without ever receiving secret values such as API keys.
+
+After that, Phase 3B can move toward closeout and the frontend shell.
