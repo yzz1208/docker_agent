@@ -24,12 +24,14 @@ from docker_agent.persistence.telemetry import (
     AgentRunNotFound,
     AgentRunRecord,
     AgentRunStateError,
+    AgentRunSummary,
     create_agent_run,
     finalize_agent_run_failure,
     finalize_agent_run_success,
     get_agent_run,
     list_agent_runs,
     safe_error_message,
+    summarize_agent_runs,
 )
 from docker_agent.persistence.store import (
     ConversationNotFound,
@@ -56,6 +58,7 @@ __all__ = [
     "AgentRunNotFound",
     "AgentRunRecord",
     "AgentRunStateError",
+    "AgentRunSummary",
     "ChatConversationMismatch",
     "ConversationAgentTypeMismatch",
     "ConversationNotFound",
@@ -86,6 +89,7 @@ __all__ = [
     "rename_conversation",
     "safe_error_message",
     "save_execution",
+    "summarize_agent_runs",
     "update_agent_configuration",
     "validate_agent_configuration_settings",
 ]
