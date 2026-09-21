@@ -15,6 +15,11 @@ class Settings(BaseSettings):
     database_url: str = (
         "postgresql+psycopg://postgres:postgres@localhost:5432/docker_agent"
     )
+    database_pool_size: int = 5
+    database_max_overflow: int = 10
+    database_pool_timeout_seconds: float = 30.0
+    database_pool_recycle_seconds: int = 1800
+    database_migration_config: str = "alembic.ini"
 
     model_provider: str = ""
     model_name: str = ""
