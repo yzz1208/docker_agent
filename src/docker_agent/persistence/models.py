@@ -10,6 +10,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    UniqueConstraint,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -142,5 +143,78 @@ class AgentRun(PersistenceBase):
     completed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
+        index=True,
+    )
+
+
+
+class EvaluationRun(PersistenceBase):
+    __tablename__ = "evaluation_runs"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    suite: Mapped[str] = mapped_column(String(64), index=True)
+    dataset_name: Mapped[str] = mapped_column(String(240))
+    dataset_version: Mapped[str] = mapped_column(String(128), index=True)
+    git_revision: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True,
+        index=True,
+    )
+    status: Mapped[str] = mapped_column(String(16), index=True)
+    config_snapshot: Mapped[dict[str, object]] = mapped_column(
+        JSON,
+        default=dict,
+    )
+    aggregate_metrics: Mapped[dict[str, object]] = mapped_column(
+        JSON,
+        default=dict,
+    )
+    case_count: Mapped[int] = mapped_column(Integer, default=0)
+    passed_count: Mapped[int] = mapped_column(Integer, default=0)
+    failed_count: Mapped[int] = mapped_column(Integer, default=0)
+    error_type: Mapped[str | None] = mapped_column(
+        String(128),
+        nullable=True,
+        index=True,
+    )
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utc_now,
+        index=True,
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        index=True,
+    )
+
+
+class EvaluationCaseResult(PersistenceBase):
+    __tablename__ = "evaluation_case_results"
+    __table_args__ = (
+        UniqueConstraint(
+            "evaluation_run_id",
+            "case_key",
+            name="uq_evaluation_case_run_key",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    evaluation_run_id: Mapped[str] = mapped_column(
+        String(32),
+        ForeignKey("evaluation_runs.id", ondelete="CASCADE"),
+        index=True,
+    )
+    case_key: Mapped[str] = mapped_column(String(240))
+    case_id: Mapped[str] = mapped_column(String(128), index=True)
+    phase: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    repeat: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    status: Mapped[str] = mapped_column(String(16), index=True)
+    metrics: Mapped[dict[str, object]] = mapped_column(JSON, default=dict)
+    details: Mapped[dict[str, object]] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utc_now,
         index=True,
     )
