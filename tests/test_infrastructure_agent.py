@@ -1,5 +1,6 @@
 from sqlalchemy import create_engine
 
+from docker_agent.agent.conversation import AgentConversation
 from docker_agent.agent.infrastructure import (
     InfrastructureTroubleshooterAgent,
 )
@@ -54,6 +55,45 @@ def test_infrastructure_agent_clarifies_vague_incident() -> None:
     assert result.supervisor_plan.workers == ()
     assert result.worker_trace == ()
     assert answer.user_prompts == []
+
+
+def test_infrastructure_agent_preserves_clarification_context() -> None:
+    router = SequenceModel(
+        [
+            (
+                '{"route":"clarify","reason":"missing symptom",'
+                '"clarification":"api 服务具体出现了什么异常？"}'
+            ),
+            (
+                '{"route":"triage","reason":"symptom supplied",'
+                '"clarification":null}'
+            ),
+        ]
+    )
+    answer = SequenceModel(
+        ["已知事实：api 服务持续 503。下一步检查依赖健康度。"]
+    )
+    conversation = AgentConversation(
+        InfrastructureTroubleshooterAgent(
+            settings=Settings(),
+            router_model=router,
+            answer_model=answer,
+        )
+    )
+
+    first = conversation.handle("api 服务有问题")
+
+    assert first.needs_clarification is True
+    assert conversation.state.pending_question == "api 服务有问题"
+
+    second = conversation.handle("从 10:20 开始持续返回 503")
+
+    assert second.needs_clarification is False
+    assert second.answer is not None
+    assert "503" in second.answer.answer
+    assert conversation.state.pending_question is None
+    assert "User clarification:" in router.user_prompts[1]
+    assert "持续返回 503" in router.user_prompts[1]
 
 
 def test_infrastructure_agent_triages_user_observations_without_tools() -> None:
