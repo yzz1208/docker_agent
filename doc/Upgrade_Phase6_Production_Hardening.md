@@ -195,6 +195,144 @@ Targets:
 - explicit startup failure when migrations are missing;
 - deterministic shutdown behavior.
 
+### Step 2 implementation status
+
+**IMPLEMENTED pending local gate**
+
+Database runtime ownership is now explicit.
+
+### Engine configuration
+
+The application database engine now uses:
+
+~~~text
+pool_pre_ping = true
+pool_size = DATABASE_POOL_SIZE
+max_overflow = DATABASE_MAX_OVERFLOW
+pool_timeout = DATABASE_POOL_TIMEOUT_SECONDS
+pool_recycle = DATABASE_POOL_RECYCLE_SECONDS
+~~~
+
+for non-SQLite databases.
+
+SQLite keeps its native pool behavior so isolated unit tests remain lightweight.
+
+Defaults:
+
+~~~text
+DATABASE_POOL_SIZE=5
+DATABASE_MAX_OVERFLOW=10
+DATABASE_POOL_TIMEOUT_SECONDS=30
+DATABASE_POOL_RECYCLE_SECONDS=1800
+DATABASE_MIGRATION_CONFIG=alembic.ini
+~~~
+
+Pool configuration is validated by Pydantic.
+
+### FastAPI lifespan ownership
+
+API startup now:
+
+~~~text
+create/get application engine
+        ↓
+SELECT 1
+        ↓
+read current Alembic revisions
+        ↓
+compare with migration heads
+        ↓
+refuse startup if schema is outdated
+        ↓
+serve traffic
+~~~
+
+Shutdown:
+
+~~~text
+clear coordinator/agent caches
+        ↓
+dispose SQLAlchemy engine
+        ↓
+clear engine cache
+~~~
+
+The API no longer waits for the first product request to discover a missing migration.
+
+### Health contract
+
+~~~text
+GET /health
+~~~
+
+remains pure liveness and has no database dependency.
+
+~~~text
+GET /health/db
+~~~
+
+checks connectivity using the application engine and does not expose raw SQLAlchemy/database
+exception details.
+
+~~~text
+GET /health/ready
+~~~
+
+checks both connectivity and migration state.
+
+Ready response:
+
+~~~json
+{
+  "status": "ok",
+  "database": "reachable",
+  "schema": "current",
+  "current_revisions": ["20260921_0001"],
+  "head_revisions": ["20260921_0001"]
+}
+~~~
+
+An outdated schema returns HTTP 503.
+
+The Web smoke test now verifies this readiness endpoint.
+
+### Step 2 coverage
+
+Tests cover:
+
+- PostgreSQL pool option wiring;
+- SQLite pool-option compatibility;
+- Alembic current-head readiness;
+- outdated-schema rejection;
+- readiness API current/outdated responses;
+- lifespan engine disposal;
+- API startup rejection when schema is outdated;
+- database-health error redaction.
+
+Focused Step 1 + Step 2 gate:
+
+~~~powershell
+uv run ruff check .
+uv run pytest -v tests/test_migrations.py tests/test_database_runtime.py tests/test_persistence_store.py tests/test_agent_configuration_persistence.py tests/test_agent_run_telemetry.py tests/test_evaluation_persistence.py
+~~~
+
+Live local check after the existing database was stamped to head:
+
+~~~powershell
+uv run alembic current
+uv run uvicorn docker_agent.main:app --reload
+~~~
+
+Then:
+
+~~~text
+GET /health
+GET /health/db
+GET /health/ready
+~~~
+
+should all return HTTP 200.
+
 ## Step 3 — Production Containers
 
 Add reproducible backend and frontend images:
