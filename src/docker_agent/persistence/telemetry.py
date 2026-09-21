@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
 from collections import Counter
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Literal
 from uuid import uuid4
@@ -194,8 +194,10 @@ def summarize_agent_runs(
     durations = sorted(
         int(row.duration_ms)
         for row in rows
-        if row.status in {"succeeded", "failed"}
-        and row.duration_ms is not None
+        if (
+            row.status in {"succeeded", "failed"}
+            and row.duration_ms is not None
+        )
     )
     routes = Counter(
         str(row.route)
