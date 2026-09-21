@@ -231,3 +231,77 @@ def test_app_lifespan_disposes_database_engine(
         assert engine.disposed is False
 
     assert engine.disposed is True
+
+
+
+def test_app_lifespan_rejects_outdated_database_schema(
+    monkeypatch,
+) -> None:
+    class FakeEngine:
+        disposed = False
+
+        def dispose(self) -> None:
+            self.disposed = True
+
+    engine = FakeEngine()
+
+    get_persistence_engine.cache_clear()
+    get_chat_coordinator.cache_clear()
+    get_agent.cache_clear()
+
+    monkeypatch.setattr(
+        "docker_agent.main.create_db_engine",
+        lambda **_kwargs: engine,
+    )
+
+    def reject_schema(_engine: object) -> None:
+        raise DatabaseSchemaNotReady("schema is outdated")
+
+    monkeypatch.setattr(
+        "docker_agent.main.require_database_ready",
+        reject_schema,
+    )
+
+    with pytest.raises(
+        DatabaseSchemaNotReady,
+        match="schema is outdated",
+    ):
+        with TestClient(app):
+            pass
+
+    assert engine.disposed is True
+
+
+def test_database_health_hides_database_exception_details(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        "docker_agent.main.get_persistence_engine",
+        lambda: object(),
+    )
+
+    def fail_check(_engine: object) -> bool:
+        from sqlalchemy.exc import OperationalError
+
+        raise OperationalError(
+            "SELECT 1",
+            {},
+            RuntimeError(
+                "postgresql://user:super-secret@database/internal"
+            ),
+        )
+
+    monkeypatch.setattr(
+        "docker_agent.main.check_database",
+        fail_check,
+    )
+    client = TestClient(app)
+
+    response = client.get("/health/db")
+
+    assert response.status_code == 503
+    assert response.json() == {
+        "status": "error",
+        "database": "unreachable",
+    }
+    assert "super-secret" not in response.text
