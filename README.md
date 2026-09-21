@@ -224,6 +224,8 @@ PostgreSQL
   ↓
 Alembic migration
   ↓
+RAG schema bootstrap
+  ↓
 FastAPI readiness
   ↓
 Nginx / Vue
@@ -240,3 +242,7 @@ Remove-Item Env:BACKEND_URL
 
 生产 Compose 默认不挂载 Docker socket，并默认使用 `TOOL_MODE=mock`。真实宿主机 Docker
 控制需要后续显式配置高权限部署模式。
+
+
+Production Compose 只会幂等创建 `document_chunks` / pgvector schema，不会自动清空或重新
+embedding 文档。全新生产数据库需要另行执行显式知识索引流程后，Docs RAG 才具备完整知识数据。
