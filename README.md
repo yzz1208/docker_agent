@@ -16,7 +16,7 @@
 - Upgrade Phase 3A：Role Separation / Multi-Agent Architecture ✅
 - Upgrade Phase 3B：Persistence + Agent Configuration + Effective Config API ✅
 - Upgrade Phase 4：Vue 3 Web Product Shell ✅（UI/交互细节后续优化）
-- Upgrade Phase 5：Observability + Evaluation Ops（Step 1–2 Run Telemetry + Operations API 已实现待本地 gate）
+- Upgrade Phase 5：Observability + Evaluation Ops（Step 1–3 Telemetry + Operations API + Structured Logs/Metrics 已实现待本地 gate）
 
 ## 本地环境
 
