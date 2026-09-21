@@ -2,7 +2,7 @@
 
 ## Status
 
-**Phase 4 — Web Product Shell: COMPLETE pending final local validation gate**
+**Phase 4 — Web Product Shell: COMPLETE**
 
 Phase 4 converts the Phase 3B product backend into a usable Vue web product while keeping
 frontend contracts aligned with the backend DTO boundary.
@@ -124,6 +124,10 @@ Phase 4 is considered complete when the final local gate confirms:
 - one manual browser pass confirms Chat and Settings render normally.
 
 ## Deliberately Deferred
+
+The current UI and interaction design is functionally complete but intentionally not treated
+as final visual polish. Layout refinement, micro-interactions, typography, component styling,
+and deeper UX polish can be revisited later without reopening the product-shell architecture.
 
 Phase 4 does not add:
 
