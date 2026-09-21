@@ -5,6 +5,7 @@ description = "A Docker technical support agent built with RAG, tool calling, an
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "alembic>=1.16.0,<2.0.0",
     "fastapi>=0.116.0,<1.0.0",
     "httpx>=0.28.0,<1.0.0",
     "langgraph>=1.2.11,<2.0.0",
