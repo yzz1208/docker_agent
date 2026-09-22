@@ -11,12 +11,19 @@ from docker_agent.agent.core_adapters import (
     rag_context_to_evidence_bundle,
     runtime_context_to_evidence_bundle,
 )
-from docker_agent.graph.runtime_loop import run_runtime_loop_graph
 from docker_agent.agent.evidence import RuntimeEvidenceContext
 from docker_agent.agent.router import route_question
 from docker_agent.core.state import AgentState
 from docker_agent.core.tool_result import from_docker_tool_result
+from docker_agent.graph.runtime_loop import run_runtime_loop_graph
 from docker_agent.graph.state import GraphState
+from docker_agent.multi_agent.execution import build_worker_execution_record
+from docker_agent.multi_agent.supervisor import WorkerRole, plan_workers
+from docker_agent.multi_agent.workers import (
+    DiagnosisWorker,
+    KnowledgeWorker,
+    RuntimeWorker,
+)
 from docker_agent.rag.context import RagContext
 from docker_agent.rag.llm import ChatModel
 from docker_agent.tools.docker_cli import DockerReadOnlyTools
@@ -24,6 +31,7 @@ from docker_agent.tools.docker_cli import DockerReadOnlyTools
 RouteNode = Callable[[GraphState], dict[str, object]]
 DocsRetriever = Callable[[str], RagContext]
 RouteEdge = Literal["docs", "runtime", "answer", "end"]
+SupervisorEdge = Literal["knowledge", "runtime", "diagnosis", "end"]
 
 
 def build_route_graph(router_model: ChatModel):
@@ -179,6 +187,10 @@ def _initial_graph_state(question: str) -> GraphState:
     return GraphState(
         agent_state=AgentState(question=question),
         decision=None,
+        supervisor_plan=None,
+        worker_index=0,
+        completed_workers=(),
+        worker_trace=(),
         docs_context=None,
         runtime_context=RuntimeEvidenceContext(
             text="",
@@ -194,6 +206,10 @@ def _coerce_graph_state(result: dict[str, object]) -> GraphState:
     return GraphState(
         agent_state=result["agent_state"],
         decision=result["decision"],
+        supervisor_plan=result["supervisor_plan"],
+        worker_index=result["worker_index"],
+        completed_workers=result["completed_workers"],
+        worker_trace=result["worker_trace"],
         docs_context=result["docs_context"],
         runtime_context=result["runtime_context"],
         runtime_trace=result["runtime_trace"],
@@ -356,11 +372,21 @@ def build_support_graph(
     max_steps: int = 4,
     evidence_max_chars: int = 8_000,
 ):
-    """Compile the Phase 2 Step 4 unified coarse-grained support graph."""
+    """Compile the unified support graph driven by a SupervisorPlan."""
+
+    knowledge_worker = KnowledgeWorker(docs_retriever)
+    runtime_worker = RuntimeWorker(
+        planner_model=planner_model,
+        docker_tools=docker_tools,
+        max_steps=max_steps,
+        evidence_max_chars=evidence_max_chars,
+    )
+    diagnosis_worker = DiagnosisWorker(answer_model)
 
     def route_node(state: GraphState) -> dict[str, object]:
         current = state["agent_state"]
         decision = route_question(current.question, router_model)
+        supervisor_plan = plan_workers(decision)
         updated = current.with_route(
             decision.route,
             container_ref=decision.container_ref,
@@ -369,135 +395,107 @@ def build_support_graph(
         return {
             "agent_state": updated,
             "decision": decision,
+            "supervisor_plan": supervisor_plan,
+            "worker_index": 0,
+            "completed_workers": (),
+            "worker_trace": (),
         }
 
-    def route_edge(state: GraphState) -> RouteEdge:
-        decision = state["decision"]
-        if decision is None:
-            raise ValueError("route decision is missing")
-        if decision.route == "clarify":
+    def supervisor_edge(state: GraphState) -> SupervisorEdge:
+        plan = state["supervisor_plan"]
+        if plan is None:
+            raise ValueError("supervisor plan is missing")
+
+        index = state["worker_index"]
+        if index < 0 or index > len(plan.workers):
+            raise ValueError("worker index is outside supervisor plan bounds")
+        if index == len(plan.workers):
             return "end"
-        if decision.route == "docs_only":
-            return "docs"
-        if decision.route == "runtime_tools":
-            return "runtime"
-        raise ValueError(f"unsupported route: {decision.route}")
+        return plan.workers[index]
+
+    def complete_worker(
+        state: GraphState,
+        role: WorkerRole,
+        updated_state: AgentState,
+    ) -> dict[str, object]:
+        plan = state["supervisor_plan"]
+        if plan is None:
+            raise ValueError("supervisor plan is missing")
+
+        index = state["worker_index"]
+        if index >= len(plan.workers) or plan.workers[index] != role:
+            raise ValueError(f"unexpected worker execution: {role}")
+
+        record = build_worker_execution_record(
+            index=index + 1,
+            role=role,
+            before=state["agent_state"],
+            after=updated_state,
+        )
+        return {
+            "worker_index": index + 1,
+            "completed_workers": (*state["completed_workers"], role),
+            "worker_trace": (*state["worker_trace"], record),
+        }
 
     def runtime_node(state: GraphState) -> dict[str, object]:
         current = state["agent_state"]
         decision = state["decision"]
         if decision is None:
             raise ValueError("route decision is missing")
-        if decision.route != "runtime_tools":
-            raise ValueError("runtime node requires runtime_tools route")
 
-        dynamic = run_runtime_loop_graph(
-            question=current.question,
-            route=decision,
-            planner_model=planner_model,
-            docker_tools=docker_tools,
-            max_steps=max_steps,
-            evidence_max_chars=evidence_max_chars,
-        )
-
-        updated = current
-        for result in dynamic.results:
-            updated = updated.append_tool_result(
-                from_docker_tool_result(result)
-            )
-        for item in runtime_context_to_evidence_bundle(dynamic.evidence).items:
-            updated = updated.append_evidence(item)
-        for step in dynamic_trace_to_agent_steps(dynamic.trace):
-            updated = updated.append_runtime_step(step)
-
+        result = runtime_worker.run(current, decision)
         return {
-            "agent_state": updated,
-            "runtime_context": dynamic.evidence,
-            "runtime_trace": dynamic.trace,
+            "agent_state": result.state,
+            "runtime_context": result.context,
+            "runtime_trace": result.trace,
+            **complete_worker(state, "runtime", result.state),
         }
 
-    def after_runtime_edge(state: GraphState) -> RouteEdge:
-        decision = state["decision"]
-        if decision is None:
-            raise ValueError("route decision is missing")
-        return "docs" if decision.use_docs else "answer"
-
-    def docs_node(state: GraphState) -> dict[str, object]:
-        current = state["agent_state"]
-        docs_context = docs_retriever(current.question)
-        docs_bundle = rag_context_to_evidence_bundle(docs_context)
-
-        updated = current
-        for item in docs_bundle.items:
-            updated = updated.append_evidence(item)
-
+    def knowledge_node(state: GraphState) -> dict[str, object]:
+        result = knowledge_worker.run(state["agent_state"])
         return {
-            "agent_state": updated,
-            "docs_context": docs_context,
+            "agent_state": result.state,
+            "docs_context": result.context,
+            **complete_worker(state, "knowledge", result.state),
         }
 
-    def answer_node(state: GraphState) -> dict[str, object]:
-        current = state["agent_state"]
+    def diagnosis_node(state: GraphState) -> dict[str, object]:
         decision = state["decision"]
         if decision is None:
             raise ValueError("route decision is missing")
 
-        docs_context = state["docs_context"] or RagContext(
-            text="",
-            sources=(),
-            truncated=False,
+        result = diagnosis_worker.run(
+            state["agent_state"],
+            decision,
+            docs_context=state["docs_context"],
+            runtime_context=state["runtime_context"],
         )
-        runtime_context = state["runtime_context"]
-        if runtime_context is None:
-            raise ValueError("runtime context is missing")
-
-        answer = generate_agent_answer_from_evidence(
-            current.question,
-            rag_context_to_evidence_bundle(docs_context),
-            runtime_context_to_evidence_bundle(runtime_context),
-            answer_model,
-            doc_sources=docs_context.sources,
-            runtime_sources=runtime_context.sources,
-        )
-
-        if decision.route == "docs_only" and not answer.doc_citation_indices:
-            raise ValueError("Model answer did not cite Docker documentation evidence")
-        if decision.route == "runtime_tools" and not answer.runtime_citation_indices:
-            raise ValueError("Model answer did not cite requested runtime evidence")
-
         return {
-            "agent_state": current.with_answer(answer.answer),
-            "answer": answer,
+            "agent_state": result.state,
+            "answer": result.answer,
+            **complete_worker(state, "diagnosis", result.state),
         }
+
+    worker_edges = {
+        "knowledge": "knowledge",
+        "runtime": "runtime",
+        "diagnosis": "diagnosis",
+        "end": END,
+    }
 
     builder = StateGraph(GraphState)
     builder.add_node("route", route_node)
     builder.add_node("runtime", runtime_node)
-    builder.add_node("docs", docs_node)
-    builder.add_node("answer", answer_node)
+    builder.add_node("knowledge", knowledge_node)
+    builder.add_node("diagnosis", diagnosis_node)
 
     builder.add_edge(START, "route")
-    builder.add_conditional_edges(
-        "route",
-        route_edge,
-        {
-            "docs": "docs",
-            "runtime": "runtime",
-            "end": END,
-        },
-    )
-    builder.add_conditional_edges(
-        "runtime",
-        after_runtime_edge,
-        {
-            "docs": "docs",
-            "answer": "answer",
-        },
-    )
-    builder.add_edge("docs", "answer")
-    builder.add_edge("answer", END)
+    builder.add_conditional_edges("route", supervisor_edge, worker_edges)
+    builder.add_conditional_edges("runtime", supervisor_edge, worker_edges)
+    builder.add_conditional_edges("knowledge", supervisor_edge, worker_edges)
+    builder.add_conditional_edges("diagnosis", supervisor_edge, worker_edges)
     return builder.compile()
-
 
 def run_support_graph(
     question: str,
