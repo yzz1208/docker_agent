@@ -1,6 +1,6 @@
 # Docker Support Agent
 
-基于 Docker 官方文档逐步实现的技术支持 Agent。项目按 **数据管道 → RAG → Tool Calling → Agent Workflow → Evaluation** 的顺序推进。
+基于 Docker 官方开源文档逐步实现的技术支持 Agent。项目按 **数据管道 → RAG → Tool Calling → Agent Workflow → Evaluation** 的顺序推进。
 
 完整设计见：[`doc/Docker_Support_Agent_开发文档.md`](doc/Docker_Support_Agent_开发文档.md)。
 
@@ -8,29 +8,19 @@
 
 - [x] Python 3.12 + uv 项目结构
 - [x] FastAPI 基础服务
-- [x] `.env` 配置管理
-- [x] PostgreSQL + pgvector Docker Compose
-- [x] 数据库连通性检查
-- [x] `/health` 健康检查
-- [x] `/health/db` 数据库健康检查
-- [x] pytest 基础测试
-- [ ] Docker Docs 数据管道
-- [ ] RAG
+- [x] PostgreSQL 16 + pgvector
+- [x] `/health` 与 `/health/db`
+- [x] Docker Docs 下载脚本
+- [x] 文档白名单筛选
+- [x] YAML Front Matter 解析
+- [x] Markdown 清洗与 Heading 分段
+- [x] 生成 `documents.jsonl` / `chunks.jsonl`
+- [x] Chunk 数据质量审计
+- [ ] Embedding + pgvector 索引
+- [ ] Hybrid Retrieval + Rerank
 - [ ] Tool Calling
 - [ ] LangGraph Agent
 - [ ] Evaluation
-
-## 当前技术选择
-
-本项目从一开始直接使用 PostgreSQL，不再使用 SQLite。Compose 使用 `pgvector/pgvector:pg16`，这样后续进入 Embedding / RAG 阶段时无需重新迁移数据库镜像。
-
-数据库初始化时会执行：
-
-```sql
-CREATE EXTENSION IF NOT EXISTS vector;
-```
-
-当前虽然还没有创建向量表，但 pgvector 环境会提前准备好。
 
 ## 环境要求
 
@@ -39,98 +29,41 @@ CREATE EXTENSION IF NOT EXISTS vector;
 - Docker Desktop / Docker Engine
 - Git
 
-Milestone 0 不需要配置大模型 API Key。
+当前阶段不需要配置大模型 API Key。
 
 ## 本地启动
 
-### 1. 克隆仓库并切换开发分支
+### 1. 拉取当前开发分支
 
-```bash
-git clone https://github.com/yzz1208/docker_agent.git
-cd docker_agent
-git checkout feat/milestone-0-bootstrap
-```
-
-如果已经 clone：
-
-```bash
+```powershell
 git fetch
-git checkout feat/milestone-0-bootstrap
+git checkout feat/milestone-1-docs-pipeline
 git pull
 ```
 
-### 2. 安装 Python 依赖
+### 2. 安装依赖
 
-```bash
+```powershell
 uv sync --all-groups
 ```
 
-`uv` 会自动创建 `.venv`，不需要手动创建虚拟环境。
-
 ### 3. 创建本地配置
-
-Windows PowerShell：
 
 ```powershell
 Copy-Item .env.example .env
 ```
 
-Linux / macOS：
-
-```bash
-cp .env.example .env
-```
-
-默认数据库连接：
-
-```env
-DATABASE_URL=postgresql+psycopg://postgres:postgres@localhost:5432/docker_agent
-```
-
 ### 4. 启动 PostgreSQL + pgvector
 
-```bash
+```powershell
 docker compose up -d postgres
-```
-
-查看状态：
-
-```bash
 docker compose ps
 ```
 
-等待 `docker-agent-postgres` 变成 `healthy`。
+### 5. 启动 FastAPI
 
-也可以查看启动日志：
-
-```bash
-docker compose logs postgres
-```
-
-### 5. 验证 PostgreSQL
-
-```bash
-docker compose exec postgres psql -U postgres -d docker_agent -c "SELECT version();"
-```
-
-验证 pgvector 扩展：
-
-```bash
-docker compose exec postgres psql -U postgres -d docker_agent -c "SELECT extversion FROM pg_extension WHERE extname = 'vector';"
-```
-
-如果能返回版本号，说明 pgvector 已启用。
-
-> 如果你曾经用同一个 Compose volume 启动过数据库，初始化脚本不会再次自动执行。此时可以手动运行：
->
-> ```bash
-> docker compose exec postgres psql -U postgres -d docker_agent -c "CREATE EXTENSION IF NOT EXISTS vector;"
-> ```
-
-### 6. 启动 FastAPI
-
-```bash
-uv run uvicorn docker_agent.main:app --reload --host 127.0.0.1 --port 8000
+```powershell
+uv run uvicorn docker_agent.main:app --reload
 ```
 
 浏览器打开：
@@ -139,119 +72,296 @@ uv run uvicorn docker_agent.main:app --reload --host 127.0.0.1 --port 8000
 http://127.0.0.1:8000/docs
 ```
 
-测试：
+数据库检查：
 
 ```text
-GET /health
 GET /health/db
 ```
 
-预期 `/health`：
+## Milestone 1：构建 Docker Docs 数据集
+
+Docker Docs 官方仓库当前的内容主要位于 `content/`，本项目 V1 只选取以下范围：
+
+```text
+content/get-started/
+content/manuals/engine/
+content/manuals/compose/
+```
+
+这样先控制知识库范围，后续再根据评测结果决定是否扩充。
+
+### 1. 下载 / 更新 Docker Docs
+
+```powershell
+uv run python scripts/download_docs.py
+```
+
+首次运行会 shallow clone：
+
+```text
+data/raw/docker-docs/
+```
+
+以后再次执行会 fetch 最新 `main` 并更新本地 raw 数据。
+
+### 2. 筛选文档
+
+```powershell
+uv run python scripts/select_docs.py
+```
+
+输出：
+
+```text
+data/selected/docker-docs/
+```
+
+脚本会保留 Docker Docs 原始目录结构，方便后续追踪原文来源。
+
+### 3. 清洗、分段并生成 JSONL
+
+```powershell
+uv run python scripts/build_docs.py
+```
+
+输出：
+
+```text
+data/processed/documents.jsonl
+data/processed/chunks.jsonl
+```
+
+`documents.jsonl` 每行代表一篇清洗后的官方文档；`chunks.jsonl` 每行代表后续 RAG 的一个检索单元。
+
+### 4. 快速查看结果
+
+PowerShell：
+
+```powershell
+Get-Content data/processed/documents.jsonl -TotalCount 1
+Get-Content data/processed/chunks.jsonl -TotalCount 3
+```
+
+可以重点检查：
+
+- `title` 是否正确；
+- `section_path` 是否能反映 Markdown 标题层级；
+- Docker 命令和错误文本是否保留；
+- `source_url` 是否指向对应 `docs.docker.com` 页面；
+- 代码块有没有被误当成 Markdown Heading。
+
+### 5. 运行 Chunk 数据质量审计
+
+在进入 Embedding 前先运行：
+
+```powershell
+uv run python scripts/audit_chunks.py
+```
+
+脚本会输出一份 JSON 报告，包括：
+
+- Chunk 总数与 Document 数量；
+- word count 的 min / P50 / P90 / P95 / max / average；
+- 过短 Chunk；
+- 超长 Chunk；
+- 空 Chunk；
+- 缺少 `source_url`；
+- 缺少 `section_path`；
+- fenced code block 没有闭合；
+- Docker Docs shortcode 残留；
+- 完全重复的 Chunk 内容。
+
+默认质量阈值：
+
+```text
+min_words = 20
+max_words = 600
+```
+
+这两个值目前只是审计阈值，不会删除数据。后续会结合真实报告决定是否调整 Chunk 策略。
+
+如果要自定义：
+
+```powershell
+uv run python scripts/audit_chunks.py --min-words 30 --max-words 550 --examples 20
+```
+
+## 数据处理设计
+
+### Front Matter
+
+Docker Docs Markdown 常见：
+
+```markdown
+---
+title: Troubleshooting Docker
+---
+```
+
+使用 PyYAML 解析 metadata，正文与 metadata 分离。
+
+### Markdown 清洗
+
+V1 不追求把 Markdown 转成纯文本，而是尽量保留对技术检索有价值的结构：
+
+保留：
+
+- 正文；
+- 列表；
+- 命令；
+- fenced code block；
+- 错误信息；
+- note / tip 内部文本。
+
+删除：
+
+- 单独一行的 Hugo / Docker Docs 展示 shortcode。
+
+### Heading 分段
+
+先按：
+
+```text
+# H1
+## H2
+### H3
+```
+
+构造 `section_path`，并显式忽略代码块中的 `#`，例如 Shell comment 不会被识别成文档标题。
+
+较长 section 再按段落切分。当前默认：
+
+```text
+max_words = 450
+overlap_words = 60
+```
+
+这里暂时使用 word count，而不是某个 Embedding 模型的 tokenizer。进入 Embedding 阶段后，会根据最终选定的模型重新评估 chunk token 分布。
+
+### 为什么要先审计 Chunk
+
+Embedding 会把文本转换成向量；向量本身并不能直接告诉我们原始文本是否已经切坏。
+
+因此先检查：
+
+```text
+Markdown
+→ Document
+→ Chunk
+→ Audit
+```
+
+确认结构正常后，再进入：
+
+```text
+Chunk
+→ Embedding
+→ pgvector
+```
+
+这样后续检索效果不好时，可以区分“数据问题”和“向量检索问题”。
+
+## 数据结构
+
+Document 示例：
 
 ```json
 {
-  "status": "ok",
-  "app": "Docker Support Agent",
-  "env": "development"
+  "document_id": "docker_document_...",
+  "source": "docker_docs",
+  "file_path": "content/manuals/engine/daemon/troubleshoot.md",
+  "title": "Troubleshoot the Docker daemon",
+  "source_url": "https://docs.docker.com/engine/daemon/troubleshoot/",
+  "language": "en",
+  "content": "..."
 }
 ```
 
-预期 `/health/db`：
+Chunk 示例：
 
 ```json
 {
-  "status": "ok",
-  "database": "reachable"
+  "chunk_id": "docker_document_...__0001",
+  "document_id": "docker_document_...",
+  "title": "Troubleshoot the Docker daemon",
+  "section_path": ["Troubleshoot the Docker daemon", "..."],
+  "content": "...",
+  "source_url": "https://docs.docker.com/engine/daemon/troubleshoot/",
+  "file_path": "content/manuals/engine/daemon/troubleshoot.md",
+  "word_count": 312
 }
 ```
 
-### 7. 自动化测试
+## 测试
 
-```bash
+```powershell
 uv run pytest -v
-```
-
-### 8. 代码质量检查
-
-```bash
 uv run ruff check .
 ```
 
-### 9. 停止数据库
+当前测试覆盖：
 
-只停止容器、保留数据库数据：
-
-```bash
-docker compose down
-```
-
-如果明确想连数据库数据卷一起删除：
-
-```bash
-docker compose down -v
-```
-
-`-v` 会删除 PostgreSQL 数据，请不要随便使用。
+- YAML Front Matter；
+- Heading hierarchy；
+- 代码块内部 `#` 不被误识别；
+- shortcode wrapper 清理；
+- Docker Docs URL 映射；
+- 长 section 二次切分；
+- Chunk 审计统计与异常标记。
 
 ## 项目结构
 
 ```text
 docker_agent/
 ├── doc/
-│   └── Docker_Support_Agent_开发文档.md
 ├── docker/
-│   └── postgres/
-│       └── init/
-│           └── 001-enable-vector.sql
-├── src/
-│   └── docker_agent/
-│       ├── __init__.py
-│       ├── config.py      # 环境变量与应用配置
-│       ├── db.py          # SQLAlchemy 数据库连接与健康检查
-│       └── main.py        # FastAPI 应用入口
+│   └── postgres/init/
+├── scripts/
+│   ├── download_docs.py
+│   ├── select_docs.py
+│   ├── build_docs.py
+│   └── audit_chunks.py
+├── src/docker_agent/
+│   ├── config.py
+│   ├── db.py
+│   ├── main.py
+│   └── docs/
+│       ├── audit.py
+│       ├── models.py
+│       ├── markdown.py
+│       └── pipeline.py
 ├── tests/
-│   └── test_health.py
-├── .env.example
-├── .gitignore
-├── compose.yaml           # PostgreSQL 16 + pgvector
-├── pyproject.toml
-└── README.md
+│   ├── test_health.py
+│   ├── test_docs_audit.py
+│   └── test_docs_markdown.py
+├── compose.yaml
+└── pyproject.toml
 ```
 
-## Milestone 0 的设计思路
+## 为什么暂时不把数据写进 PostgreSQL
 
-这一阶段只建立最小、可靠的后端骨架：
+Milestone 1 的目标是先验证：
 
 ```text
-FastAPI
-   ↓
-SQLAlchemy
-   ↓
-psycopg
-   ↓
+官方 Markdown
+→ 清洗
+→ 结构化 Document
+→ Chunk
+→ Audit
+```
+
+因此先输出 JSONL，方便人工检查和重复构建。
+
+下一阶段确认数据质量后，再做：
+
+```text
+chunks.jsonl
+    ↓
+Embedding
+    ↓
 PostgreSQL + pgvector
+    ↓
+Vector Retrieval
 ```
 
-`/health` 只检查 Web 服务本身；`/health/db` 单独检查 PostgreSQL。这样以后可以区分“应用进程正常”与“数据库依赖正常”。
-
-数据库连接统一从 `DATABASE_URL` 读取，因此业务代码不需要知道 PostgreSQL 的用户名、端口等细节。
-
-## 下一步
-
-Milestone 1 将实现 Docker Docs 数据管道：
-
-```text
-Docker Docs Git Repository
-    ↓
-筛选 Markdown
-    ↓
-解析 Front Matter / Heading
-    ↓
-清洗内容
-    ↓
-生成 documents.jsonl
-    ↓
-生成 chunks.jsonl
-```
-
-这一阶段仍然不会调用 LLM，先把知识库原始数据质量做好。
+这样出现检索问题时，可以明确区分是“原始数据 / Chunk 问题”还是“Embedding / 数据库问题”。
