@@ -46,3 +46,19 @@ def test_build_runtime_evidence_truncates_to_budget() -> None:
 
     assert len(context.text) <= 300
     assert context.truncated is True
+
+
+def test_build_runtime_evidence_marks_timeout_without_return_code() -> None:
+    result = DockerToolResult(
+        tool="docker_stats",
+        command=("docker", "stats", "--no-stream", "web"),
+        returncode=124,
+        stdout="",
+        stderr="docker_stats timed out after 15 seconds",
+    )
+
+    context = build_runtime_evidence((result,), max_chars=2_000)
+
+    assert "Status: timeout" in context.text
+    assert "returncode=124" not in context.text
+    assert "timed out after 15 seconds" in context.text
