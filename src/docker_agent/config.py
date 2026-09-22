@@ -19,6 +19,8 @@ class Settings(BaseSettings):
     model_name: str = ""
     model_api_key: str = ""
     model_base_url: str = ""
+    model_timeout_seconds: float = 60.0
+    model_temperature: float = 0.1
 
     embedding_model: str = "BAAI/bge-m3"
     embedding_device: str = ""
@@ -35,7 +37,12 @@ class Settings(BaseSettings):
 
     tool_mode: str = "mock"
     retrieval_top_k: int = 10
+    retrieval_candidate_k: int = 20
+    retrieval_rrf_k: int = 60
+    retrieval_dense_weight: float = 1.0
+    retrieval_keyword_weight: float = 1.0
     rerank_top_k: int = 5
+    rag_context_max_chars: int = 14_000
 
     model_config = SettingsConfigDict(
         env_file=".env",
