@@ -101,12 +101,81 @@ class AgentRouteDecision:
     use_docs: bool
 
 
+_GENERAL_CHAT_PHRASES = (
+    "hello",
+    "hi",
+    "hey",
+    "你好",
+    "您好",
+    "嗨",
+    "介绍一下自己",
+    "介绍自己",
+    "你是谁",
+    "你能做什么",
+    "你可以做什么",
+    "怎么使用这个系统",
+    "如何使用这个系统",
+    "怎么使用你",
+    "如何使用你",
+    "使用方法",
+    "谢谢",
+    "感谢",
+    "thank you",
+    "thanks",
+)
+
+_TECHNICAL_REQUEST_MARKERS = (
+    "dockerfile",
+    "compose",
+    "container",
+    "image",
+    "volume",
+    "network",
+    "daemon",
+    "容器",
+    "镜像",
+    "日志",
+    "端口",
+    "网络",
+    "内存",
+    "cpu",
+    "重启",
+    "退出",
+    "503",
+    "oom",
+    "报错",
+    "错误",
+    "故障",
+)
+
+
+def is_general_chat_request(question: str) -> bool:
+    """Recognize only narrow, low-risk conversational product requests."""
+
+    normalized = " ".join(question.strip().lower().split())
+    if not normalized or len(normalized) > 100:
+        return False
+    if any(marker in normalized for marker in _TECHNICAL_REQUEST_MARKERS):
+        return False
+    return any(phrase in normalized for phrase in _GENERAL_CHAT_PHRASES)
+
+
 def route_question(question: str, model: ChatModel) -> AgentRouteDecision:
     """Classify whether a question needs docs, runtime evidence, or clarification."""
 
     question = question.strip()
     if not question:
         raise ValueError("question must not be empty")
+
+    if is_general_chat_request(question):
+        return AgentRouteDecision(
+            route="general_chat",
+            reason="lightweight conversational or product-help request",
+            container_ref=None,
+            tools=(),
+            clarification=None,
+            use_docs=False,
+        )
 
     raw = model.complete(
         system_prompt=ROUTER_SYSTEM_PROMPT,
