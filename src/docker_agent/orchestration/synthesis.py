@@ -59,6 +59,30 @@ class OrchestratedSynthesisResult:
     unresolved_uncertainties: tuple[str, ...]
     clarification_questions: tuple[str, ...]
 
+    def __post_init__(self) -> None:
+        if not self.original_query.strip():
+            raise OrchestrationSynthesisError(
+                "original_query must not be empty"
+            )
+        if not self.specialist_results:
+            raise OrchestrationSynthesisError(
+                "specialist_results must not be empty"
+            )
+        if self.clarification_questions:
+            if self.answer is not None:
+                raise OrchestrationSynthesisError(
+                    "clarification synthesis must not contain an answer"
+                )
+            if self.hypotheses or self.unresolved_uncertainties:
+                raise OrchestrationSynthesisError(
+                    "clarification synthesis must not contain "
+                    "hypotheses or unresolved uncertainties"
+                )
+        elif self.answer is None or not self.answer.strip():
+            raise OrchestrationSynthesisError(
+                "completed synthesis requires an answer"
+            )
+
     @property
     def needs_clarification(self) -> bool:
         return bool(self.clarification_questions)
