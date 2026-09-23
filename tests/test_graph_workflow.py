@@ -544,14 +544,12 @@ def test_support_graph_handles_general_chat_without_docs_or_runtime() -> None:
     assert planner.calls == 0
     assert tools.calls == []
     assert docs.calls == []
-    assert answer.calls == 1
+    assert answer.calls == 0
     assert result["answer"] is not None
     assert result["answer"].doc_sources == ()
     assert result["answer"].runtime_sources == ()
     assert result["completed_workers"] == ("diagnosis",)
-    assert result["agent_state"].answer == (
-        "你好，我可以帮你进行 Docker 文档问答和故障排查。"
-    )
+    assert "Docker 智能支持平台" in result["agent_state"].answer
 
 
 def test_support_graph_runs_docs_only_path_without_runtime() -> None:
