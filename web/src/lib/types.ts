@@ -42,6 +42,36 @@ export type ChatResponse = {
   execution: AgentExecution | null;
 };
 
+export type AutoTraceStep = {
+  stage: "decision" | "handoff" | "specialist" | "synthesis";
+  label: string;
+  agent_type: string | null;
+  capability: string | null;
+  reason: string;
+};
+
+export type AutoSpecialistResult = {
+  agent_type: string;
+  route: string;
+  reason: string;
+  needs_clarification: boolean;
+  clarification: string | null;
+  summary: string | null;
+};
+
+export type AutoChatResponse = {
+  mode: "auto";
+  conversation_id: string;
+  current_agent_type: string | null;
+  route: string;
+  answer: string | null;
+  clarification: string | null;
+  needs_clarification: boolean;
+  synthesized: boolean;
+  trace: AutoTraceStep[];
+  specialist_results: AutoSpecialistResult[];
+};
+
 export type ConversationSummary = {
   id: string;
   agent_type: string;
