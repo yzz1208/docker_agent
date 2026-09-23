@@ -440,10 +440,17 @@ def test_pending_interrupt_exposes_typed_response_schema_and_can_be_read() -> No
 
     assert result.approval_request is not None
     assert len(snapshot.interrupts) == 1
-    schema = snapshot.interrupts[0].response_schema
-    assert isinstance(schema, dict)
+    assert (
+        result.approval_request.interrupt_id
+        == snapshot.interrupts[0].id
+    )
+    schema = result.approval_request.response_schema
     assert schema["type"] == "object"
-    assert "approved" in schema["properties"]
+    properties = schema["properties"]
+    assert isinstance(properties, dict)
+    assert properties["approved"] == {"type": "boolean"}
+    assert properties["comment"] == {"type": "string"}
+    assert schema["required"] == ["approved"]
 
 
 def test_completed_or_non_interrupt_thread_cannot_be_approval_resumed() -> None:
