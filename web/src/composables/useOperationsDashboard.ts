@@ -7,9 +7,11 @@ import {
   getEvaluationRun,
   getOperationsSummary,
   listAgentRuns,
+  listAgents,
   listEvaluationRuns,
 } from "../lib/api";
 import type {
+  AgentDescriptor,
   AgentRunRecord,
   AgentRunStatus,
   AgentRunSummary,
@@ -29,6 +31,7 @@ function errorText(error: unknown): string {
 }
 
 export function useOperationsDashboard() {
+  const agents = ref<AgentDescriptor[]>([]);
   const summary = ref<AgentRunSummary | null>(null);
   const runs = ref<AgentRunRecord[]>([]);
   const evaluations = ref<EvaluationRun[]>([]);
@@ -37,6 +40,7 @@ export function useOperationsDashboard() {
   const comparison = ref<EvaluationComparison | null>(null);
 
   const hours = ref(24);
+  const agentType = ref("");
   const runStatus = ref<AgentRunStatus | "">("");
   const evaluationSuite = ref("");
   const baselineId = ref("");
@@ -58,6 +62,29 @@ export function useOperationsDashboard() {
       (summary.value?.failed_runs ?? 0),
   );
 
+  function agentDisplayName(value: string | null): string {
+    if (!value) {
+      return "Platform-wide";
+    }
+    return (
+      agents.value.find((agent) => agent.agent_type === value)
+        ?.display_name ?? value
+    );
+  }
+
+  async function initialize(): Promise<void> {
+    loadingOverview.value = true;
+    errorMessage.value = "";
+    try {
+      agents.value = await listAgents();
+    } catch (error) {
+      errorMessage.value = errorText(error);
+    } finally {
+      loadingOverview.value = false;
+    }
+    await loadOverview();
+  }
+
   async function loadOverview(): Promise<void> {
     loadingOverview.value = true;
     errorMessage.value = "";
@@ -65,13 +92,18 @@ export function useOperationsDashboard() {
     try {
       const [nextSummary, nextRuns, nextEvaluations] =
         await Promise.all([
-          getOperationsSummary(hours.value),
+          getOperationsSummary(
+            hours.value,
+            agentType.value || undefined,
+          ),
           listAgentRuns({
+            agentType: agentType.value || undefined,
             status: runStatus.value || undefined,
             limit: 25,
           }),
           listEvaluationRuns({
             suite: evaluationSuite.value || undefined,
+            agentType: agentType.value || undefined,
             limit: 25,
           }),
         ]);
@@ -182,6 +214,7 @@ export function useOperationsDashboard() {
   }
 
   return {
+    agents,
     summary,
     runs,
     evaluations,
@@ -189,6 +222,7 @@ export function useOperationsDashboard() {
     activeEvaluation,
     comparison,
     hours,
+    agentType,
     runStatus,
     evaluationSuite,
     baselineId,
@@ -200,6 +234,8 @@ export function useOperationsDashboard() {
     comparing,
     errorMessage,
     completedRuns,
+    agentDisplayName,
+    initialize,
     loadOverview,
     openRun,
     openEvaluation,
