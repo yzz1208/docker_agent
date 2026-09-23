@@ -31,9 +31,52 @@ const environmentFields = computed(
   () => settings.configuration.value?.environment_settings ?? {},
 );
 
+function agentDisplayName(agentType: string): string {
+  return {
+    docker_support: "Docker 支持",
+    infrastructure_troubleshooter: "基础设施排障",
+    auto_orchestration: "智能编排",
+  }[agentType] ?? agentType;
+}
+
+function capabilityDisplayName(value: string): string {
+  return {
+    chat: "对话",
+    documentation_qa: "文档问答",
+    runtime_diagnostics: "运行时诊断",
+    incident_triage: "故障分诊",
+    multi_agent_supervision: "多智能体监督",
+  }[value] ?? value;
+}
+
+function workerDisplayName(value: string): string {
+  return {
+    knowledge: "知识检索",
+    runtime: "运行时检查",
+    diagnosis: "分析诊断",
+    triage: "故障分诊",
+  }[value] ?? value;
+}
+
+function sourceDisplayName(value: string): string {
+  return {
+    persisted: "已保存覆盖值",
+    environment: "环境变量",
+    default: "默认值",
+  }[value] ?? value;
+}
+
+function groupDisplayName(value: string): string {
+  return {
+    model: "模型设置",
+    retrieval: "检索设置",
+    runtime: "运行时设置",
+  }[value] ?? value;
+}
+
 function formatValue(value: unknown): string {
   if (value === null || value === undefined || value === "") {
-    return "Not set";
+    return "未设置";
   }
   return String(value);
 }
@@ -42,7 +85,7 @@ function formatEnvironmentValue(
   field: EffectiveConfigurationField,
 ): string {
   if (field.secure) {
-    return field.configured ? "Configured" : "Not configured";
+    return field.configured ? "已配置" : "未配置";
   }
   return formatValue(field.effective_value);
 }
@@ -86,13 +129,13 @@ async function loadPage(): Promise<void> {
     if (selected) {
       await settings.load(selected.agent_type);
     } else {
-      catalogError.value = "No registered Agents are available.";
+      catalogError.value = "当前没有可用的 Agent。";
     }
   } catch (error) {
     catalogError.value =
       error instanceof Error
         ? error.message
-        : "Could not load the Agent catalog.";
+        : "无法加载 Agent 列表。";
     await settings.load();
   } finally {
     catalogLoading.value = false;
@@ -114,18 +157,17 @@ onMounted(loadPage);
   <section class="settings-page">
     <div class="settings-hero panel">
       <div>
-        <p class="section-label">Agent configuration</p>
+        <p class="section-label">Agent 配置</p>
         <h2>
           {{
-            settings.descriptor.value?.display_name ??
-            "Agent"
+            settings.descriptor.value
+              ? agentDisplayName(settings.descriptor.value.agent_type)
+              : "Agent"
           }}
-          settings
+          设置
         </h2>
         <p>
-          Persist only the preferences you want to override. Fields without
-          an override continue to inherit their environment or application
-          default value.
+          只保存你希望覆盖的配置；未覆盖的字段会继续继承环境变量或应用默认值。
         </p>
       </div>
 
@@ -147,7 +189,7 @@ onMounted(loadPage);
               :key="agent.agent_type"
               :value="agent.agent_type"
             >
-              {{ agent.display_name }}
+              {{ agentDisplayName(agent.agent_type) }}
             </option>
           </select>
         </label>
@@ -158,7 +200,7 @@ onMounted(loadPage);
           :disabled="settings.loading.value || settings.saving.value"
           @click="settings.load()"
         >
-          {{ settings.dirty.value ? "Discard changes" : "Refresh" }}
+          {{ settings.dirty.value ? "放弃修改" : "刷新" }}
         </button>
         <button
           class="button button--primary"
@@ -170,7 +212,7 @@ onMounted(loadPage);
           "
           @click="settings.save"
         >
-          {{ settings.saving.value ? "Saving…" : "Save settings" }}
+          {{ settings.saving.value ? "保存中…" : "保存设置" }}
         </button>
       </div>
     </div>
@@ -185,7 +227,7 @@ onMounted(loadPage);
         type="button"
         @click="loadPage"
       >
-        Retry Agent catalog
+        重新加载 Agent
       </button>
     </div>
 
@@ -196,7 +238,7 @@ onMounted(loadPage);
       <span>{{ settings.errorMessage.value }}</span>
       <button
         type="button"
-        aria-label="Dismiss error"
+        aria-label="关闭错误提示"
         @click="settings.errorMessage.value = ''"
       >
         ×
@@ -210,7 +252,7 @@ onMounted(loadPage);
       <span>{{ settings.successMessage.value }}</span>
       <button
         type="button"
-        aria-label="Dismiss success message"
+        aria-label="关闭成功提示"
         @click="settings.successMessage.value = ''"
       >
         ×
@@ -221,7 +263,7 @@ onMounted(loadPage);
       v-if="settings.loading.value"
       class="panel empty-state"
     >
-      Loading effective configuration…
+      正在加载生效配置…
     </div>
 
     <template v-else-if="settings.configuration.value">
@@ -234,7 +276,7 @@ onMounted(loadPage);
             }"
           />
           <label class="settings-name-field">
-            <span>Display name</span>
+            <span>显示名称</span>
             <input
               v-model="settings.displayName.value"
               maxlength="120"
@@ -250,9 +292,9 @@ onMounted(loadPage);
             :disabled="settings.saving.value"
           />
           <span>
-            <strong>Agent enabled</strong>
+            <strong>启用 Agent</strong>
             <small>
-              Disabled agents cannot start new sessions.
+              禁用后，该 Agent 不能启动新的会话。
             </small>
           </span>
         </label>
@@ -261,12 +303,12 @@ onMounted(loadPage);
           <span>
             {{
               settings.persisted.value
-                ? "Persisted configuration"
-                : "No saved preferences yet"
+                ? "已保存自定义配置"
+                : "当前使用默认配置"
             }}
           </span>
           <span v-if="settings.configuration.value.configuration_updated_at">
-            Updated
+            更新时间
             {{
               new Date(
                 settings.configuration.value.configuration_updated_at,
@@ -281,50 +323,50 @@ onMounted(loadPage);
         class="agent-capability-panel panel"
       >
         <div>
-          <p class="section-label">Capabilities</p>
-          <h2>{{ settings.descriptor.value.display_name }}</h2>
+          <p class="section-label">能力</p>
+          <h2>{{ agentDisplayName(settings.descriptor.value.agent_type) }}</h2>
           <p>{{ settings.descriptor.value.description }}</p>
         </div>
         <div class="agent-capability-groups">
           <div>
-            <strong>Capabilities</strong>
+            <strong>能力</strong>
             <div class="chip-row">
               <span
                 v-for="item in settings.descriptor.value.capabilities"
                 :key="`settings-capability-${item}`"
                 class="chip"
               >
-                {{ item }}
+                {{ capabilityDisplayName(item) }}
               </span>
             </div>
           </div>
           <div>
-            <strong>Toolsets</strong>
+            <strong>工具集</strong>
             <div class="chip-row">
               <span
                 v-for="item in settings.descriptor.value.toolsets"
                 :key="`settings-toolset-${item}`"
                 class="chip"
               >
-                {{ item }}
+                {{ capabilityDisplayName(item) }}
               </span>
               <span
                 v-if="settings.descriptor.value.toolsets.length === 0"
                 class="muted"
               >
-                None
+                无
               </span>
             </div>
           </div>
           <div>
-            <strong>Worker roles</strong>
+            <strong>Worker 角色</strong>
             <div class="chip-row">
               <span
                 v-for="item in settings.descriptor.value.worker_roles"
                 :key="`settings-worker-${item}`"
                 class="chip"
               >
-                {{ item }}
+                {{ workerDisplayName(item) }}
               </span>
             </div>
           </div>
@@ -338,8 +380,8 @@ onMounted(loadPage);
       >
         <div class="panel__header">
           <div>
-            <p class="section-label">Editable preferences</p>
-            <h2>{{ group.label }}</h2>
+            <p class="section-label">可编辑偏好</p>
+            <h2>{{ groupDisplayName(group.key) }}</h2>
           </div>
         </div>
 
@@ -363,7 +405,7 @@ onMounted(loadPage);
                     :disabled="settings.saving.value"
                     @change="handleOverrideChange(field, $event)"
                   />
-                  <span>Override</span>
+                  <span>覆盖默认值</span>
                 </label>
               </div>
 
@@ -374,16 +416,16 @@ onMounted(loadPage);
                   class="source-badge"
                   :data-source="field.effective.source"
                 >
-                  current: {{ field.effective.source }}
+                  当前来源：{{ sourceDisplayName(field.effective.source) }}
                 </span>
                 <span>
-                  Effective:
+                  当前生效：
                   <strong>
                     {{ formatValue(field.effective.effective_value) }}
                   </strong>
                 </span>
                 <span>
-                  Inherited:
+                  继承值：
                   <strong>
                     {{ formatValue(settings.fallbackValue(field)) }}
                   </strong>
@@ -405,10 +447,10 @@ onMounted(loadPage);
                 {{ field.error }}
               </span>
               <span v-else-if="!field.override" class="field-hint">
-                Inheriting {{ formatValue(settings.fallbackValue(field)) }}
+                正在继承 {{ formatValue(settings.fallbackValue(field)) }}
               </span>
               <span v-else class="field-hint">
-                This value will be persisted.
+                该值会被持久化保存。
               </span>
             </div>
           </article>
@@ -418,17 +460,17 @@ onMounted(loadPage);
       <section class="settings-group panel">
         <div class="panel__header">
           <div>
-            <p class="section-label">Read-only runtime infrastructure</p>
-            <h2>Environment / infrastructure</h2>
+            <p class="section-label">只读运行环境</p>
+            <h2>环境与基础设施</h2>
           </div>
         </div>
 
         <div class="settings-table">
           <div class="settings-table__head">
-            <span>Field</span>
-            <span>Effective value</span>
-            <span>Source</span>
-            <span>Access</span>
+            <span>字段</span>
+            <span>生效值</span>
+            <span>来源</span>
+            <span>访问方式</span>
           </div>
 
           <div
@@ -442,13 +484,13 @@ onMounted(loadPage);
               class="source-badge"
               :data-source="field.source"
             >
-              {{ field.source }}
+              {{ sourceDisplayName(field.source) }}
             </span>
             <span>
               {{
                 field.secure
-                  ? "Secure / redacted"
-                  : "Environment owned"
+                  ? "敏感配置 / 已脱敏"
+                  : "由环境变量管理"
               }}
             </span>
           </div>
