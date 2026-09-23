@@ -216,6 +216,7 @@ onMounted(workspace.initialize);
               class="button button--ghost"
               :disabled="
                 workspace.sending.value ||
+                workspace.approving.value ||
                 workspace.renaming.value ||
                 workspace.deleting.value
               "
@@ -227,6 +228,7 @@ onMounted(workspace.initialize);
               class="button button--danger"
               :disabled="
                 workspace.sending.value ||
+                workspace.approving.value ||
                 workspace.renaming.value ||
                 workspace.deleting.value
               "
@@ -262,6 +264,90 @@ onMounted(workspace.initialize);
           <p>快速判断问题类型并交给最合适的专家处理。</p>
         </div>
       </div>
+
+      <section
+        v-if="workspace.pendingApproval.value"
+        class="approval-card"
+        aria-live="polite"
+      >
+        <div class="approval-card__accent" />
+        <div class="approval-card__content">
+          <div class="approval-card__header">
+            <div>
+              <span class="approval-card__eyebrow">需要你的批准</span>
+              <h3>是否允许继续跨专家处理？</h3>
+            </div>
+            <span class="approval-card__status">已暂停</span>
+          </div>
+
+          <div class="approval-route">
+            <div>
+              <span>当前</span>
+              <strong>
+                {{
+                  workspace.pendingApproval.value.source_agent_type
+                    ? workspace.agentDisplayName(
+                        workspace.pendingApproval.value.source_agent_type,
+                      )
+                    : "智能编排"
+                }}
+              </strong>
+            </div>
+            <span class="approval-route__arrow">→</span>
+            <div>
+              <span>下一位专家</span>
+              <strong>
+                {{
+                  workspace.agentDisplayName(
+                    workspace.pendingApproval.value.target_agent_type,
+                  )
+                }}
+              </strong>
+            </div>
+          </div>
+
+          <div class="approval-card__reason">
+            <span>转交原因</span>
+            <p>{{ workspace.pendingApproval.value.reason }}</p>
+          </div>
+
+          <div class="approval-card__meta">
+            <span class="chip chip--soft">
+              能力：{{
+                workspace.capabilityDisplayName(
+                  workspace.pendingApproval.value.capability,
+                )
+              }}
+            </span>
+            <span class="approval-card__question">
+              当前问题：{{ workspace.pendingApproval.value.question }}
+            </span>
+          </div>
+
+          <div class="approval-card__actions">
+            <button
+              class="button button--ghost approval-card__deny"
+              type="button"
+              :disabled="workspace.approving.value"
+              @click="workspace.resolvePendingApproval(false)"
+            >
+              拒绝
+            </button>
+            <button
+              class="button button--primary approval-card__approve"
+              type="button"
+              :disabled="workspace.approving.value"
+              @click="workspace.resolvePendingApproval(true)"
+            >
+              {{
+                workspace.approving.value
+                  ? "正在处理…"
+                  : "允许继续"
+              }}
+            </button>
+          </div>
+        </div>
+      </section>
 
       <div class="message-stream">
         <div v-if="workspace.loadingConversation.value" class="empty-state">
@@ -378,11 +464,17 @@ onMounted(workspace.initialize);
             v-model="workspace.draft.value"
             rows="3"
             :placeholder="
-              workspace.activeMode.value === 'auto'
-                ? '直接描述问题，例如：容器正常，但 checkout-api 仍持续返回 503…'
-                : '向 ' + workspace.agentDisplayName(workspace.activeAgentType.value) + ' 提问…'
+              workspace.pendingApproval.value
+                ? '请先处理上方审批，再继续发送消息…'
+                : workspace.activeMode.value === 'auto'
+                  ? '直接描述问题，例如：容器正常，但 checkout-api 仍持续返回 503…'
+                  : '向 ' + workspace.agentDisplayName(workspace.activeAgentType.value) + ' 提问…'
             "
-            :disabled="workspace.sending.value"
+            :disabled="
+              workspace.sending.value ||
+              workspace.approving.value ||
+              Boolean(workspace.pendingApproval.value)
+            "
             @keydown.ctrl.enter.prevent="workspace.submitMessage"
           />
           <button
@@ -391,15 +483,23 @@ onMounted(workspace.initialize);
             :disabled="!workspace.canSend.value"
           >
             {{
-              workspace.sending.value
-                ? workspace.activeMode.value === "auto"
-                  ? "处理中…"
-                  : "执行中…"
-                : "发送"
+              workspace.pendingApproval.value
+                ? "等待审批"
+                : workspace.sending.value
+                  ? workspace.activeMode.value === "auto"
+                    ? "处理中…"
+                    : "执行中…"
+                  : "发送"
             }}
           </button>
         </div>
-        <p class="composer__hint">Ctrl + Enter 发送</p>
+        <p class="composer__hint">
+          {{
+            workspace.pendingApproval.value
+              ? "当前工作流已暂停，审批后会从原位置继续。"
+              : "Ctrl + Enter 发送"
+          }}
+        </p>
       </form>
     </section>
 
@@ -438,9 +538,17 @@ onMounted(workspace.initialize);
               :class="{
                 'auto-status-badge--synthesis':
                   workspace.latestAutoTurn.value.synthesized,
+                'auto-status-badge--approval':
+                  workspace.latestAutoTurn.value.needs_approval,
               }"
             >
-              {{ workspace.latestAutoTurn.value.synthesized ? "已综合" : "快速路径" }}
+              {{
+                workspace.latestAutoTurn.value.needs_approval
+                  ? "等待批准"
+                  : workspace.latestAutoTurn.value.synthesized
+                    ? "已综合"
+                    : "快速路径"
+              }}
             </span>
           </div>
 
