@@ -11,7 +11,7 @@ const deleteDialogOpen = ref(false);
 const renameTitle = ref("");
 
 function formatDate(value: string): string {
-  return new Intl.DateTimeFormat(undefined, {
+  return new Intl.DateTimeFormat("zh-CN", {
     month: "short",
     day: "numeric",
     hour: "2-digit",
@@ -19,48 +19,39 @@ function formatDate(value: string): string {
   }).format(new Date(value));
 }
 
+function roleLabel(role: string): string {
+  if (role === "user") return "你";
+  if (role === "assistant") return "助手";
+  return role;
+}
+
 function openRenameDialog(): void {
   const conversation = workspace.detail.value?.conversation;
-  if (!conversation) {
-    return;
-  }
+  if (!conversation) return;
   renameTitle.value = conversation.title ?? "";
   renameDialogOpen.value = true;
 }
 
 function closeRenameDialog(): void {
-  if (!workspace.renaming.value) {
-    renameDialogOpen.value = false;
-  }
+  if (!workspace.renaming.value) renameDialogOpen.value = false;
 }
 
 async function confirmRename(): Promise<void> {
-  const renamed = await workspace.renameActiveConversation(
-    renameTitle.value,
-  );
-  if (renamed) {
-    renameDialogOpen.value = false;
-  }
+  const renamed = await workspace.renameActiveConversation(renameTitle.value);
+  if (renamed) renameDialogOpen.value = false;
 }
 
 function openDeleteDialog(): void {
-  if (!workspace.detail.value) {
-    return;
-  }
-  deleteDialogOpen.value = true;
+  if (workspace.detail.value) deleteDialogOpen.value = true;
 }
 
 function closeDeleteDialog(): void {
-  if (!workspace.deleting.value) {
-    deleteDialogOpen.value = false;
-  }
+  if (!workspace.deleting.value) deleteDialogOpen.value = false;
 }
 
 async function confirmDelete(): Promise<void> {
   const deleted = await workspace.deleteActiveConversation();
-  if (deleted) {
-    deleteDialogOpen.value = false;
-  }
+  if (deleted) deleteDialogOpen.value = false;
 }
 
 onMounted(workspace.initialize);
@@ -71,45 +62,30 @@ onMounted(workspace.initialize);
     <aside class="conversation-panel panel">
       <div class="panel__header conversation-panel__header">
         <div>
-          <p class="section-label">History</p>
-          <h2>Conversations</h2>
+          <p class="section-label">历史记录</p>
+          <h2>对话</h2>
         </div>
         <button
           class="button button--primary"
           :disabled="workspace.sending.value"
           @click="workspace.startNewConversation"
         >
-          New
+          新建
         </button>
       </div>
 
-      <div
-        v-if="workspace.listError.value"
-        class="panel-state panel-state--error"
-      >
-        <strong>Could not load conversations.</strong>
+      <div v-if="workspace.listError.value" class="panel-state panel-state--error">
+        <strong>无法加载对话记录</strong>
         <span>{{ workspace.listError.value }}</span>
-        <button
-          class="button button--ghost"
-          type="button"
-          @click="workspace.refreshConversations"
-        >
-          Retry
+        <button class="button button--ghost" type="button" @click="workspace.refreshConversations">
+          重试
         </button>
       </div>
-
-      <div
-        v-else-if="workspace.loadingList.value"
-        class="empty-state compact"
-      >
-        Loading conversations…
+      <div v-else-if="workspace.loadingList.value" class="empty-state compact">
+        正在加载对话…
       </div>
-
-      <div
-        v-else-if="workspace.conversations.value.length === 0"
-        class="empty-state compact"
-      >
-        No persisted conversations yet.
+      <div v-else-if="workspace.conversations.value.length === 0" class="empty-state compact">
+        暂无历史对话。
       </div>
 
       <div v-else class="conversation-list">
@@ -124,7 +100,7 @@ onMounted(workspace.initialize);
           :disabled="workspace.sending.value"
           @click="workspace.openConversation(conversation.id)"
         >
-          <strong>{{ conversation.title || "Untitled conversation" }}</strong>
+          <strong>{{ conversation.title || "未命名对话" }}</strong>
           <div class="conversation-item__meta">
             <span class="conversation-item__agent">
               {{ workspace.agentDisplayName(conversation.agent_type) }}
@@ -140,19 +116,60 @@ onMounted(workspace.initialize);
         <div>
           <p class="section-label">
             {{
-              workspace.activeAgent.value?.display_name ??
-              workspace.activeAgentType.value
+              workspace.activeMode.value === "auto"
+                ? "智能编排"
+                : workspace.agentDisplayName(workspace.activeAgentType.value)
             }}
           </p>
           <h2>{{ workspace.activeTitle.value }}</h2>
         </div>
 
         <div class="chat-header-controls">
-          <label
+          <div
             v-if="!workspace.activeConversationId.value"
+            class="chat-mode-switch"
+            aria-label="对话模式"
+          >
+            <button
+              type="button"
+              :class="{
+                'chat-mode-switch__item--active':
+                  workspace.selectedMode.value === 'manual',
+              }"
+              :disabled="!workspace.canSelectMode.value"
+              @click="workspace.selectedMode.value = 'manual'"
+            >
+              手动专家
+            </button>
+            <button
+              type="button"
+              :class="{
+                'chat-mode-switch__item--active':
+                  workspace.selectedMode.value === 'auto',
+              }"
+              :disabled="!workspace.canSelectMode.value"
+              @click="workspace.selectedMode.value = 'auto'"
+            >
+              <span class="auto-dot" />
+              智能编排
+            </button>
+          </div>
+
+          <div v-else class="mode-lock">
+            <span>模式</span>
+            <strong>
+              {{ workspace.activeMode.value === "auto" ? "智能编排" : "手动专家" }}
+            </strong>
+          </div>
+
+          <label
+            v-if="
+              !workspace.activeConversationId.value &&
+              workspace.selectedMode.value === 'manual'
+            "
             class="agent-picker"
           >
-            <span>Agent</span>
+            <span>专家</span>
             <select
               v-model="workspace.selectedAgentType.value"
               :disabled="
@@ -165,17 +182,31 @@ onMounted(workspace.initialize);
                 :key="agent.agent_type"
                 :value="agent.agent_type"
               >
-                {{ agent.display_name }}
+                {{ workspace.agentDisplayName(agent.agent_type) }}
               </option>
             </select>
           </label>
 
-          <div v-else class="agent-lock">
-            <span>Agent</span>
+          <div
+            v-else-if="
+              workspace.activeConversationId.value &&
+              workspace.activeMode.value === 'manual'
+            "
+            class="agent-lock"
+          >
+            <span>专家</span>
+            <strong>{{ workspace.agentDisplayName(workspace.activeAgentType.value) }}</strong>
+          </div>
+
+          <div v-else-if="workspace.activeMode.value === 'auto'" class="agent-lock agent-lock--auto">
+            <span>当前专家</span>
             <strong>
               {{
-                workspace.activeAgent.value?.display_name ??
-                workspace.activeAgentType.value
+                workspace.latestAutoTurn.value?.current_agent_type
+                  ? workspace.agentDisplayName(
+                      workspace.latestAutoTurn.value.current_agent_type,
+                    )
+                  : "自动选择"
               }}
             </strong>
           </div>
@@ -190,7 +221,7 @@ onMounted(workspace.initialize);
               "
               @click="openRenameDialog"
             >
-              Rename
+              重命名
             </button>
             <button
               class="button button--danger"
@@ -201,158 +232,156 @@ onMounted(workspace.initialize);
               "
               @click="openDeleteDialog"
             >
-              Delete
+              删除
             </button>
           </div>
         </div>
       </div>
 
-      <div
-        v-if="workspace.agentError.value"
-        class="alert alert--error"
-      >
+      <div v-if="workspace.agentError.value" class="alert alert--error">
         <span>{{ workspace.agentError.value }}</span>
-        <button
-          class="button button--ghost"
-          type="button"
-          @click="workspace.refreshAgents"
-        >
-          Retry Agent catalog
+        <button class="button button--ghost" type="button" @click="workspace.refreshAgents">
+          重新加载专家
         </button>
       </div>
 
-      <div
-        v-if="workspace.actionError.value"
-        class="alert alert--error alert--dismissible"
-      >
+      <div v-if="workspace.actionError.value" class="alert alert--error alert--dismissible">
         <span>{{ workspace.actionError.value }}</span>
-        <button
-          type="button"
-          aria-label="Dismiss error"
-          @click="workspace.actionError.value = ''"
-        >
+        <button type="button" aria-label="关闭错误提示" @click="workspace.actionError.value = ''">
           ×
         </button>
       </div>
 
+      <div
+        v-if="workspace.sending.value && workspace.activeMode.value === 'auto'"
+        class="auto-running"
+      >
+        <div class="auto-running__pulse"><span /><span /><span /></div>
+        <div>
+          <strong>正在智能编排</strong>
+          <p>快速判断问题类型并交给最合适的专家处理。</p>
+        </div>
+      </div>
+
       <div class="message-stream">
-        <div
-          v-if="workspace.loadingConversation.value"
-          class="empty-state"
-        >
-          Loading conversation…
+        <div v-if="workspace.loadingConversation.value" class="empty-state">
+          正在加载对话…
         </div>
 
         <div
           v-else-if="workspace.conversationError.value"
           class="panel-state panel-state--error panel-state--centered"
         >
-          <strong>Could not open this conversation.</strong>
+          <strong>无法打开该对话</strong>
           <span>{{ workspace.conversationError.value }}</span>
           <button
             v-if="workspace.activeConversationId.value"
             class="button button--ghost"
             type="button"
-            @click="
-              workspace.openConversation(
-                workspace.activeConversationId.value,
-              )
-            "
+            @click="workspace.openConversation(workspace.activeConversationId.value)"
           >
-            Retry
+            重试
           </button>
         </div>
 
-        <template
-          v-else-if="workspace.detail.value?.messages.length"
-        >
+        <template v-else-if="workspace.detail.value?.messages.length">
           <article
             v-for="message in workspace.detail.value.messages"
             :key="message.id"
             class="message"
-            :class="`message--${message.role}`"
+            :class="'message--' + message.role"
           >
             <div class="message__meta">
-              <span>{{ message.role }}</span>
+              <span>{{ roleLabel(message.role) }}</span>
               <span>{{ formatDate(message.created_at) }}</span>
             </div>
             <p>{{ message.content }}</p>
 
             <div
-              v-if="message.execution"
+              v-if="message.execution && workspace.activeMode.value === 'manual'"
               class="message__execution"
             >
               <span>
-                workers:
-                {{
-                  message.execution.completed_workers.join(" → ") ||
-                  "none"
-                }}
+                执行链：
+                {{ message.execution.completed_workers.join(" → ") || "无" }}
               </span>
             </div>
           </article>
         </template>
 
-        <div v-else class="empty-state">
-          <div class="empty-state__badge">Agent</div>
-          <h3>
-            Start a conversation with
-            {{
-              workspace.activeAgent.value?.display_name ??
-              workspace.activeAgentType.value
-            }}
-          </h3>
-          <p>
-            {{
-              workspace.activeAgent.value?.description ??
-              "Choose a registered Agent and describe the task."
-            }}
-          </p>
+        <div v-else class="empty-state chat-empty-state">
           <div
-            v-if="workspace.activeAgent.value"
-            class="agent-capability-summary"
+            class="empty-state__badge"
+            :class="{
+              'empty-state__badge--auto':
+                workspace.activeMode.value === 'auto',
+            }"
           >
-            <div class="chip-row">
-              <span
-                v-for="capability in workspace.activeAgent.value.capabilities"
-                :key="`capability-${capability}`"
-                class="chip"
-              >
-                {{ capability }}
-              </span>
-              <span
-                v-for="toolset in workspace.activeAgent.value.toolsets"
-                :key="`toolset-${toolset}`"
-                class="chip"
-              >
-                tool: {{ toolset }}
-              </span>
-              <span
-                v-for="role in workspace.activeAgent.value.worker_roles"
-                :key="`worker-${role}`"
-                class="chip"
-              >
-                worker: {{ role }}
-              </span>
-            </div>
+            {{ workspace.activeMode.value === "auto" ? "AUTO" : "AI" }}
           </div>
+
+          <template v-if="workspace.activeMode.value === 'auto'">
+            <h3>直接描述问题，剩下的交给智能编排</h3>
+            <p>系统会快速判断问题类型，选择合适专家，并在需要时安全转交与综合结果。</p>
+            <div class="auto-feature-grid">
+              <div><strong>快速判断</strong><span>一次短路由决策</span></div>
+              <div><strong>受控转交</strong><span>每回合最多执行一个专家</span></div>
+              <div><strong>清晰结果</strong><span>事实、推测与不确定性分开</span></div>
+            </div>
+          </template>
+
+          <template v-else>
+            <h3>
+              开始与 {{ workspace.agentDisplayName(workspace.activeAgentType.value) }} 对话
+            </h3>
+            <p>
+              {{
+                workspace.activeAgent.value?.description ??
+                "选择一个专家，然后描述你希望解决的问题。"
+              }}
+            </p>
+            <div v-if="workspace.activeAgent.value" class="agent-capability-summary">
+              <div class="chip-row">
+                <span
+                  v-for="capability in workspace.activeAgent.value.capabilities"
+                  :key="'capability-' + capability"
+                  class="chip"
+                >
+                  {{ workspace.capabilityDisplayName(capability) }}
+                </span>
+                <span
+                  v-for="toolset in workspace.activeAgent.value.toolsets"
+                  :key="'toolset-' + toolset"
+                  class="chip"
+                >
+                  工具：{{ toolset }}
+                </span>
+              </div>
+            </div>
+          </template>
         </div>
       </div>
 
       <form class="composer" @submit.prevent="workspace.submitMessage">
         <div
-          v-if="workspace.activeSessionId.value"
+          v-if="
+            workspace.activeSessionId.value &&
+            workspace.activeMode.value === 'manual'
+          "
           class="clarification-banner"
         >
-          Clarification session active. Your next message continues the same
-          agent turn.
+          当前正在等待补充信息。你的下一条消息会继续同一个专家回合。
         </div>
 
         <div class="composer__row">
           <textarea
             v-model="workspace.draft.value"
             rows="3"
-            :placeholder="`Ask ${workspace.activeAgent.value?.display_name ?? workspace.activeAgentType.value}…`"
+            :placeholder="
+              workspace.activeMode.value === 'auto'
+                ? '直接描述问题，例如：容器正常，但 checkout-api 仍持续返回 503…'
+                : '向 ' + workspace.agentDisplayName(workspace.activeAgentType.value) + ' 提问…'
+            "
             :disabled="workspace.sending.value"
             @keydown.ctrl.enter.prevent="workspace.submitMessage"
           />
@@ -361,153 +390,201 @@ onMounted(workspace.initialize);
             type="submit"
             :disabled="!workspace.canSend.value"
           >
-            {{ workspace.sending.value ? "Running…" : "Send" }}
+            {{
+              workspace.sending.value
+                ? workspace.activeMode.value === "auto"
+                  ? "处理中…"
+                  : "执行中…"
+                : "发送"
+            }}
           </button>
         </div>
-        <p class="composer__hint">
-          Ctrl + Enter to send
-        </p>
+        <p class="composer__hint">Ctrl + Enter 发送</p>
       </form>
     </section>
 
     <aside class="trace-panel panel">
       <div class="panel__header">
         <div>
-          <p class="section-label">Latest turn</p>
-          <h2>Execution</h2>
+          <p class="section-label">
+            {{ workspace.activeMode.value === "auto" ? "智能编排" : "最近回合" }}
+          </p>
+          <h2>{{ workspace.activeMode.value === "auto" ? "处理过程" : "执行详情" }}</h2>
         </div>
       </div>
 
-      <div
-        v-if="!workspace.latestTurn.value"
-        class="empty-state compact"
-      >
-        Run a turn to inspect routing, workers, and sources.
-      </div>
+      <template v-if="workspace.activeMode.value === 'auto'">
+        <div v-if="!workspace.latestAutoTurn.value" class="empty-state compact">
+          发送一条消息后，这里会显示专家选择与转交流程。
+        </div>
+
+        <template v-else>
+          <div class="auto-status-card">
+            <div class="auto-status-card__icon">✦</div>
+            <div>
+              <span>当前处理专家</span>
+              <strong>
+                {{
+                  workspace.latestAutoTurn.value.current_agent_type
+                    ? workspace.agentDisplayName(
+                        workspace.latestAutoTurn.value.current_agent_type,
+                      )
+                    : "等待选择"
+                }}
+              </strong>
+            </div>
+            <span
+              class="auto-status-badge"
+              :class="{
+                'auto-status-badge--synthesis':
+                  workspace.latestAutoTurn.value.synthesized,
+              }"
+            >
+              {{ workspace.latestAutoTurn.value.synthesized ? "已综合" : "快速路径" }}
+            </span>
+          </div>
+
+          <div class="orchestration-timeline">
+            <div
+              v-for="(step, index) in workspace.latestAutoTurn.value.trace"
+              :key="index + '-' + step.stage + '-' + step.agent_type"
+              class="orchestration-step"
+              :class="'orchestration-step--' + step.stage"
+            >
+              <div class="orchestration-step__rail">
+                <span class="orchestration-step__dot" />
+              </div>
+              <div class="orchestration-step__body">
+                <div class="orchestration-step__head">
+                  <strong>{{ workspace.traceStageDisplayName(step.stage) }}</strong>
+                  <span v-if="step.agent_type">
+                    {{ workspace.agentDisplayName(step.agent_type) }}
+                  </span>
+                </div>
+                <p>{{ step.reason }}</p>
+                <span v-if="step.capability" class="chip chip--soft">
+                  {{ workspace.capabilityDisplayName(step.capability) }}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <section
+            v-if="workspace.latestAutoTurn.value.specialist_results.length"
+            class="trace-section"
+          >
+            <h3>专家公开结果</h3>
+            <div
+              v-for="result in workspace.latestAutoTurn.value.specialist_results"
+              :key="result.agent_type + '-' + result.route"
+              class="specialist-result-card"
+            >
+              <div>
+                <strong>{{ workspace.agentDisplayName(result.agent_type) }}</strong>
+                <span>{{ result.route }}</span>
+              </div>
+              <p v-if="result.summary">{{ result.summary }}</p>
+              <p v-else-if="result.clarification">{{ result.clarification }}</p>
+            </div>
+          </section>
+        </template>
+      </template>
 
       <template v-else>
-        <dl class="fact-list">
-          <div>
-            <dt>Agent</dt>
-            <dd>
-              {{
-                workspace.activeAgent.value?.display_name ??
-                workspace.activeAgentType.value
-              }}
-            </dd>
-          </div>
-          <div>
-            <dt>Route</dt>
-            <dd>{{ workspace.latestTurn.value.route }}</dd>
-          </div>
-          <div>
-            <dt>Docs</dt>
-            <dd>
-              {{
-                workspace.latestTurn.value.use_docs
-                  ? "enabled"
-                  : "not used"
-              }}
-            </dd>
-          </div>
-          <div>
-            <dt>Clarification</dt>
-            <dd>
-              {{
-                workspace.latestTurn.value.session_active
-                  ? "active"
-                  : "complete"
-              }}
-            </dd>
-          </div>
-        </dl>
+        <div v-if="!workspace.latestTurn.value" class="empty-state compact">
+          执行一个回合后，这里会显示路由、Worker 与来源信息。
+        </div>
 
-        <section class="trace-section">
-          <h3>Reason</h3>
-          <p>{{ workspace.latestTurn.value.reason }}</p>
-        </section>
+        <template v-else>
+          <dl class="fact-list">
+            <div>
+              <dt>专家</dt>
+              <dd>{{ workspace.agentDisplayName(workspace.activeAgentType.value) }}</dd>
+            </div>
+            <div><dt>路由</dt><dd>{{ workspace.latestTurn.value.route }}</dd></div>
+            <div>
+              <dt>文档</dt>
+              <dd>{{ workspace.latestTurn.value.use_docs ? "已启用" : "未使用" }}</dd>
+            </div>
+            <div>
+              <dt>补充信息</dt>
+              <dd>{{ workspace.latestTurn.value.session_active ? "等待中" : "已完成" }}</dd>
+            </div>
+          </dl>
 
-        <section
-          v-if="workspace.activeAgent.value"
-          class="trace-section"
-        >
-          <h3>Agent capabilities</h3>
-          <p>{{ workspace.activeAgent.value.description }}</p>
-          <div class="chip-row">
-            <span
-              v-for="capability in workspace.activeAgent.value.capabilities"
-              :key="`trace-capability-${capability}`"
-              class="chip"
+          <section class="trace-section">
+            <h3>判断原因</h3>
+            <p>{{ workspace.latestTurn.value.reason }}</p>
+          </section>
+
+          <section v-if="workspace.activeAgent.value" class="trace-section">
+            <h3>专家能力</h3>
+            <p>{{ workspace.activeAgent.value.description }}</p>
+            <div class="chip-row">
+              <span
+                v-for="capability in workspace.activeAgent.value.capabilities"
+                :key="'trace-capability-' + capability"
+                class="chip"
+              >
+                {{ workspace.capabilityDisplayName(capability) }}
+              </span>
+            </div>
+          </section>
+
+          <section v-if="workspace.latestTurn.value.execution" class="trace-section">
+            <h3>Worker</h3>
+            <div class="chip-row">
+              <span
+                v-for="worker in (workspace.latestTurn.value.execution?.completed_workers ?? [])"
+                :key="worker"
+                class="chip"
+              >
+                {{ worker }}
+              </span>
+            </div>
+          </section>
+
+          <section v-if="workspace.latestTurn.value.runtime_sources.length" class="trace-section">
+            <h3>运行时来源</h3>
+            <div
+              v-for="source in workspace.latestTurn.value.runtime_sources"
+              :key="source.index + '-' + source.tool"
+              class="source-card"
             >
-              {{ capability }}
-            </span>
-          </div>
-        </section>
+              <strong>{{ source.tool }}</strong>
+              <code>{{ source.command.join(" ") }}</code>
+            </div>
+          </section>
 
-        <section
-          v-if="workspace.latestTurn.value.execution"
-          class="trace-section"
-        >
-          <h3>Workers</h3>
-          <div class="chip-row">
-            <span
-              v-for="worker in (
-                workspace.latestTurn.value.execution?.completed_workers ?? []
-              )"
-              :key="worker"
-              class="chip"
+          <section v-if="workspace.latestTurn.value.doc_sources.length" class="trace-section">
+            <h3>文档来源</h3>
+            <a
+              v-for="source in workspace.latestTurn.value.doc_sources"
+              :key="source.index + '-' + source.source_url"
+              class="source-card source-card--link"
+              :href="source.source_url"
+              target="_blank"
+              rel="noreferrer"
             >
-              {{ worker }}
-            </span>
-          </div>
-        </section>
-
-        <section
-          v-if="workspace.latestTurn.value.runtime_sources.length"
-          class="trace-section"
-        >
-          <h3>Runtime sources</h3>
-          <div
-            v-for="source in workspace.latestTurn.value.runtime_sources"
-            :key="`${source.index}-${source.tool}`"
-            class="source-card"
-          >
-            <strong>{{ source.tool }}</strong>
-            <code>{{ source.command.join(" ") }}</code>
-          </div>
-        </section>
-
-        <section
-          v-if="workspace.latestTurn.value.doc_sources.length"
-          class="trace-section"
-        >
-          <h3>Documentation</h3>
-          <a
-            v-for="source in workspace.latestTurn.value.doc_sources"
-            :key="`${source.index}-${source.source_url}`"
-            class="source-card source-card--link"
-            :href="source.source_url"
-            target="_blank"
-            rel="noreferrer"
-          >
-            <strong>{{ source.title }}</strong>
-            <span>{{ source.section }}</span>
-          </a>
-        </section>
+              <strong>{{ source.title }}</strong>
+              <span>{{ source.section }}</span>
+            </a>
+          </section>
+        </template>
       </template>
     </aside>
 
     <AppDialog
       :open="renameDialogOpen"
-      title="Rename conversation"
-      description="Use a concise title that makes the issue easy to find later."
-      confirm-label="Save title"
+      title="重命名对话"
+      description="使用简洁标题，方便之后快速找到这次问题。"
+      confirm-label="保存标题"
       :busy="workspace.renaming.value"
       @close="closeRenameDialog"
       @confirm="confirmRename"
     >
       <label class="field">
-        <span>Title</span>
+        <span>标题</span>
         <input
           v-model="renameTitle"
           maxlength="240"
@@ -519,9 +596,9 @@ onMounted(workspace.initialize);
 
     <AppDialog
       :open="deleteDialogOpen"
-      title="Delete conversation"
-      description="This permanently deletes the persisted messages and execution history for this conversation."
-      confirm-label="Delete conversation"
+      title="删除对话"
+      description="这会永久删除该对话的消息与执行记录。"
+      confirm-label="删除对话"
       :danger="true"
       :busy="workspace.deleting.value"
       @close="closeDeleteDialog"
