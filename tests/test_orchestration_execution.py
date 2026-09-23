@@ -13,6 +13,7 @@ from docker_agent.orchestration import (
     OrchestrationDecision,
     OrchestrationExecutionError,
     OrchestrationSpecialistExecutionError,
+    SpecialistResultEnvelope,
 )
 
 
@@ -222,8 +223,6 @@ def test_delegate_carries_only_explicit_public_prior_result() -> None:
         capability="incident_triage",
         clarification=None,
     )
-    from docker_agent.orchestration import SpecialistResultEnvelope
-
     prior = SpecialistResultEnvelope(
         agent_type="docker_support",
         route="runtime_tools",
@@ -260,8 +259,6 @@ def test_delegate_rejects_prior_result_from_wrong_source() -> None:
         capability="incident_triage",
         clarification=None,
     )
-    from docker_agent.orchestration import SpecialistResultEnvelope
-
     wrong_source = SpecialistResultEnvelope(
         agent_type="infrastructure_troubleshooter",
         route="triage",
