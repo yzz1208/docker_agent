@@ -745,6 +745,7 @@ def update_agent_configuration_endpoint(
 )
 def evaluation_runs(
     suite: str | None = None,
+    agent_type: str | None = None,
     limit: int = 50,
     offset: int = 0,
 ) -> list[EvaluationRunResponse]:
@@ -754,6 +755,7 @@ def evaluation_runs(
         records = list_evaluation_runs(
             get_persistence_engine(),
             suite=suite,
+            agent_type=agent_type,
             limit=limit,
             offset=offset,
         )
