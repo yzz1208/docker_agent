@@ -5,6 +5,22 @@ from docker_agent.orchestration.auto_chat import (
     AutoOrchestrationTurn,
     AutoTraceStep,
 )
+from docker_agent.orchestration.checkpoint import (
+    CHECKPOINT_NAMESPACE,
+    open_postgres_orchestration_checkpointer,
+    orchestration_checkpoint_serializer,
+    orchestration_thread_config,
+    postgres_checkpoint_uri,
+)
+from docker_agent.orchestration.checkpoint_graph import (
+    CheckpointTerminalAction,
+    OrchestrationCheckpointGraphState,
+    OrchestrationCheckpointRunResult,
+    build_checkpointed_orchestration_graph,
+    read_checkpointed_orchestration,
+    resume_checkpointed_orchestration,
+    start_checkpointed_orchestration,
+)
 from docker_agent.orchestration.decision import (
     ORCHESTRATION_SYSTEM_PROMPT,
     OrchestrationAction,
@@ -73,6 +89,7 @@ from docker_agent.orchestration.synthesis import (
 
 __all__ = [
     "AUTO_ORCHESTRATION_AGENT_TYPE",
+    "CHECKPOINT_NAMESPACE",
     "ORCHESTRATION_SYSTEM_PROMPT",
     "SYNTHESIS_SYSTEM_PROMPT",
     "AgentCapabilityIndex",
@@ -81,6 +98,7 @@ __all__ = [
     "AutoOrchestrationService",
     "AutoOrchestrationTurn",
     "AutoTraceStep",
+    "CheckpointTerminalAction",
     "CrossAgentContextEnvelope",
     "CrossAgentEnvelopeError",
     "DelegationCapabilityUnavailable",
@@ -94,6 +112,8 @@ __all__ = [
     "OrchestratedSynthesisResult",
     "OrchestratedSynthesisService",
     "OrchestrationAction",
+    "OrchestrationCheckpointGraphState",
+    "OrchestrationCheckpointRunResult",
     "OrchestrationDecision",
     "OrchestrationDecisionError",
     "OrchestrationDecisionExpectation",
@@ -115,6 +135,7 @@ __all__ = [
     "OrchestrationTerminalAction",
     "SpecialistResultEnvelope",
     "SynthesisModel",
+    "build_checkpointed_orchestration_graph",
     "build_cross_agent_context_envelope",
     "build_orchestration_decision_graph",
     "build_orchestration_execution_graph",
@@ -122,9 +143,16 @@ __all__ = [
     "build_specialist_result_envelope",
     "evaluate_orchestration_decision",
     "evaluate_orchestration_synthesis",
+    "open_postgres_orchestration_checkpointer",
+    "orchestration_checkpoint_serializer",
+    "orchestration_thread_config",
+    "postgres_checkpoint_uri",
+    "read_checkpointed_orchestration",
+    "resume_checkpointed_orchestration",
     "run_orchestration_decision_graph",
     "run_orchestration_execution_graph",
     "run_orchestration_synthesis_graph",
+    "start_checkpointed_orchestration",
     "summarize_orchestration_by_category",
     "summarize_orchestration_decisions",
     "summarize_orchestration_synthesis",
