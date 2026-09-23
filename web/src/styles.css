@@ -2092,6 +2092,11 @@ a {
   color: #28745b;
 }
 
+.auto-status-badge--approval {
+  background: #fff3d6;
+  color: #8a641f;
+}
+
 .orchestration-timeline {
   padding: 2px 14px 14px;
 }
@@ -2135,6 +2140,10 @@ a {
 
 .orchestration-step--decision .orchestration-step__dot {
   background: #3d8da8;
+}
+
+.orchestration-step--approval .orchestration-step__dot {
+  background: #c08a2d;
 }
 
 .orchestration-step--handoff .orchestration-step__dot {
@@ -2217,6 +2226,167 @@ a {
   line-height: 1.5;
 }
 
+
+/* Phase 9: durable Human-in-the-loop approval */
+.approval-card {
+  position: relative;
+  margin: 12px 14px 0;
+  display: grid;
+  grid-template-columns: 4px minmax(0, 1fr);
+  overflow: hidden;
+  border: 1px solid #ead7ae;
+  border-radius: 13px;
+  background:
+    linear-gradient(135deg, #fffdf7 0%, #fffaf0 55%, #f8fbfd 100%);
+  box-shadow: 0 8px 22px rgba(97, 70, 25, 0.08);
+}
+
+.approval-card__accent {
+  background: linear-gradient(180deg, #d7a545, #b77a21);
+}
+
+.approval-card__content {
+  min-width: 0;
+  padding: 14px 15px;
+  display: grid;
+  gap: 12px;
+}
+
+.approval-card__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.approval-card__header > div {
+  min-width: 0;
+}
+
+.approval-card__eyebrow {
+  color: #a26d1d;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.approval-card__header h3 {
+  margin: 3px 0 0;
+  color: #3d3a33;
+  font-size: 15px;
+  line-height: 1.35;
+}
+
+.approval-card__status {
+  flex: 0 0 auto;
+  padding: 4px 8px;
+  border: 1px solid #edd59f;
+  border-radius: 999px;
+  background: #fff6dc;
+  color: #8b651f;
+  font-size: 9px;
+  font-weight: 800;
+}
+
+.approval-route {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 22px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+
+.approval-route > div {
+  min-width: 0;
+  padding: 9px 10px;
+  display: grid;
+  gap: 3px;
+  border: 1px solid #e8e2d4;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.74);
+}
+
+.approval-route span {
+  color: #8c877c;
+  font-size: 9px;
+}
+
+.approval-route strong {
+  overflow: hidden;
+  color: #364255;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.approval-route__arrow {
+  text-align: center;
+  color: #ad7b2a !important;
+  font-size: 16px !important;
+  font-weight: 700;
+}
+
+.approval-card__reason {
+  padding: 9px 10px;
+  border-left: 3px solid #d5aa58;
+  border-radius: 0 8px 8px 0;
+  background: rgba(255, 248, 229, 0.72);
+}
+
+.approval-card__reason span {
+  color: #9b722e;
+  font-size: 9px;
+  font-weight: 750;
+}
+
+.approval-card__reason p {
+  margin: 4px 0 0;
+  color: #5e594f;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.approval-card__meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.approval-card__question {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  color: #7a746a;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.approval-card__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.approval-card__actions button {
+  min-width: 92px;
+}
+
+.approval-card__deny {
+  border-color: #dfd5c6;
+  color: #7a6750;
+}
+
+.approval-card__approve {
+  background: #9b6b22;
+  border-color: #9b6b22;
+}
+
+.approval-card__approve:hover:not(:disabled) {
+  background: #855a1c;
+  border-color: #855a1c;
+}
+
 @media (max-width: 820px) {
   .chat-mode-switch {
     width: 100%;
@@ -2233,6 +2403,36 @@ a {
 
   .auto-status-card {
     margin: 10px;
+  }
+
+  .approval-card {
+    margin: 10px;
+  }
+
+  .approval-card__header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .approval-card__status {
+    width: fit-content;
+  }
+
+  .approval-route {
+    grid-template-columns: 1fr;
+  }
+
+  .approval-route__arrow {
+    transform: rotate(90deg);
+  }
+
+  .approval-card__actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .approval-card__actions button {
+    width: 100%;
   }
 
   .orchestration-timeline {
