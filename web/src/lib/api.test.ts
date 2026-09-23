@@ -10,6 +10,7 @@ import {
   listAgents,
   listEvaluationRuns,
   resetChatSession,
+  sendAutoChat,
   sendChat,
   updateAgentConfiguration,
 } from "./api";
@@ -97,6 +98,46 @@ describe("API client", () => {
       conversation_id: null,
       session_id: null,
     });
+  });
+
+  it("serializes auto orchestration chat separately from manual chat", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          mode: "auto",
+          conversation_id: "auto-1",
+          current_agent_type: "docker_support",
+          route: "auto_direct",
+          answer: "容器运行正常。",
+          clarification: null,
+          needs_clarification: false,
+          synthesized: false,
+          trace: [],
+          specialist_results: [],
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await sendAutoChat({
+      message: "检查 web-1",
+      conversationId: "auto-1",
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/chat/auto",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          message: "检查 web-1",
+          conversation_id: "auto-1",
+        }),
+      }),
+    );
   });
 
   it("serializes Agent-aware clarification reset", async () => {
