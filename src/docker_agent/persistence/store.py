@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Literal
 from uuid import uuid4
 
-from sqlalchemy import Engine, delete, select
+from sqlalchemy import Engine, delete, func, select
 from sqlalchemy.orm import Session
 
 from docker_agent.persistence.models import (
@@ -112,6 +112,7 @@ def append_message(
     use_docs: bool | None = None,
     clarification: str | None = None,
     message_id: str | None = None,
+    created_at: datetime | None = None,
 ) -> MessageRecord:
     normalized_conversation_id = conversation_id.strip()
     normalized_content = content.strip()
@@ -134,6 +135,7 @@ def append_message(
             route=route,
             use_docs=use_docs,
             clarification=clarification,
+            created_at=created_at or utc_now(),
         )
         session.add(row)
 
@@ -145,6 +147,42 @@ def append_message(
         session.commit()
         session.refresh(row)
         return _message_record(row)
+
+
+def reserve_message_timestamps(
+    engine: Engine,
+    *,
+    conversation_id: str,
+    count: int,
+) -> tuple[datetime, ...]:
+    """Reserve strictly increasing timestamps for one persisted message batch."""
+
+    normalized_conversation_id = conversation_id.strip()
+    if not normalized_conversation_id:
+        raise ValueError("conversation_id must not be empty")
+    if count <= 0:
+        raise ValueError("count must be positive")
+
+    with Session(engine) as session:
+        if session.get(Conversation, normalized_conversation_id) is None:
+            raise ConversationNotFound(normalized_conversation_id)
+
+        latest = session.scalar(
+            select(func.max(Message.created_at)).where(
+                Message.conversation_id == normalized_conversation_id
+            )
+        )
+
+    now = utc_now()
+    start = (
+        max(now, latest + timedelta(microseconds=1))
+        if latest is not None
+        else now
+    )
+    return tuple(
+        start + timedelta(microseconds=index)
+        for index in range(count)
+    )
 
 
 def save_execution(
