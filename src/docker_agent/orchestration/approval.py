@@ -20,6 +20,17 @@ class HumanApprovalResponse(TypedDict):
 
 
 @dataclass(frozen=True, slots=True)
+class HumanApprovalRequest:
+    interrupt_id: str
+    action: ApprovalAction
+    source_agent_type: str | None
+    target_agent_type: str
+    capability: str
+    reason: str
+    question: str
+
+
+@dataclass(frozen=True, slots=True)
 class HumanApprovalPolicy:
     """Policy deciding which validated orchestration decisions require approval."""
 
@@ -82,6 +93,53 @@ def approval_request_payload(
     }
 
 
+def parse_approval_request(
+    *,
+    interrupt_id: str,
+    value: object,
+) -> HumanApprovalRequest:
+    if not interrupt_id.strip():
+        raise ValueError("approval interrupt_id must not be empty")
+    if not isinstance(value, dict):
+        raise TypeError("approval interrupt value must be an object")
+    if value.get("kind") != "orchestration_approval":
+        raise ValueError("unsupported approval interrupt kind")
+
+    action = value.get("action")
+    if action not in {"direct", "delegate"}:
+        raise ValueError("approval interrupt action is invalid")
+
+    source_raw = value.get("source_agent_type")
+    if source_raw is not None and not isinstance(source_raw, str):
+        raise TypeError(
+            "approval source_agent_type must be a string or null"
+        )
+    target = value.get("target_agent_type")
+    capability = value.get("capability")
+    reason = value.get("reason")
+    question = value.get("question")
+    for label, item in {
+        "target_agent_type": target,
+        "capability": capability,
+        "reason": reason,
+        "question": question,
+    }.items():
+        if not isinstance(item, str) or not item.strip():
+            raise ValueError(
+                f"approval interrupt {label} must be a non-empty string"
+            )
+
+    return HumanApprovalRequest(
+        interrupt_id=interrupt_id,
+        action=action,
+        source_agent_type=source_raw,
+        target_agent_type=target,
+        capability=capability,
+        reason=reason,
+        question=question,
+    )
+
+
 def normalize_approval_comment(value: object) -> str | None:
     if value is None:
         return None
@@ -107,7 +165,9 @@ __all__ = [
     "ApprovalAction",
     "ApprovalStatus",
     "HumanApprovalPolicy",
+    "HumanApprovalRequest",
     "HumanApprovalResponse",
     "approval_request_payload",
     "normalize_approval_comment",
+    "parse_approval_request",
 ]
