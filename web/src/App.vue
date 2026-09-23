@@ -40,6 +40,7 @@ onBeforeUnmount(() => {
           <RouterLink to="/">聊天</RouterLink>
           <RouterLink to="/operations">运行观测</RouterLink>
           <RouterLink to="/settings">设置</RouterLink>
+          <RouterLink to="/help">使用帮助</RouterLink>
         </nav>
       </div>
     </header>
