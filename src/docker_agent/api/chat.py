@@ -84,6 +84,7 @@ class ChatSessionManager:
         *,
         message: str,
         session_id: str | None = None,
+        context: str | None = None,
     ) -> tuple[str, bool, AgentTurnProtocol]:
         message = message.strip()
         if not message:
@@ -102,7 +103,10 @@ class ChatSessionManager:
                 except KeyError as exc:
                     raise ChatSessionNotFound(resolved_session_id) from exc
 
-        result = conversation.handle(message)
+        result = conversation.handle(
+            message,
+            context=context,
+        )
 
         with self._lock:
             if result.needs_clarification:
