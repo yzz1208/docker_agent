@@ -332,6 +332,103 @@ def test_compare_evaluation_runs_rejects_incompatible_runs() -> None:
         )
 
 
+
+
+def test_compare_orchestration_runs_tracks_handoffs_and_call_budget() -> None:
+    engine = _engine()
+    cases = [
+        {
+            "case_key": "handoff:decision:1",
+            "case_id": "handoff",
+            "status": "passed",
+            "details": {
+                "actual": {
+                    "action": "delegate",
+                    "target_agent_type": "infrastructure_troubleshooter",
+                    "capability": "incident_triage",
+                }
+            },
+        }
+    ]
+    _create_completed_run(
+        engine,
+        run_id="orchestration-baseline",
+        suite="orchestration",
+        agent_type="auto_orchestration",
+        aggregate_metrics={
+            "overall_pass_rate": 1.0,
+            "performance": {
+                "model_call_count": 10,
+                "average_model_calls_per_case": 1.0,
+                "latency_budget_pass_rate": 1.0,
+                "latency_ms_average": 800.0,
+            },
+        },
+        cases=cases,
+    )
+    _create_completed_run(
+        engine,
+        run_id="orchestration-candidate",
+        suite="orchestration",
+        agent_type="auto_orchestration",
+        aggregate_metrics={
+            "overall_pass_rate": 1.0,
+            "performance": {
+                "model_call_count": 11,
+                "average_model_calls_per_case": 1.1,
+                "latency_budget_pass_rate": 1.0,
+                "latency_ms_average": 950.0,
+            },
+        },
+        cases=[
+            {
+                "case_key": "handoff:decision:1",
+                "case_id": "handoff",
+                "status": "passed",
+                "details": {
+                    "actual": {
+                        "action": "direct",
+                        "target_agent_type": "docker_support",
+                        "capability": "runtime_diagnostics",
+                    }
+                },
+            }
+        ],
+    )
+
+    comparison = compare_evaluation_runs(
+        engine,
+        baseline_run_id="orchestration-baseline",
+        candidate_run_id="orchestration-candidate",
+        max_regression=0.02,
+    )
+
+    changes = {
+        (item.case_key, item.field)
+        for item in comparison.behavior_changes
+    }
+    assert changes == {
+        ("handoff:decision:1", "action"),
+        ("handoff:decision:1", "capability"),
+        ("handoff:decision:1", "target_agent_type"),
+    }
+
+    metrics = {
+        item.path: item
+        for item in comparison.metric_comparisons
+    }
+    assert "performance.latency_ms_average" not in metrics
+    assert metrics["performance.model_call_count"].direction == (
+        "lower_is_better"
+    )
+    assert metrics["performance.model_call_count"].regression is True
+    assert metrics[
+        "performance.average_model_calls_per_case"
+    ].regression is True
+    assert metrics[
+        "performance.latency_budget_pass_rate"
+    ].regression is False
+
 def test_compare_evaluation_runs_rejects_negative_threshold() -> None:
     engine = _engine()
 
