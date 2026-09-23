@@ -245,7 +245,9 @@ def test_delegate_carries_only_explicit_public_prior_result() -> None:
     delegated_input = infrastructure.questions[0]
     assert "影响生产环境 checkout-api。" in delegated_input
     assert "容器运行正常，但服务仍然返回 503。" in delegated_input
-    assert "raw tool output" not in delegated_input.lower()
+    assert "PRIVATE_SYSTEM_PROMPT" not in delegated_input
+    assert "PRIVATE_RAW_TOOL_OUTPUT" not in delegated_input
+    assert "PRIVATE_WORKER_STATE" not in delegated_input
     assert docker.questions == []
 
 
