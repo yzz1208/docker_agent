@@ -14,8 +14,10 @@ from docker_agent.orchestration import (
     OrchestrationDecisionModel,
     SpecialistResultEnvelope,
 )
+import docker_agent.orchestration.checkpoint as checkpoint_module
 from docker_agent.orchestration.checkpoint import (
     CHECKPOINT_NAMESPACE,
+    open_postgres_orchestration_checkpointer,
     orchestration_checkpoint_serializer,
     orchestration_thread_config,
     postgres_checkpoint_uri,
@@ -456,3 +458,58 @@ def test_checkpoint_serializer_round_trips_allowlisted_public_types() -> None:
     decoded = serializer.loads_typed(encoded)
 
     assert decoded == value
+
+
+def test_postgres_checkpointer_uses_safe_connection_and_explicit_setup(
+    monkeypatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    class DummyConnection:
+        def close(self) -> None:
+            captured["closed"] = True
+
+    class DummySaver:
+        def __init__(self, connection, *, serde) -> None:
+            captured["connection"] = connection
+            captured["serde"] = serde
+            captured["saver"] = self
+
+        def setup(self) -> None:
+            captured["setup_called"] = True
+
+    connection = DummyConnection()
+
+    def fake_connect(uri, *, autocommit, row_factory):
+        captured["uri"] = uri
+        captured["autocommit"] = autocommit
+        captured["row_factory"] = row_factory
+        return connection
+
+    monkeypatch.setattr(
+        checkpoint_module.psycopg,
+        "connect",
+        fake_connect,
+    )
+    monkeypatch.setattr(
+        checkpoint_module,
+        "PostgresSaver",
+        DummySaver,
+    )
+
+    with open_postgres_orchestration_checkpointer(
+        database_url=(
+            "postgresql+psycopg://user:secret@localhost:5432/docker_agent"
+        ),
+        setup=True,
+    ) as saver:
+        assert saver is captured["saver"]
+        assert captured["closed"] is not True
+
+    assert captured["uri"] == (
+        "postgresql://user:secret@localhost:5432/docker_agent"
+    )
+    assert captured["autocommit"] is True
+    assert captured["row_factory"] is checkpoint_module.dict_row
+    assert captured["setup_called"] is True
+    assert captured["closed"] is True
