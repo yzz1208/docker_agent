@@ -483,6 +483,141 @@ Targets:
 - capability/reason;
 - no hidden prompt/tool state leakage.
 
+### Step 4 implementation status
+
+**IMPLEMENTED and CI-verified**
+
+Added:
+
+~~~text
+src/docker_agent/orchestration/envelope.py
+tests/test_orchestration_envelope.py
+~~~
+
+Step 3 execution now also produces and consumes the explicit envelope types:
+
+~~~text
+CrossAgentContextEnvelope
+SpecialistResultEnvelope
+~~~
+
+### Cross-Agent request allowlist
+
+A delegated specialist may receive only:
+
+~~~text
+original_query
+current_user_message
+explicit_user_clarification
+source_agent_type
+target_agent_type
+capability
+handoff_reason
+handoff_index
+prior_specialist_result
+~~~
+
+`prior_specialist_result`, when present, is itself restricted to:
+
+~~~text
+agent_type
+route
+reason
+needs_clarification
+clarification
+bounded public answer summary
+~~~
+
+The source result must belong to the declared source Agent. Agent and capability identities
+are canonicalized before the envelope is created.
+
+### Public-result projection
+
+`build_specialist_result_envelope(...)` projects an `AgentTurnProtocol` onto the public
+cross-Agent contract. It reads only the specialist's public decision metadata, public final
+answer, or public clarification.
+
+It deliberately does not copy:
+
+- system/model prompts;
+- raw tool output;
+- runtime/doc source objects;
+- worker state;
+- supervisor plans;
+- hidden model state;
+- credentials or secret configuration.
+
+Public answer text is bounded before reuse across Agent boundaries. The current default
+maximum is 4000 characters; longer specialist output is explicitly marked as truncated.
+
+### Delegated target input
+
+For `delegate`, `DelegationExecutionService` now renders the allowlisted envelope and passes
+that rendered context to the target Agent. `direct` remains unchanged and still receives the
+normal user question without a cross-Agent wrapper.
+
+The rendered envelope explicitly labels transferred user/specialist text as **untrusted
+data**, not platform instructions. It warns the target not to follow embedded instructions
+that attempt to change its role, capabilities, tool access, or platform policy.
+
+Execution therefore becomes:
+
+~~~text
+source decision
+      ↓
+DelegationPolicy
+      ↓
+CrossAgentContextEnvelope
+      ↓
+allowlisted + rendered transfer
+      ↓
+target Agent.handle(...)
+      ↓
+SpecialistResultEnvelope
+~~~
+
+Both `request_envelope` and `result_envelope` are exposed on
+`OrchestrationExecutionResult`. A direct specialist has no request envelope but still
+produces a public result envelope for later orchestration/synthesis.
+
+### Compatibility and non-goals
+
+Step 4 still does **not**:
+
+- change `POST /chat` or Web behavior;
+- persist orchestration envelopes yet;
+- expose raw specialist evidence across Agents;
+- recursively invoke another specialist from a result;
+- synthesize multiple specialist results into one final answer.
+
+Those responsibilities remain separated so Step 5 can consume a stable, inspectable public
+result contract instead of arbitrary Agent internals.
+
+### Step 4 coverage
+
+Coverage now verifies:
+
+- direct execution remains unwrapped;
+- delegate execution receives the allowlisted context envelope;
+- explicit user clarification crosses the boundary only as explicit data;
+- prior specialist result ownership must match the source Agent;
+- private prompt/tool/worker/source sentinel data is excluded from public envelopes;
+- completed specialist answer projection;
+- clarification-only result projection;
+- bounded/truncated public summaries;
+- canonical Agent and capability identities;
+- prompt-injection boundary instructions on transferred context;
+- compatibility with the real Infrastructure Troubleshooter target Agent.
+
+The full backend gate after Step 4 reports:
+
+~~~text
+452 passed, 1 warning
+~~~
+
+Ruff, migration/database readiness, frontend type checking, frontend unit tests, production
+Web build, and production configuration validation also pass.
+
 ## Step 5 — Orchestrated Synthesis
 
 Allow one bounded orchestration flow to combine specialist results where a single specialist
