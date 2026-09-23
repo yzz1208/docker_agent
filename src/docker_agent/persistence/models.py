@@ -152,6 +152,11 @@ class EvaluationRun(PersistenceBase):
     __tablename__ = "evaluation_runs"
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    agent_type: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True,
+        index=True,
+    )
     suite: Mapped[str] = mapped_column(String(64), index=True)
     dataset_name: Mapped[str] = mapped_column(String(240))
     dataset_version: Mapped[str] = mapped_column(String(128), index=True)
