@@ -10,6 +10,7 @@ from docker_agent.persistence.store import (
     ExecutionRecord,
     MessageRecord,
     append_message,
+    reserve_message_timestamps,
     save_execution,
 )
 
@@ -33,12 +34,18 @@ def persist_agent_turn(
     """Persist one generic Agent turn plus safe orchestration metadata."""
 
     assistant_content = _assistant_content(result)
+    user_created_at, assistant_created_at = reserve_message_timestamps(
+        engine,
+        conversation_id=conversation_id,
+        count=2,
+    )
 
     user_record = append_message(
         engine,
         conversation_id=conversation_id,
         role="user",
         content=user_message,
+        created_at=user_created_at,
     )
     assistant_record = append_message(
         engine,
@@ -52,6 +59,7 @@ def persist_agent_turn(
             if result.needs_clarification
             else None
         ),
+        created_at=assistant_created_at,
     )
     execution_record = save_execution(
         engine,
