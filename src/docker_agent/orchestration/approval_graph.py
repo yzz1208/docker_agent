@@ -484,7 +484,6 @@ def resume_human_approval_orchestration(
             "approval thread must have exactly one pending interrupt"
         )
 
-    pending = snapshot.interrupts[0]
     response: HumanApprovalResponse = {
         "approved": approved,
     }
