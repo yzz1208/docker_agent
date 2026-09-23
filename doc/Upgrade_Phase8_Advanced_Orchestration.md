@@ -242,10 +242,113 @@ direct specialist
 delegate specialist
 ~~~
 
-The decision layer should use Agent Descriptor capabilities and produce structured,
+The decision layer uses Agent Descriptor capabilities and produces structured,
 validation-safe output.
 
-It must not execute the selected Agent yet.
+### Step 2 implementation status
+
+**IMPLEMENTED and CI-verified**
+
+Added:
+
+~~~text
+src/docker_agent/orchestration/decision.py
+tests/test_orchestration_decision.py
+~~~
+
+Core contract:
+
+~~~text
+OrchestrationDecisionModel
+        ↓
+OrchestrationDecision
+
+action
+reason
+source_agent_type
+target_agent_type
+capability
+clarification
+~~~
+
+Supported actions are:
+
+~~~text
+clarify
+direct
+delegate
+~~~
+
+`clarify` selects no Agent and requires a user-facing clarification question.
+
+`direct` selects a registered specialist and one capability without creating a handoff. For
+an initial platform dispatch, `source_agent_type` is null. If a current specialist already
+owns the turn, `direct` may only keep that same Agent; it cannot silently switch ownership.
+
+`delegate` is only valid when a current source Agent exists. The proposed target and
+capability are validated through the Step 1 `DelegationPolicy`, including capability support,
+source continuity, self-delegation protection, loop prevention, and hop limits.
+
+The model prompt is built from the runtime Registry rather than hard-coded specialist names.
+For each registered Agent it exposes only descriptor-backed identity, description,
+capabilities, and declared toolsets. The prompt explicitly forbids inventing Agent types,
+capabilities, permissions, tools, or live access.
+
+The returned JSON contract is strict. Missing fields, unexpected fields, malformed JSON,
+unknown Agent identities, unsupported capabilities, invalid direct switches, platform-level
+fake delegation, and unsafe handoffs are rejected before any Agent execution can occur.
+
+### Step 2 non-goals
+
+Step 2 deliberately does **not**:
+
+- change `POST /chat`;
+- call `AgentFactory.get(...)`;
+- invoke Docker Support or Infrastructure Troubleshooter;
+- persist a delegation trace;
+- execute the validated handoff;
+- synthesize specialist answers;
+- add Web Auto mode.
+
+This preserves the Phase 8 boundary:
+
+~~~text
+user request
+    ↓
+orchestration decision
+    ↓
+validated intent only
+
+NO specialist execution yet
+~~~
+
+### Step 2 coverage
+
+Dedicated tests cover:
+
+- initial direct routing to Docker Support for `runtime_diagnostics`;
+- initial direct routing to Infrastructure Troubleshooter for `incident_triage`;
+- platform clarification;
+- keeping the current specialist with `direct`;
+- validated Docker → Infrastructure delegation;
+- canonical Agent/capability normalization;
+- platform-originated fake delegation rejection;
+- silent direct Agent-switch rejection;
+- unsupported capability rejection;
+- unknown Agent rejection;
+- delegation trace loop protection;
+- context-owner/source mismatch protection;
+- strict missing/unexpected JSON field rejection;
+- fenced JSON parsing;
+- invalid JSON rejection before execution.
+
+The full backend gate after Step 2 reports:
+
+~~~text
+431 passed, 1 warning
+~~~
+
+and includes Ruff plus the migration/database readiness contract.
 
 ## Step 3 — Delegation Execution Service
 
