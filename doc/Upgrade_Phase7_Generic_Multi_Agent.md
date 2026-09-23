@@ -29,7 +29,7 @@ Existing Docker Support behavior remains the compatibility baseline.
 
 ### Phase 7 implementation status
 
-**COMPLETE and CI-verified**
+**IMPLEMENTED pending final local gate**
 
 The platform now runs two real Agent types through the same product surface:
 
@@ -1187,7 +1187,7 @@ Targets:
 
 ### Step 6 implementation status
 
-**IMPLEMENTED and CI-verified**
+**IMPLEMENTED pending final local gate**
 
 The Web now loads the runtime Agent catalog from `GET /agents` and treats Agent identity
 as first-class workspace state.
@@ -1333,4 +1333,4 @@ Phase 7 is complete when:
 - [x] both real Agents have an Agent-specific evaluation path;
 - [x] existing Docker Support behavior and tests remain compatible.
 
-**Phase 7 is complete.**
+**Phase 7 implementation is complete; final local validation is pending.**
