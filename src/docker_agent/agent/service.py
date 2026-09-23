@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-import gc
 from collections.abc import Callable
 from dataclasses import dataclass
+from threading import Lock
 
 from docker_agent.agent.answer import AgentAnswer, generate_agent_answer
 from docker_agent.agent.evidence import RuntimeEvidenceContext, build_runtime_evidence
@@ -13,7 +13,7 @@ from docker_agent.db import check_database, create_db_engine
 from docker_agent.rag.context import RagContext, build_rag_context
 from docker_agent.rag.embeddings import BgeM3Embedder
 from docker_agent.rag.llm import ChatModel, OpenAICompatibleChatClient
-from docker_agent.rag.reranker import BgeReranker, rerank_candidates
+from docker_agent.rag.reranker import BgeReranker, PairScorer, rerank_candidates
 from docker_agent.rag.store import (
     reciprocal_rank_fusion,
     search_keyword_chunks,
@@ -50,6 +50,9 @@ class DockerSupportAgent:
         answer_model: ChatModel | None = None,
         docker_tools: DockerReadOnlyTools | None = None,
         docs_retriever: DocsRetriever | None = None,
+        docs_engine: object | None = None,
+        embedder: BgeM3Embedder | None = None,
+        reranker: PairScorer | None = None,
     ) -> None:
         self.settings = settings or get_settings()
         self.router_model = router_model or self._build_model(temperature=0.0)
@@ -60,6 +63,10 @@ class DockerSupportAgent:
             self.settings
         )
         self.docs_retriever = docs_retriever or self._retrieve_docs
+        self._docs_engine = docs_engine
+        self._embedder = embedder
+        self._reranker = reranker
+        self._docs_resource_lock = Lock()
 
     def handle(self, question: str) -> AgentTurnResult:
         """Route, gather evidence, and answer one user question."""
@@ -112,10 +119,8 @@ class DockerSupportAgent:
         )
 
     def _retrieve_docs(self, question: str) -> RagContext:
-        engine = create_db_engine()
-        check_database(engine)
-
-        embedder = BgeM3Embedder()
+        engine = self._get_docs_engine()
+        embedder = self._get_embedder()
         query_embedding = embedder.embed_query(question)
         dense = search_similar_chunks(
             engine,
@@ -136,14 +141,10 @@ class DockerSupportAgent:
             keyword_weight=self.settings.retrieval_keyword_weight,
         )
 
-        del embedder
-        _release_cuda_cache()
-
-        reranker = BgeReranker()
         reranked = rerank_candidates(
             question,
             rrf,
-            reranker,
+            self._get_reranker(),
             top_k=self.settings.rerank_top_k,
         )
         return build_rag_context(
@@ -151,6 +152,32 @@ class DockerSupportAgent:
             max_sources=self.settings.rerank_top_k,
             max_chars=self.settings.rag_context_max_chars,
         )
+
+    def _get_docs_engine(self):
+        if self._docs_engine is not None:
+            return self._docs_engine
+        with self._docs_resource_lock:
+            if self._docs_engine is None:
+                engine = create_db_engine()
+                check_database(engine)
+                self._docs_engine = engine
+        return self._docs_engine
+
+    def _get_embedder(self) -> BgeM3Embedder:
+        if self._embedder is not None:
+            return self._embedder
+        with self._docs_resource_lock:
+            if self._embedder is None:
+                self._embedder = BgeM3Embedder()
+        return self._embedder
+
+    def _get_reranker(self) -> PairScorer:
+        if self._reranker is not None:
+            return self._reranker
+        with self._docs_resource_lock:
+            if self._reranker is None:
+                self._reranker = BgeReranker()
+        return self._reranker
 
     @staticmethod
     def _validate_required_citations(
@@ -161,14 +188,3 @@ class DockerSupportAgent:
             raise ValueError("Model answer did not cite Docker documentation evidence")
         if decision.route == "runtime_tools" and not answer.runtime_citation_indices:
             raise ValueError("Model answer did not cite requested runtime evidence")
-
-
-def _release_cuda_cache() -> None:
-    gc.collect()
-    try:
-        import torch
-
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-    except ImportError:
-        pass
