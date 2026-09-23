@@ -1,3 +1,10 @@
+from docker_agent.orchestration.auto_chat import (
+    AUTO_ORCHESTRATION_AGENT_TYPE,
+    AutoOrchestrationError,
+    AutoOrchestrationService,
+    AutoOrchestrationTurn,
+    AutoTraceStep,
+)
 from docker_agent.orchestration.decision import (
     ORCHESTRATION_SYSTEM_PROMPT,
     OrchestrationAction,
@@ -38,9 +45,14 @@ from docker_agent.orchestration.synthesis import (
 )
 
 __all__ = [
+    "AUTO_ORCHESTRATION_AGENT_TYPE",
     "ORCHESTRATION_SYSTEM_PROMPT",
     "SYNTHESIS_SYSTEM_PROMPT",
     "AgentCapabilityIndex",
+    "AutoOrchestrationError",
+    "AutoOrchestrationService",
+    "AutoOrchestrationTurn",
+    "AutoTraceStep",
     "AgentHandoff",
     "CrossAgentContextEnvelope",
     "CrossAgentEnvelopeError",
