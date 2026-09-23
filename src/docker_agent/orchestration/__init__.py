@@ -16,6 +16,12 @@ from docker_agent.orchestration.delegation import (
     DelegationPolicyError,
     DelegationSourceMismatch,
 )
+from docker_agent.orchestration.execution import (
+    DelegationExecutionService,
+    OrchestrationExecutionError,
+    OrchestrationExecutionResult,
+    OrchestrationSpecialistExecutionError,
+)
 
 __all__ = [
     "ORCHESTRATION_SYSTEM_PROMPT",
@@ -23,6 +29,7 @@ __all__ = [
     "AgentHandoff",
     "DelegationCapabilityUnavailable",
     "DelegationContext",
+    "DelegationExecutionService",
     "DelegationHopLimitExceeded",
     "DelegationLoopDetected",
     "DelegationPolicy",
@@ -32,4 +39,7 @@ __all__ = [
     "OrchestrationDecision",
     "OrchestrationDecisionError",
     "OrchestrationDecisionModel",
+    "OrchestrationExecutionError",
+    "OrchestrationExecutionResult",
+    "OrchestrationSpecialistExecutionError",
 ]
