@@ -24,6 +24,13 @@ def _decision(
     )
 
 
+def test_supervisor_plans_general_chat_as_diagnosis_only() -> None:
+    plan = plan_workers(_decision("general_chat", use_docs=False))
+
+    assert plan.workers == ("diagnosis",)
+    assert plan.needs_clarification is False
+
+
 def test_supervisor_plans_docs_only_workers() -> None:
     plan = plan_workers(_decision("docs_only", use_docs=True))
 
