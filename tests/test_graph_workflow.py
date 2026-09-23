@@ -496,6 +496,64 @@ def test_runtime_graph_requires_runtime_citation() -> None:
 
 
 
+class FakeGeneralAnswerModel:
+    def __init__(self, response: str) -> None:
+        self.response = response
+        self.calls = 0
+
+    def complete(self, *, system_prompt: str, user_prompt: str) -> str:
+        self.calls += 1
+        assert "conversational front door" in system_prompt
+        assert "User message:" in user_prompt
+        return self.response
+
+
+def test_support_graph_handles_general_chat_without_docs_or_runtime() -> None:
+    router = FakeRouterModel(
+        """
+        {
+          "route": "general_chat",
+          "reason": "Greeting and product capability question.",
+          "container_ref": null,
+          "tools": [],
+          "clarification": null,
+          "use_docs": false
+        }
+        """
+    )
+    planner = SequencePlannerModel(
+        ['{"action":"finish","tool":null,"reason":"must not run"}']
+    )
+    answer = FakeGeneralAnswerModel(
+        "你好，我可以帮你进行 Docker 文档问答和故障排查。"
+    )
+    docs = FakeDocsRetriever()
+    tools = FakeRuntimeDockerTools()
+
+    result = run_support_graph(
+        "你好，介绍一下自己",
+        router_model=router,
+        planner_model=planner,
+        answer_model=answer,
+        docker_tools=tools,  # type: ignore[arg-type]
+        docs_retriever=docs,
+    )
+
+    assert result["decision"] is not None
+    assert result["decision"].route == "general_chat"
+    assert planner.calls == 0
+    assert tools.calls == []
+    assert docs.calls == []
+    assert answer.calls == 1
+    assert result["answer"] is not None
+    assert result["answer"].doc_sources == ()
+    assert result["answer"].runtime_sources == ()
+    assert result["completed_workers"] == ("diagnosis",)
+    assert result["agent_state"].answer == (
+        "你好，我可以帮你进行 Docker 文档问答和故障排查。"
+    )
+
+
 def test_support_graph_runs_docs_only_path_without_runtime() -> None:
     router = FakeRouterModel(
         """
