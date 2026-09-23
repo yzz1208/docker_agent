@@ -6,7 +6,6 @@ from typing import Any, Protocol
 
 from docker_agent.orchestration.envelope import SpecialistResultEnvelope
 
-
 SYNTHESIS_SYSTEM_PROMPT = """You are the platform orchestration synthesis model.
 Return JSON only. Do not invoke tools or Agents.
 
