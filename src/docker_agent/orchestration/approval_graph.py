@@ -38,6 +38,7 @@ class OrchestrationApprovalGraphState(TypedDict):
     """Public-only checkpoint state for Human-in-the-loop orchestration."""
 
     question: str
+    approval_question: str | None
     context: DelegationContext
     source_agent_type: str | None
     explicit_user_clarification: str | None
@@ -193,7 +194,10 @@ def build_human_approval_orchestration_graph(
 
         response = interrupt(
             approval_request_payload(
-                question=state["question"],
+                question=(
+                    state["approval_question"]
+                    or state["question"]
+                ),
                 decision=decision,
             )
         )
@@ -423,6 +427,7 @@ def start_human_approval_orchestration(
     *,
     thread_id: str,
     question: str,
+    approval_question: str | None = None,
     context: DelegationContext | None = None,
     source_agent_type: str | None = None,
     explicit_user_clarification: str | None = None,
@@ -446,6 +451,12 @@ def start_human_approval_orchestration(
     graph.invoke(
         OrchestrationApprovalGraphState(
             question=normalized,
+            approval_question=(
+                approval_question.strip()
+                if approval_question is not None
+                and approval_question.strip()
+                else None
+            ),
             context=active_context,
             source_agent_type=source_agent_type,
             explicit_user_clarification=explicit_user_clarification,
