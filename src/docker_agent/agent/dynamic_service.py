@@ -2,7 +2,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from docker_agent.agent.answer import AgentAnswer, generate_agent_answer
+from docker_agent.agent.answer import (
+    AgentAnswer,
+    generate_agent_answer,
+    generate_general_support_answer,
+)
 from docker_agent.agent.dynamic_workflow import (
     DynamicRuntimeStep,
     run_dynamic_runtime_workflow,
@@ -49,6 +53,15 @@ class DynamicDockerSupportAgent(DockerSupportAgent):
             return DynamicAgentTurnResult(
                 decision=decision,
                 answer=None,
+                runtime_trace=(),
+            )
+        if decision.route == "general_chat":
+            return DynamicAgentTurnResult(
+                decision=decision,
+                answer=generate_general_support_answer(
+                    question,
+                    self.answer_model,
+                ),
                 runtime_trace=(),
             )
 
