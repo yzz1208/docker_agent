@@ -121,3 +121,28 @@ def test_runtime_route_can_request_docs_for_remediation() -> None:
 
     assert decision.route == "runtime_tools"
     assert decision.use_docs is True
+
+
+def test_route_general_chat_for_greeting_and_product_help() -> None:
+    decision = route_question(
+        "你好，介绍一下自己，你能做什么？",
+        FakeModel(
+            '{"route":"general_chat","reason":"greeting and capability question",'
+            '"container_ref":null,"tools":[],"clarification":null,"use_docs":false}'
+        ),
+    )
+
+    assert decision.route == "general_chat"
+    assert decision.tools == ()
+    assert decision.container_ref is None
+    assert decision.clarification is None
+    assert decision.use_docs is False
+
+
+def test_general_chat_rejects_runtime_tools() -> None:
+    with pytest.raises(AgentRoutingError, match="general_chat"):
+        parse_route_decision(
+            '{"route":"general_chat","reason":"hello",'
+            '"container_ref":null,"tools":["docker_info"],'
+            '"clarification":null,"use_docs":false}'
+        )
