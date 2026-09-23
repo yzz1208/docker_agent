@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from docker_agent.agent.answer import (
     AgentAnswer,
     generate_agent_answer_from_evidence,
+    generate_general_support_answer,
 )
 from docker_agent.agent.core_adapters import (
     dynamic_trace_to_agent_steps,
@@ -136,14 +137,20 @@ class DiagnosisWorker:
             truncated=False,
         )
 
-        answer = generate_agent_answer_from_evidence(
-            state.question,
-            rag_context_to_evidence_bundle(docs),
-            runtime_context_to_evidence_bundle(runtime),
-            self.answer_model,
-            doc_sources=docs.sources,
-            runtime_sources=runtime.sources,
-        )
+        if decision.route == "general_chat":
+            answer = generate_general_support_answer(
+                state.question,
+                self.answer_model,
+            )
+        else:
+            answer = generate_agent_answer_from_evidence(
+                state.question,
+                rag_context_to_evidence_bundle(docs),
+                runtime_context_to_evidence_bundle(runtime),
+                self.answer_model,
+                doc_sources=docs.sources,
+                runtime_sources=runtime.sources,
+            )
 
         if decision.route == "docs_only" and not answer.doc_citation_indices:
             raise ValueError(
