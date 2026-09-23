@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 import pytest
 from sqlalchemy import create_engine
+from sqlalchemy.engine import Engine
 from sqlalchemy.pool import StaticPool
 
 from docker_agent.agent.factory import AgentFactory
@@ -78,6 +79,7 @@ def _service(
     synthesis: list[str] | None = None,
 ) -> tuple[
     AutoOrchestrationService,
+    Engine,
     RecordingAgent,
     RecordingAgent,
     SequenceModel,
@@ -134,11 +136,11 @@ def _service(
             model=synthesis_model,
         ),
     )
-    return service, docker, infrastructure, decision_model
+    return service, engine, docker, infrastructure, decision_model
 
 
 def test_auto_chat_first_turn_uses_one_specialist_and_persists_history() -> None:
-    service, docker, infrastructure, _ = _service(
+    service, engine, docker, infrastructure, _ = _service(
         decisions=[
             (
                 '{"action":"direct","reason":"需要检查容器运行状态",'
@@ -162,11 +164,11 @@ def test_auto_chat_first_turn_uses_one_specialist_and_persists_history() -> None
     assert len(docker.questions) == 1
     assert infrastructure.questions == []
 
-    conversations = list_conversations(service._engine)  # type: ignore[attr-defined]
+    conversations = list_conversations(engine)
     assert len(conversations) == 1
     assert conversations[0].agent_type == "auto_orchestration"
     snapshot = load_conversation(
-        service._engine,  # type: ignore[attr-defined]
+        engine
         turn.conversation.id,
     )
     assert [message.role for message in snapshot.messages] == [
@@ -178,7 +180,7 @@ def test_auto_chat_first_turn_uses_one_specialist_and_persists_history() -> None
 
 
 def test_auto_chat_follow_up_can_handoff_and_synthesize() -> None:
-    service, docker, infrastructure, _ = _service(
+    service, engine, docker, infrastructure, _ = _service(
         decisions=[
             (
                 '{"action":"direct","reason":"先检查容器",'
@@ -215,7 +217,7 @@ def test_auto_chat_follow_up_can_handoff_and_synthesize() -> None:
     assert "容器运行正常。" in infrastructure.questions[0]
 
     snapshot = load_conversation(
-        service._engine,  # type: ignore[attr-defined]
+        engine
         first.conversation.id,
     )
     assert [message.role for message in snapshot.messages] == [
@@ -228,7 +230,7 @@ def test_auto_chat_follow_up_can_handoff_and_synthesize() -> None:
 
 
 def test_auto_chat_clarify_does_not_execute_specialist() -> None:
-    service, docker, infrastructure, _ = _service(
+    service, engine, docker, infrastructure, _ = _service(
         decisions=[
             (
                 '{"action":"clarify","reason":"范围不明确",'
@@ -249,11 +251,11 @@ def test_auto_chat_clarify_does_not_execute_specialist() -> None:
 
 
 def test_auto_chat_rejects_manual_agent_conversation() -> None:
-    service, _, _, _ = _service(decisions=[])
+    service, engine, _, _, _ = _service(decisions=[])
     from docker_agent.persistence import create_conversation
 
     manual = create_conversation(
-        service._engine,  # type: ignore[attr-defined]
+        engine
         agent_type="docker_support",
         title="manual",
     )
