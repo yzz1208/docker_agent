@@ -20,8 +20,8 @@ onBeforeUnmount(() => {
   <div class="app-shell">
     <header class="topbar">
       <div>
-        <p class="eyebrow">Docker Support Agent</p>
-        <h1>Support Console</h1>
+        <p class="eyebrow">Docker 智能支持平台</p>
+        <h1>支持控制台</h1>
       </div>
 
       <div class="topbar__actions">
@@ -36,10 +36,10 @@ onBeforeUnmount(() => {
           <span>{{ backend.label.value }}</span>
         </button>
 
-        <nav class="topbar__nav" aria-label="Primary">
-          <RouterLink to="/">Chat</RouterLink>
-          <RouterLink to="/operations">Operations</RouterLink>
-          <RouterLink to="/settings">Settings</RouterLink>
+        <nav class="topbar__nav" aria-label="主导航">
+          <RouterLink to="/">聊天</RouterLink>
+          <RouterLink to="/operations">运行观测</RouterLink>
+          <RouterLink to="/settings">设置</RouterLink>
         </nav>
       </div>
     </header>
