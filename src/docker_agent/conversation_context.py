@@ -49,6 +49,7 @@ def build_conversation_context(
 
     candidates = messages[-max_messages:]
     selected_reversed: list[str] = []
+    partial_message = False
     remaining = max_chars
 
     for message in reversed(candidates):
@@ -64,6 +65,7 @@ def build_conversation_context(
             selected_reversed.append(
                 _truncate_rendered_message(rendered, remaining)
             )
+            partial_message = len(rendered) > remaining
         break
 
     selected = tuple(reversed(selected_reversed))
@@ -72,10 +74,7 @@ def build_conversation_context(
     truncated = (
         message_count < available
         or len(candidates) < available
-        or any(
-            rendered.endswith("…")
-            for rendered in selected
-        )
+        or partial_message
     )
 
     return ConversationContext(
