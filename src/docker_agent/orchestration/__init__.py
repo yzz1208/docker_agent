@@ -5,6 +5,7 @@ from docker_agent.orchestration.approval import (
     HumanApprovalRequest,
     HumanApprovalResponse,
     approval_request_payload,
+    approval_response_schema,
     normalize_approval_comment,
     parse_approval_request,
 )
@@ -163,6 +164,7 @@ __all__ = [
     "SpecialistResultEnvelope",
     "SynthesisModel",
     "approval_request_payload",
+    "approval_response_schema",
     "build_checkpointed_orchestration_graph",
     "build_cross_agent_context_envelope",
     "build_human_approval_orchestration_graph",
