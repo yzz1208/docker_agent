@@ -4,7 +4,11 @@ import json
 from dataclasses import dataclass
 from typing import Any, Literal, cast
 
-from docker_agent.agent.registry import AgentNotRegistered, AgentRegistry
+from docker_agent.agent.registry import (
+    AgentNotRegistered,
+    AgentRegistry,
+    AgentRegistryError,
+)
 from docker_agent.orchestration.delegation import (
     AgentCapabilityIndex,
     DelegationContext,
@@ -14,6 +18,16 @@ from docker_agent.orchestration.delegation import (
 from docker_agent.rag.llm import ChatModel
 
 OrchestrationAction = Literal["clarify", "direct", "delegate"]
+
+_DECISION_FIELDS = frozenset(
+    {
+        "action",
+        "reason",
+        "target_agent_type",
+        "capability",
+        "clarification",
+    }
+)
 
 ORCHESTRATION_SYSTEM_PROMPT = """You are the platform orchestration decision model.
 Return JSON only. Do not answer the user's technical question and do not invoke any Agent.
@@ -117,6 +131,7 @@ class OrchestrationDecisionModel:
     ) -> OrchestrationDecision:
         source = self._resolve_source(context, source_agent_type)
         payload = _parse_json_object(raw)
+        _validate_decision_fields(payload)
         action_raw = str(payload.get("action") or "").strip()
         if action_raw not in {"clarify", "direct", "delegate"}:
             raise OrchestrationDecisionError(
@@ -162,6 +177,8 @@ class OrchestrationDecisionModel:
             raise OrchestrationDecisionError(
                 f"target Agent is not registered: {target!r}"
             ) from exc
+        except AgentRegistryError as exc:
+            raise OrchestrationDecisionError(str(exc)) from exc
         except DelegationPolicyError as exc:
             raise OrchestrationDecisionError(str(exc)) from exc
 
@@ -214,6 +231,8 @@ class OrchestrationDecisionModel:
             raise OrchestrationDecisionError(
                 f"source Agent is not registered: {source_agent_type!r}"
             ) from exc
+        except AgentRegistryError as exc:
+            raise OrchestrationDecisionError(str(exc)) from exc
         if current is not None and source != current:
             raise OrchestrationDecisionError(
                 f"source Agent must match current context owner {current!r}"
@@ -273,6 +292,22 @@ def _parse_json_object(raw: str) -> dict[str, Any]:
             "orchestration model response must be a JSON object"
         )
     return payload
+
+
+def _validate_decision_fields(payload: dict[str, Any]) -> None:
+    keys = set(payload)
+    missing = sorted(_DECISION_FIELDS - keys)
+    unexpected = sorted(keys - _DECISION_FIELDS)
+    if missing:
+        raise OrchestrationDecisionError(
+            "orchestration decision is missing fields: "
+            + ", ".join(missing)
+        )
+    if unexpected:
+        raise OrchestrationDecisionError(
+            "orchestration decision contains unexpected fields: "
+            + ", ".join(unexpected)
+        )
 
 
 def _optional_string(value: object, field: str) -> str | None:
