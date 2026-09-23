@@ -16,6 +16,13 @@ from docker_agent.orchestration.delegation import (
     DelegationPolicyError,
     DelegationSourceMismatch,
 )
+from docker_agent.orchestration.envelope import (
+    CrossAgentContextEnvelope,
+    CrossAgentEnvelopeError,
+    SpecialistResultEnvelope,
+    build_cross_agent_context_envelope,
+    build_specialist_result_envelope,
+)
 from docker_agent.orchestration.execution import (
     DelegationExecutionService,
     OrchestrationExecutionError,
@@ -27,6 +34,8 @@ __all__ = [
     "ORCHESTRATION_SYSTEM_PROMPT",
     "AgentCapabilityIndex",
     "AgentHandoff",
+    "CrossAgentContextEnvelope",
+    "CrossAgentEnvelopeError",
     "DelegationCapabilityUnavailable",
     "DelegationContext",
     "DelegationExecutionService",
@@ -42,4 +51,7 @@ __all__ = [
     "OrchestrationExecutionError",
     "OrchestrationExecutionResult",
     "OrchestrationSpecialistExecutionError",
+    "SpecialistResultEnvelope",
+    "build_cross_agent_context_envelope",
+    "build_specialist_result_envelope",
 ]
