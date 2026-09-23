@@ -143,6 +143,31 @@ export function sendAutoChat(input: {
   });
 }
 
+export function getAutoApproval(
+  conversationId: string,
+): Promise<AutoChatResponse | null> {
+  return request<AutoChatResponse | null>(
+    `/chat/auto/${encodeURIComponent(conversationId)}/approval`,
+  );
+}
+
+export function resolveAutoApproval(input: {
+  conversationId: string;
+  approved: boolean;
+  comment?: string | null;
+}): Promise<AutoChatResponse> {
+  return request<AutoChatResponse>(
+    `/chat/auto/${encodeURIComponent(input.conversationId)}/approval`,
+    {
+      method: "POST",
+      body: jsonBody({
+        approved: input.approved,
+        comment: input.comment ?? null,
+      }),
+    },
+  );
+}
+
 export function resetChatSession(
   sessionId: string,
   agentType?: string | null,
