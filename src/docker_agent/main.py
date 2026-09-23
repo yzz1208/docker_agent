@@ -929,6 +929,7 @@ def operation_run_detail(run_id: str) -> AgentRunResponse:
 )
 def operations_summary(
     hours: int = 24,
+    agent_type: str | None = None,
 ) -> AgentRunSummaryResponse:
     """Summarize Agent runs over a bounded recent time window."""
 
@@ -936,6 +937,7 @@ def operations_summary(
         summary = summarize_agent_runs(
             get_persistence_engine(),
             hours=hours,
+            agent_type=agent_type,
         )
     except SQLAlchemyError as exc:
         raise HTTPException(
