@@ -184,6 +184,12 @@ def test_persistent_chat_keeps_conversation_id_across_clarification() -> None:
         "web",
         "web 当前使用 128MiB 内存。[R1]",
     ]
+    timestamps = [
+        message.created_at
+        for message in snapshot.messages
+    ]
+    assert timestamps == sorted(timestamps)
+    assert len(set(timestamps)) == len(timestamps)
     assert len(snapshot.executions) == 2
 
     runs = list_agent_runs(
