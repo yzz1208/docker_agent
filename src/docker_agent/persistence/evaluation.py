@@ -53,6 +53,7 @@ _SENSITIVE_KEY_SUFFIXES = (
 @dataclass(frozen=True, slots=True)
 class EvaluationRunRecord:
     id: str
+    agent_type: str | None
     suite: str
     dataset_name: str
     dataset_version: str
@@ -190,6 +191,7 @@ def create_evaluation_run(
     suite: str,
     dataset_name: str,
     dataset_version_value: str,
+    agent_type: str | None = None,
     config_snapshot: dict[str, object] | None = None,
     git_revision: str | None = None,
     run_id: str | None = None,
@@ -197,7 +199,10 @@ def create_evaluation_run(
     normalized_suite = suite.strip()
     normalized_dataset_name = dataset_name.strip()
     normalized_dataset_version = dataset_version_value.strip()
+    normalized_agent_type = agent_type.strip() if agent_type else None
 
+    if agent_type is not None and not normalized_agent_type:
+        raise ValueError("agent_type must not be empty")
     if not normalized_suite:
         raise ValueError("suite must not be empty")
     if not normalized_dataset_name:
@@ -211,6 +216,7 @@ def create_evaluation_run(
 
     row = EvaluationRun(
         id=run_id or uuid4().hex,
+        agent_type=normalized_agent_type,
         suite=normalized_suite,
         dataset_name=normalized_dataset_name,
         dataset_version=normalized_dataset_version,
@@ -339,6 +345,7 @@ def list_evaluation_runs(
     engine: Engine,
     *,
     suite: str | None = None,
+    agent_type: str | None = None,
     limit: int = 50,
     offset: int = 0,
 ) -> tuple[EvaluationRunRecord, ...]:
@@ -353,6 +360,14 @@ def list_evaluation_runs(
         if not normalized_suite:
             raise ValueError("suite must not be empty")
         statement = statement.where(EvaluationRun.suite == normalized_suite)
+
+    if agent_type is not None:
+        normalized_agent_type = agent_type.strip()
+        if not normalized_agent_type:
+            raise ValueError("agent_type must not be empty")
+        statement = statement.where(
+            EvaluationRun.agent_type == normalized_agent_type
+        )
 
     statement = (
         statement.order_by(EvaluationRun.started_at.desc(), EvaluationRun.id)
@@ -437,6 +452,7 @@ def _run_record(row: EvaluationRun) -> EvaluationRunRecord:
         raise ValueError(f"invalid stored evaluation run status: {status}")
     return EvaluationRunRecord(
         id=row.id,
+        agent_type=row.agent_type,
         suite=row.suite,
         dataset_name=row.dataset_name,
         dataset_version=row.dataset_version,
