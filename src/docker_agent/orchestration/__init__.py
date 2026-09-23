@@ -48,6 +48,13 @@ from docker_agent.orchestration.execution import (
     OrchestrationExecutionResult,
     OrchestrationSpecialistExecutionError,
 )
+from docker_agent.orchestration.graph import (
+    OrchestrationDecisionGraphResult,
+    OrchestrationDecisionGraphState,
+    OrchestrationTerminalAction,
+    build_orchestration_decision_graph,
+    run_orchestration_decision_graph,
+)
 from docker_agent.orchestration.synthesis import (
     SYNTHESIS_SYSTEM_PROMPT,
     OrchestratedSynthesisResult,
@@ -82,6 +89,8 @@ __all__ = [
     "OrchestrationDecision",
     "OrchestrationDecisionError",
     "OrchestrationDecisionExpectation",
+    "OrchestrationDecisionGraphResult",
+    "OrchestrationDecisionGraphState",
     "OrchestrationDecisionMetrics",
     "OrchestrationDecisionModel",
     "OrchestrationEvalKind",
@@ -91,13 +100,16 @@ __all__ = [
     "OrchestrationSynthesisError",
     "OrchestrationSynthesisExpectation",
     "OrchestrationSynthesisMetrics",
+    "OrchestrationTerminalAction",
     "SpecialistResultEnvelope",
     "SynthesisModel",
     "build_cross_agent_context_envelope",
+    "build_orchestration_decision_graph",
     "build_specialist_result_envelope",
     "evaluate_orchestration_decision",
     "evaluate_orchestration_synthesis",
     "summarize_orchestration_by_category",
     "summarize_orchestration_decisions",
+    "run_orchestration_decision_graph",
     "summarize_orchestration_synthesis",
 ]
