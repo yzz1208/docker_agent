@@ -24,6 +24,7 @@ from docker_agent.orchestration.auto_chat import (
     AutoOrchestrationService,
     AutoOrchestrationTurn,
     AutoTraceStep,
+    LangGraphAutoOrchestrationService,
 )
 from docker_agent.orchestration.checkpoint import (
     CHECKPOINT_NAMESPACE,
@@ -99,6 +100,12 @@ from docker_agent.orchestration.graph import (
     run_orchestration_execution_graph,
     run_orchestration_synthesis_graph,
 )
+from docker_agent.orchestration.parity import (
+    AutoOrchestrationParityMismatch,
+    AutoOrchestrationParityReport,
+    AutoOrchestrationParitySnapshot,
+    compare_auto_orchestration_turns,
+)
 from docker_agent.orchestration.synthesis import (
     SYNTHESIS_SYSTEM_PROMPT,
     OrchestratedSynthesisResult,
@@ -118,6 +125,9 @@ __all__ = [
     "ApprovalStatus",
     "ApprovalTerminalAction",
     "AutoOrchestrationError",
+    "AutoOrchestrationParityMismatch",
+    "AutoOrchestrationParityReport",
+    "AutoOrchestrationParitySnapshot",
     "AutoOrchestrationService",
     "AutoOrchestrationTurn",
     "AutoTraceStep",
@@ -135,6 +145,7 @@ __all__ = [
     "HumanApprovalPolicy",
     "HumanApprovalRequest",
     "HumanApprovalResponse",
+    "LangGraphAutoOrchestrationService",
     "OrchestratedSynthesisResult",
     "OrchestratedSynthesisService",
     "OrchestrationAction",
@@ -172,6 +183,7 @@ __all__ = [
     "build_orchestration_execution_graph",
     "build_orchestration_synthesis_graph",
     "build_specialist_result_envelope",
+    "compare_auto_orchestration_turns",
     "evaluate_orchestration_decision",
     "evaluate_orchestration_synthesis",
     "normalize_approval_comment",
