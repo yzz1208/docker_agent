@@ -5,6 +5,7 @@ from dataclasses import dataclass
 import pytest
 from langgraph.checkpoint.memory import InMemorySaver
 
+import docker_agent.orchestration.approval_graph as approval_graph_module
 from docker_agent.agent.factory import AgentFactory
 from docker_agent.agent.registry import build_agent_registry
 from docker_agent.orchestration import (
@@ -496,3 +497,54 @@ def test_approval_policy_rejects_invalid_configuration() -> None:
         HumanApprovalPolicy(
             required_capabilities=frozenset({"   "}),
         )
+
+
+def test_interrupt_call_remains_compatible_with_langgraph_1_2_11(
+    monkeypatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def legacy_interrupt(value):
+        captured["value"] = value
+        return {
+            "approved": False,
+            "comment": "compatibility test",
+        }
+
+    monkeypatch.setattr(
+        approval_graph_module,
+        "interrupt",
+        legacy_interrupt,
+    )
+
+    graph, decision_raw, synthesis_raw, docker, infrastructure = _runtime(
+        decision_response=(
+            '{"action":"delegate","reason":"service failure remains",'
+            '"target_agent_type":"infrastructure_troubleshooter",'
+            '"capability":"incident_triage","clarification":null}'
+        ),
+        synthesis_responses=[],
+    )
+
+    result = start_human_approval_orchestration(
+        graph,
+        thread_id="approval-legacy-interrupt-signature",
+        question="继续排查服务。",
+        context=DelegationContext(
+            original_query="服务失败"
+        ),
+        source_agent_type="docker_support",
+        prior_specialist_result=_prior_result(),
+    )
+
+    assert result.completed is True
+    assert result.approval_status == "denied"
+    assert result.answer == "操作未获批准，工作流已停止执行。"
+    payload = captured["value"]
+    assert isinstance(payload, dict)
+    assert payload["kind"] == "orchestration_approval"
+    assert isinstance(payload["response_schema"], dict)
+    assert decision_raw.calls == 1
+    assert synthesis_raw.calls == 0
+    assert docker.questions == []
+    assert infrastructure.questions == []
