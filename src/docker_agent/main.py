@@ -78,6 +78,7 @@ from docker_agent.api.operations import (
     build_agent_run_summary_response,
 )
 from docker_agent.api.orchestration import (
+    AutoApprovalDecisionRequest,
     AutoChatRequest,
     AutoChatResponse,
     build_auto_chat_response,
@@ -105,13 +106,14 @@ from docker_agent.observability import (
 )
 from docker_agent.orchestration import (
     AutoOrchestrationError,
-    AutoOrchestrationService,
     DelegationExecutionService,
+    LangGraphProductAutoOrchestrationService,
     OrchestratedSynthesisService,
     OrchestrationDecisionError,
     OrchestrationDecisionModel,
     OrchestrationExecutionError,
     OrchestrationSynthesisError,
+    open_postgres_orchestration_checkpointer,
 )
 from docker_agent.persistence import (
     AgentConfigurationAlreadyExists,
@@ -378,8 +380,8 @@ def _orchestration_model(
 
 
 @lru_cache
-def get_auto_orchestration_service() -> AutoOrchestrationService:
-    """Build the low-latency product auto-orchestration runtime."""
+def get_auto_orchestration_service() -> LangGraphProductAutoOrchestrationService:
+    """Build the Phase 9 LangGraph product auto-orchestration runtime."""
 
     decision = OrchestrationDecisionModel(
         registry=agent_registry,
@@ -400,11 +402,14 @@ def get_auto_orchestration_service() -> AutoOrchestrationService:
             max_tokens=1200,
         ),
     )
-    return AutoOrchestrationService(
+    return LangGraphProductAutoOrchestrationService(
         engine=get_persistence_engine(),
         decision_model=decision,
         execution_service=execution,
         synthesis_service=synthesis,
+        checkpointer_context_factory=(
+            open_postgres_orchestration_checkpointer
+        ),
     )
 
 
@@ -1215,6 +1220,119 @@ def auto_chat(
         turn = get_auto_orchestration_service().chat(
             message=request.message,
             conversation_id=request.conversation_id,
+        )
+    except ConversationNotFound as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Conversation was not found.",
+        ) from exc
+    except AgentDisabledError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
+    except (
+        AutoOrchestrationError,
+        OrchestrationDecisionError,
+        OrchestrationExecutionError,
+        OrchestrationSynthesisError,
+        AgentRegistryError,
+    ) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+    except (ModelRequestError, ModelResponseError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Orchestration model failed: {exc}",
+        ) from exc
+    except SQLAlchemyError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="PostgreSQL is unavailable.",
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+    response.headers["X-Conversation-ID"] = turn.conversation.id
+    response.headers["X-Agent-Type"] = "auto_orchestration"
+    if turn.current_agent_type is not None:
+        response.headers["X-Orchestration-Owner"] = (
+            turn.current_agent_type
+        )
+
+    return build_auto_chat_response(turn)
+
+
+@app.get(
+    "/chat/auto/{conversation_id}/approval",
+    response_model=AutoChatResponse | None,
+    tags=["agent"],
+)
+def auto_chat_pending_approval(
+    conversation_id: str,
+) -> AutoChatResponse | None:
+    """Return a pending durable approval for one auto conversation."""
+
+    try:
+        turn = get_auto_orchestration_service().pending_approval(
+            conversation_id=conversation_id,
+        )
+    except ConversationNotFound as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Conversation was not found.",
+        ) from exc
+    except (
+        AutoOrchestrationError,
+        OrchestrationDecisionError,
+        OrchestrationExecutionError,
+        OrchestrationSynthesisError,
+        AgentRegistryError,
+    ) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+    except SQLAlchemyError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="PostgreSQL is unavailable.",
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+    return (
+        build_auto_chat_response(turn)
+        if turn is not None
+        else None
+    )
+
+
+@app.post(
+    "/chat/auto/{conversation_id}/approval",
+    response_model=AutoChatResponse,
+    tags=["agent"],
+)
+def resolve_auto_chat_approval(
+    conversation_id: str,
+    request: AutoApprovalDecisionRequest,
+    response: Response,
+) -> AutoChatResponse:
+    """Approve or deny one pending LangGraph orchestration interrupt."""
+
+    try:
+        turn = get_auto_orchestration_service().resume_approval(
+            conversation_id=conversation_id,
+            approved=request.approved,
+            comment=request.comment,
         )
     except ConversationNotFound as exc:
         raise HTTPException(
