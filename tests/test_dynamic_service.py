@@ -85,3 +85,37 @@ def test_dynamic_service_ignores_router_tool_plan_and_replans_after_observation(
         "tool",
         "finish",
     ]
+
+
+def test_dynamic_service_handles_general_chat_without_planner_or_docs() -> None:
+    router = FixedModel(
+        '{"route":"general_chat","reason":"greeting",'
+        '"container_ref":null,"tools":[],"clarification":null,"use_docs":false}'
+    )
+    planner = FixedModel(
+        '{"action":"finish","tool":null,"reason":"must not run"}'
+    )
+    answer_model = FixedModel(
+        "你好，我可以帮你进行 Docker 文档问答和只读故障排查。"
+    )
+    tools = FakeDockerTools()
+    docs_calls: list[str] = []
+
+    agent = DynamicDockerSupportAgent(
+        settings=Settings(),
+        router_model=router,
+        planner_model=planner,
+        answer_model=answer_model,
+        docker_tools=tools,  # type: ignore[arg-type]
+        docs_retriever=lambda question: docs_calls.append(question)
+        or RagContext(text="", sources=(), truncated=False),
+    )
+
+    result = agent.handle("你好，你能做什么？")
+
+    assert result.decision.route == "general_chat"
+    assert result.runtime_trace == ()
+    assert result.answer is not None
+    assert "Docker 文档问答" in result.answer.answer
+    assert tools.calls == []
+    assert docs_calls == []
