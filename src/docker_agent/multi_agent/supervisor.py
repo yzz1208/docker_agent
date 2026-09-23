@@ -49,8 +49,10 @@ def plan_workers(decision: AgentRouteDecision) -> SupervisorPlan:
             clarification=decision.clarification,
         )
 
-    if decision.route == "docs_only":
-        workers: tuple[WorkerRole, ...] = ("knowledge", "diagnosis")
+    if decision.route == "general_chat":
+        workers: tuple[WorkerRole, ...] = ("diagnosis",)
+    elif decision.route == "docs_only":
+        workers = ("knowledge", "diagnosis")
     elif decision.route == "runtime_tools":
         workers = (
             ("runtime", "knowledge", "diagnosis")
