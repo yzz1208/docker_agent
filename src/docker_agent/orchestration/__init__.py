@@ -1,10 +1,3 @@
-from docker_agent.orchestration.auto_chat import (
-    AUTO_ORCHESTRATION_AGENT_TYPE,
-    AutoOrchestrationError,
-    AutoOrchestrationService,
-    AutoOrchestrationTurn,
-    AutoTraceStep,
-)
 from docker_agent.orchestration.approval import (
     ApprovalAction,
     ApprovalStatus,
@@ -23,6 +16,13 @@ from docker_agent.orchestration.approval_graph import (
     read_human_approval_orchestration,
     resume_human_approval_orchestration,
     start_human_approval_orchestration,
+)
+from docker_agent.orchestration.auto_chat import (
+    AUTO_ORCHESTRATION_AGENT_TYPE,
+    AutoOrchestrationError,
+    AutoOrchestrationService,
+    AutoOrchestrationTurn,
+    AutoTraceStep,
 )
 from docker_agent.orchestration.checkpoint import (
     CHECKPOINT_NAMESPACE,
