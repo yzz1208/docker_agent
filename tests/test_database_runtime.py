@@ -120,8 +120,8 @@ def test_database_readiness_tracks_alembic_head(
         readiness = get_database_readiness(engine)
 
         assert readiness.schema_current is True
-        assert readiness.current_revisions == ("20260921_0001",)
-        assert readiness.head_revisions == ("20260921_0001",)
+        assert readiness.current_revisions == ("20260923_0002",)
+        assert readiness.head_revisions == ("20260923_0002",)
         assert require_database_ready(engine) == readiness
 
         command.downgrade(config, "base")
@@ -129,7 +129,7 @@ def test_database_readiness_tracks_alembic_head(
         outdated = get_database_readiness(engine)
         assert outdated.schema_current is False
         assert outdated.current_revisions == ()
-        assert outdated.head_revisions == ("20260921_0001",)
+        assert outdated.head_revisions == ("20260923_0002",)
 
         with pytest.raises(
             DatabaseSchemaNotReady,
