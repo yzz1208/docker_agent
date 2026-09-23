@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 
 from docker_agent.orchestration.envelope import SpecialistResultEnvelope
+from docker_agent.orchestration.execution import OrchestrationExecutionResult
 
 SYNTHESIS_SYSTEM_PROMPT = """You are the platform orchestration synthesis model.
 Return JSON only. Do not invoke tools or Agents.
@@ -100,6 +101,33 @@ class OrchestratedSynthesisService:
         self._max_answer_chars = max_answer_chars
         self._max_hypotheses = max_hypotheses
         self._max_uncertainties = max_uncertainties
+
+    def synthesize_executions(
+        self,
+        *,
+        original_query: str,
+        executions: tuple[OrchestrationExecutionResult, ...],
+        user_observations: tuple[str, ...] = (),
+    ) -> OrchestratedSynthesisResult:
+        if not executions:
+            raise OrchestrationSynthesisError(
+                "at least one orchestration execution is required"
+            )
+
+        results: list[SpecialistResultEnvelope] = []
+        for execution in executions:
+            result = execution.result_envelope
+            if result is None:
+                raise OrchestrationSynthesisError(
+                    "orchestration execution has no public specialist result"
+                )
+            results.append(result)
+
+        return self.synthesize(
+            original_query=original_query,
+            user_observations=user_observations,
+            specialist_results=tuple(results),
+        )
 
     def synthesize(
         self,
