@@ -4,6 +4,7 @@ import pytest
 
 from docker_agent.orchestration import (
     DelegationContext,
+    OrchestratedSynthesisResult,
     OrchestratedSynthesisService,
     OrchestrationDecision,
     OrchestrationExecutionResult,
@@ -367,6 +368,56 @@ def test_synthesis_accepts_code_fenced_json() -> None:
     )
 
     assert result.answer == "综合结论"
+
+
+def test_synthesis_rejects_missing_model_fields() -> None:
+    model = SequenceModel(
+        ['{"answer":"answer","hypotheses":[]}']
+    )
+    service = OrchestratedSynthesisService(model=model)
+
+    with pytest.raises(
+        OrchestrationSynthesisError,
+        match="missing fields: unresolved_uncertainties",
+    ):
+        service.synthesize(
+            original_query="question",
+            specialist_results=(
+                _completed("docker_support", "public answer"),
+            ),
+        )
+
+
+def test_synthesis_result_rejects_contradictory_terminal_state() -> None:
+    specialist = _completed("docker_support", "public answer")
+
+    with pytest.raises(
+        OrchestrationSynthesisError,
+        match="clarification synthesis must not contain an answer",
+    ):
+        OrchestratedSynthesisResult(
+            original_query="question",
+            user_observations=(),
+            specialist_results=(specialist,),
+            answer="answer",
+            hypotheses=(),
+            unresolved_uncertainties=(),
+            clarification_questions=("Need more context?",),
+        )
+
+    with pytest.raises(
+        OrchestrationSynthesisError,
+        match="completed synthesis requires an answer",
+    ):
+        OrchestratedSynthesisResult(
+            original_query="question",
+            user_observations=(),
+            specialist_results=(specialist,),
+            answer=None,
+            hypotheses=(),
+            unresolved_uncertainties=(),
+            clarification_questions=(),
+        )
 
 
 def test_synthesis_rejects_unexpected_model_fields() -> None:
