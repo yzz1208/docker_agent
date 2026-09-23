@@ -362,6 +362,113 @@ Targets:
 - preserve Agent identity in execution metadata;
 - prevent recursive/unbounded Agent calls.
 
+### Step 3 implementation status
+
+**IMPLEMENTED and CI-verified**
+
+Added:
+
+~~~text
+src/docker_agent/orchestration/execution.py
+tests/test_orchestration_execution.py
+~~~
+
+Core execution path:
+
+~~~text
+OrchestrationDecision
+        ↓
+DelegationExecutionService
+        ↓
+defensive validation
+        ↓
+DelegationPolicy          (delegate only)
+        ↓
+AgentFactory.get(target)
+        ↓
+target Agent.handle(question)
+        ↓
+OrchestrationExecutionResult
+~~~
+
+The execution result preserves:
+
+~~~text
+decision
+bounded DelegationContext
+executed agent_type
+specialist turn
+~~~
+
+`clarify` is execution-safe: it returns an execution result with no specialist turn and
+does not access AgentFactory.
+
+`direct` invokes exactly one selected specialist. Initial platform dispatch does not create
+a handoff. A direct decision cannot silently change an existing source/context owner.
+
+`delegate` revalidates the proposed handoff through `DelegationPolicy` immediately before
+execution. Only after capability, source continuity, loop, and hop-limit checks succeed is
+the target resolved through AgentFactory and invoked.
+
+The specialist receives only the current user question at this stage. Step 3 does not pass
+raw source-Agent state, prompts, tool output, or hidden runtime state across the Agent
+boundary. The explicit cross-Agent result/context envelope remains Step 4 work.
+
+### Execution safety boundary
+
+The service intentionally performs at most one `Agent.handle(...)` call per `execute(...)`.
+It does not inspect a specialist result and recursively re-run orchestration. Even when the
+specialist itself asks for clarification, Step 3 returns that turn to the caller rather than
+automatically selecting or invoking another Agent.
+
+The execution layer also defensively rejects manually forged decisions before factory access,
+including:
+
+- unsupported orchestration actions;
+- empty reasons;
+- missing target/capability;
+- target capability mismatches;
+- direct cross-Agent switches;
+- missing or mismatched context source identity;
+- delegate loops;
+- hop-limit violations;
+- unknown Agent identities.
+
+Specialist runtime failures are wrapped as `OrchestrationSpecialistExecutionError` with the
+canonical target Agent identity while preserving the original exception as the cause.
+
+### Compatibility
+
+Step 3 does not modify `POST /chat`, `ChatSessionManager`, persistent direct conversations,
+or the Web Agent selector. Existing explicit specialist Chat therefore remains the default
+product behavior while the orchestration execution service is validated independently.
+
+### Step 3 coverage
+
+Dedicated tests cover:
+
+- clarify-without-execution;
+- initial direct specialist execution;
+- continuing the current direct specialist;
+- Docker Support → Infrastructure delegation;
+- handoff trace creation before execution;
+- loop rejection before factory access;
+- hop-limit rejection before factory access;
+- unsupported capability rejection;
+- context owner/source enforcement;
+- specialist failure wrapping;
+- no recursive execution after a specialist clarification turn;
+- unknown action rejection.
+
+The full backend gate after Step 3 reports:
+
+~~~text
+442 passed, 1 warning
+~~~
+
+Ruff, migration/database readiness, frontend type checking, frontend unit tests, production
+Web build, and production configuration validation also pass.
+
 ## Step 4 — Cross-Agent Context and Result Envelope
 
 Define what information can cross an Agent boundary.
