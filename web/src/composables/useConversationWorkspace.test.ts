@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type {
   AgentDescriptor,
+  AutoChatResponse,
   ChatResponse,
   ConversationDetail,
   ConversationSummary,
@@ -23,6 +24,7 @@ vi.mock("../lib/api", () => ({
   listAgents: vi.fn(),
   listConversations: vi.fn(),
   renameConversation: vi.fn(),
+  sendAutoChat: vi.fn(),
   sendChat: vi.fn(),
 }));
 
@@ -32,6 +34,7 @@ import {
   listAgents,
   listConversations,
   renameConversation,
+  sendAutoChat,
   sendChat,
 } from "../lib/api";
 import { useConversationWorkspace } from "./useConversationWorkspace";
@@ -88,6 +91,49 @@ function detailFor(
     messages: [],
   };
 }
+
+function autoTurn(
+  overrides: Partial<AutoChatResponse> = {},
+): AutoChatResponse {
+  return {
+    mode: "auto",
+    conversation_id: "auto-conversation",
+    current_agent_type: "docker_support",
+    route: "auto_direct",
+    answer: "容器运行正常。",
+    clarification: null,
+    needs_clarification: false,
+    synthesized: false,
+    trace: [
+      {
+        stage: "decision",
+        label: "智能判断",
+        agent_type: "docker_support",
+        capability: "runtime_diagnostics",
+        reason: "需要运行时诊断",
+      },
+      {
+        stage: "specialist",
+        label: "专家处理",
+        agent_type: "docker_support",
+        capability: "runtime_diagnostics",
+        reason: "需要运行时诊断",
+      },
+    ],
+    specialist_results: [
+      {
+        agent_type: "docker_support",
+        route: "runtime_tools",
+        reason: "runtime checked",
+        needs_clarification: false,
+        clarification: null,
+        summary: "容器运行正常。",
+      },
+    ],
+    ...overrides,
+  };
+}
+
 
 function chatTurn(
   overrides: Partial<ChatResponse> = {},
@@ -245,6 +291,89 @@ describe("conversation workspace", () => {
     );
     expect(workspace.detail.value?.conversation.id).toBe(
       "conversation-2",
+    );
+  });
+
+  it("uses auto orchestration mode without calling manual chat", async () => {
+    vi.mocked(sendAutoChat).mockResolvedValue(autoTurn());
+    vi.mocked(getConversation).mockResolvedValueOnce(
+      detailFor(
+        "auto-conversation",
+        "Auto issue",
+        "auto_orchestration",
+      ),
+    );
+
+    const workspace = useConversationWorkspace();
+    workspace.selectedMode.value = "auto";
+    workspace.draft.value = "容器正常，但服务仍然 503";
+
+    expect(await workspace.submitMessage()).toBe(true);
+    expect(sendAutoChat).toHaveBeenCalledWith({
+      message: "容器正常，但服务仍然 503",
+      conversationId: null,
+    });
+    expect(sendChat).not.toHaveBeenCalled();
+    expect(workspace.activeMode.value).toBe("auto");
+    expect(workspace.latestAutoTurn.value?.current_agent_type).toBe(
+      "docker_support",
+    );
+    expect(workspace.agentDisplayName("docker_support")).toBe(
+      "Docker 支持",
+    );
+  });
+
+  it("restores persisted auto trace when opening history", async () => {
+    const autoDetail: ConversationDetail = {
+      conversation: {
+        ...conversation,
+        id: "auto-conversation",
+        agent_type: "auto_orchestration",
+        title: "Auto issue",
+      },
+      messages: [
+        {
+          id: "assistant-auto",
+          role: "assistant",
+          content: "容器运行正常。",
+          route: "auto_direct",
+          use_docs: null,
+          clarification: null,
+          created_at: "2026-09-21T00:00:02Z",
+          execution: {
+            id: "exec-auto",
+            planned_workers: ["docker_support"],
+            completed_workers: ["docker_support"],
+            worker_trace: [
+              {
+                kind: "orchestration_trace",
+                stage: "specialist",
+                label: "专家处理",
+                agent_type: "docker_support",
+                capability: "runtime_diagnostics",
+                reason: "runtime",
+              },
+              {
+                kind: "auto_state",
+                current_agent_type: "docker_support",
+              },
+            ],
+            created_at: "2026-09-21T00:00:02Z",
+          },
+        },
+      ],
+    };
+    vi.mocked(getConversation).mockResolvedValueOnce(autoDetail);
+
+    const workspace = useConversationWorkspace();
+    await workspace.openConversation("auto-conversation");
+
+    expect(workspace.activeMode.value).toBe("auto");
+    expect(workspace.latestAutoTurn.value?.current_agent_type).toBe(
+      "docker_support",
+    );
+    expect(workspace.latestAutoTurn.value?.trace[0]?.stage).toBe(
+      "specialist",
     );
   });
 
