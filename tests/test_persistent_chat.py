@@ -222,6 +222,71 @@ def test_existing_conversation_can_receive_independent_completed_turn() -> None:
     assert len(snapshot.executions) == 2
 
 
+def test_existing_conversation_injects_durable_history_into_new_turn() -> None:
+    observed_questions: list[str] = []
+
+    class ContextCaptureAgent:
+        def handle(self, question: str) -> LangGraphAgentTurnResult:
+            observed_questions.append(question)
+            return ImmediateAnswerAgent().handle("captured")
+
+    engine = _engine()
+    coordinator = PersistentChatCoordinator(
+        engine=engine,
+        sessions=ChatSessionManager(
+            agent_factory=ContextCaptureAgent,
+        ),
+        context_max_messages=12,
+        context_max_chars=6000,
+    )
+
+    first = coordinator.chat(message="Docker volume 是什么？")
+    second = coordinator.chat(
+        message="那 bind mount 呢？",
+        conversation_id=first.conversation.id,
+    )
+
+    assert second.session_active is False
+    assert observed_questions[0] == "Docker volume 是什么？"
+    assert "BEGIN PRIOR CONVERSATION" in observed_questions[1]
+    assert "[user] Docker volume 是什么？" in observed_questions[1]
+    assert "[assistant] 收到：captured [1]" in observed_questions[1]
+    assert (
+        "Current user message:\n那 bind mount 呢？"
+        in observed_questions[1]
+    )
+
+
+def test_context_budget_can_disable_durable_history_injection() -> None:
+    observed_questions: list[str] = []
+
+    class ContextCaptureAgent:
+        def handle(self, question: str) -> LangGraphAgentTurnResult:
+            observed_questions.append(question)
+            return ImmediateAnswerAgent().handle("captured")
+
+    engine = _engine()
+    coordinator = PersistentChatCoordinator(
+        engine=engine,
+        sessions=ChatSessionManager(
+            agent_factory=ContextCaptureAgent,
+        ),
+        context_max_messages=0,
+        context_max_chars=6000,
+    )
+
+    first = coordinator.chat(message="first question")
+    coordinator.chat(
+        message="second question",
+        conversation_id=first.conversation.id,
+    )
+
+    assert observed_questions == [
+        "first question",
+        "second question",
+    ]
+
+
 def test_continuing_session_requires_durable_conversation_id() -> None:
     engine = _engine()
     sessions = ChatSessionManager(agent_factory=FakeLangGraphAgent)
