@@ -19,18 +19,26 @@ ComparisonVerdict = Literal["pass", "regression", "incomplete"]
 _QUALITY_METRIC_HINTS = (
     "accuracy",
     "coverage",
+    "duration",
     "f1",
+    "latency",
     "match",
     "precision",
     "rate",
     "recall",
     "score",
 )
+_QUALITY_METRIC_SUFFIXES = (
+    "_call_count",
+    "_calls_per_case",
+)
 _LOWER_IS_BETTER_HINTS = (
+    "call_count",
+    "calls_per_case",
+    "duration",
     "error_rate",
     "failure_rate",
     "latency",
-    "duration",
 )
 
 
@@ -294,7 +302,10 @@ def _collect_numeric_quality_metrics(
 
 def _is_quality_metric(path: str) -> bool:
     normalized = path.lower()
-    return any(hint in normalized for hint in _QUALITY_METRIC_HINTS)
+    return (
+        any(hint in normalized for hint in _QUALITY_METRIC_HINTS)
+        or normalized.endswith(_QUALITY_METRIC_SUFFIXES)
+    )
 
 
 def _metric_direction(path: str) -> MetricDirection:
@@ -336,8 +347,18 @@ def _behavior_values(
         return {}
 
     values: dict[str, object] = {}
-    if "route" in actual:
-        values["route"] = actual["route"]
+    for field in (
+        "action",
+        "capability",
+        "contributing_agents",
+        "current_agent_type",
+        "needs_clarification",
+        "route",
+        "synthesized",
+        "target_agent_type",
+    ):
+        if field in actual:
+            values[field] = actual[field]
     if "tools" in actual:
         values["tools"] = actual["tools"]
     if "tools_called" in actual:
