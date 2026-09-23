@@ -77,6 +77,11 @@ from docker_agent.api.operations import (
     build_agent_run_response,
     build_agent_run_summary_response,
 )
+from docker_agent.api.orchestration import (
+    AutoChatRequest,
+    AutoChatResponse,
+    build_auto_chat_response,
+)
 from docker_agent.config import (
     get_settings,
     require_application_runtime_settings,
@@ -97,6 +102,16 @@ from docker_agent.observability import (
     correlation_context,
     metrics,
     resolve_request_id,
+)
+from docker_agent.orchestration import (
+    AutoOrchestrationError,
+    AutoOrchestrationService,
+    DelegationExecutionService,
+    OrchestratedSynthesisService,
+    OrchestrationDecisionError,
+    OrchestrationDecisionModel,
+    OrchestrationExecutionError,
+    OrchestrationSynthesisError,
 )
 from docker_agent.persistence import (
     AgentConfigurationAlreadyExists,
@@ -125,6 +140,11 @@ from docker_agent.persistence import (
     validate_agent_configuration_settings,
 )
 from docker_agent.rag.answer import CitationValidationError
+from docker_agent.rag.llm import (
+    ModelRequestError,
+    ModelResponseError,
+    OpenAICompatibleChatClient,
+)
 from docker_agent.tools.docker_cli import DockerToolTimeout
 
 settings = get_settings()
@@ -213,6 +233,7 @@ async def app_lifespan(_app: FastAPI):
     finally:
         get_chat_coordinator.cache_clear()
         get_chat_sessions.cache_clear()
+        get_auto_orchestration_service.cache_clear()
         get_agent.cache_clear()
         runtime_agent_factory.clear()
         engine.dispose()
@@ -325,6 +346,65 @@ def get_chat_coordinator(
         engine=get_persistence_engine(),
         sessions=get_chat_sessions(canonical),
         agent_type=canonical,
+    )
+
+
+def _orchestration_model(
+    *,
+    temperature: float,
+    max_tokens: int,
+) -> OpenAICompatibleChatClient:
+    current = get_settings()
+    if not current.model_name.strip() or not current.model_base_url.strip():
+        raise ValueError(
+            "MODEL_NAME and MODEL_BASE_URL must be configured"
+        )
+    configured_tokens = current.model_max_tokens
+    token_limit = (
+        min(configured_tokens, max_tokens)
+        if configured_tokens is not None
+        else max_tokens
+    )
+    return OpenAICompatibleChatClient(
+        model=current.model_name,
+        base_url=current.model_base_url,
+        api_key=current.model_api_key,
+        timeout_seconds=current.model_timeout_seconds,
+        temperature=temperature,
+        max_tokens=token_limit,
+        max_retries=current.model_max_retries,
+        retry_backoff_seconds=current.model_retry_backoff_seconds,
+    )
+
+
+@lru_cache
+def get_auto_orchestration_service() -> AutoOrchestrationService:
+    """Build the low-latency product auto-orchestration runtime."""
+
+    decision = OrchestrationDecisionModel(
+        registry=agent_registry,
+        model=_orchestration_model(
+            temperature=0.0,
+            max_tokens=320,
+        ),
+        max_hops=2,
+    )
+    execution = DelegationExecutionService(
+        registry=agent_registry,
+        factory=runtime_agent_factory,
+        max_hops=2,
+    )
+    synthesis = OrchestratedSynthesisService(
+        model=_orchestration_model(
+            temperature=0.1,
+            max_tokens=1200,
+        ),
+    )
+    return AutoOrchestrationService(
+        engine=get_persistence_engine(),
+        decision_model=decision,
+        execution_service=execution,
+        synthesis_service=synthesis,
     )
 
 
@@ -1118,6 +1198,69 @@ def _resolve_chat_agent_type(
         )
 
     return descriptor.agent_type
+
+
+@app.post(
+    "/chat/auto",
+    response_model=AutoChatResponse,
+    tags=["agent"],
+)
+def auto_chat(
+    request: AutoChatRequest,
+    response: Response,
+) -> AutoChatResponse:
+    """Run one bounded low-latency auto-orchestration turn."""
+
+    try:
+        turn = get_auto_orchestration_service().chat(
+            message=request.message,
+            conversation_id=request.conversation_id,
+        )
+    except ConversationNotFound as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Conversation was not found.",
+        ) from exc
+    except AgentDisabledError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
+    except (
+        AutoOrchestrationError,
+        OrchestrationDecisionError,
+        OrchestrationExecutionError,
+        OrchestrationSynthesisError,
+        AgentRegistryError,
+    ) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+    except (ModelRequestError, ModelResponseError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Orchestration model failed: {exc}",
+        ) from exc
+    except SQLAlchemyError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="PostgreSQL is unavailable.",
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+    response.headers["X-Conversation-ID"] = turn.conversation.id
+    response.headers["X-Agent-Type"] = "auto_orchestration"
+    if turn.current_agent_type is not None:
+        response.headers["X-Orchestration-Owner"] = (
+            turn.current_agent_type
+        )
+
+    return build_auto_chat_response(turn)
 
 
 @app.post("/chat", response_model=ChatResponse, tags=["agent"])
