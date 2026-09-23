@@ -13,6 +13,22 @@ class AutoChatRequest(BaseModel):
     conversation_id: str | None = None
 
 
+class AutoApprovalDecisionRequest(BaseModel):
+    approved: bool
+    comment: str | None = Field(default=None, max_length=1_000)
+
+
+class AutoApprovalRequestResponse(BaseModel):
+    interrupt_id: str
+    action: str
+    source_agent_type: str | None = None
+    target_agent_type: str
+    capability: str
+    reason: str
+    question: str
+    response_schema: dict[str, object]
+
+
 class AutoTraceStepResponse(BaseModel):
     stage: str
     label: str
@@ -43,6 +59,9 @@ class AutoChatResponse(BaseModel):
     specialist_results: list[AutoSpecialistResultResponse] = Field(
         default_factory=list
     )
+    approval_status: str | None = None
+    needs_approval: bool = False
+    approval_request: AutoApprovalRequestResponse | None = None
 
 
 def build_auto_chat_response(
@@ -68,6 +87,28 @@ def build_auto_chat_response(
             )
             for item in turn.specialist_results
         ],
+        approval_status=turn.approval_status,
+        needs_approval=turn.needs_approval,
+        approval_request=(
+            AutoApprovalRequestResponse(
+                interrupt_id=turn.approval_request.interrupt_id,
+                action=turn.approval_request.action,
+                source_agent_type=(
+                    turn.approval_request.source_agent_type
+                ),
+                target_agent_type=(
+                    turn.approval_request.target_agent_type
+                ),
+                capability=turn.approval_request.capability,
+                reason=turn.approval_request.reason,
+                question=turn.approval_request.question,
+                response_schema=(
+                    turn.approval_request.response_schema
+                ),
+            )
+            if turn.approval_request is not None
+            else None
+        ),
     )
 
 
@@ -82,6 +123,8 @@ def _build_trace_step(step: AutoTraceStep) -> AutoTraceStepResponse:
 
 
 __all__ = [
+    "AutoApprovalDecisionRequest",
+    "AutoApprovalRequestResponse",
     "AutoChatRequest",
     "AutoChatResponse",
     "AutoSpecialistResultResponse",
