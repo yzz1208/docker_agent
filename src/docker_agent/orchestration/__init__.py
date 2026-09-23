@@ -54,4 +54,15 @@ __all__ = [
     "SpecialistResultEnvelope",
     "build_cross_agent_context_envelope",
     "build_specialist_result_envelope",
+    "SYNTHESIS_SYSTEM_PROMPT",
+    "OrchestratedSynthesisResult",
+    "OrchestratedSynthesisService",
+    "OrchestrationSynthesisError",
 ]
+
+from docker_agent.orchestration.synthesis import (
+    SYNTHESIS_SYSTEM_PROMPT,
+    OrchestratedSynthesisResult,
+    OrchestratedSynthesisService,
+    OrchestrationSynthesisError,
+)
