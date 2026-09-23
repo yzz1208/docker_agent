@@ -1088,13 +1088,14 @@ class LangGraphProductAutoOrchestrationService(
             raise AutoOrchestrationError(
                 "completed auto result has unresolved approval"
             )
-        trace.append(
-            _approval_trace(
-                decision,
-                status=status,
-                comment=result.approval_comment,
+        if status != "not_required":
+            trace.append(
+                _approval_trace(
+                    decision,
+                    status=status,
+                    comment=result.approval_comment,
+                )
             )
-        )
 
         if status == "denied":
             answer = result.answer
