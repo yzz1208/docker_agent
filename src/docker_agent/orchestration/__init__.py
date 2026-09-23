@@ -1,3 +1,10 @@
+from docker_agent.orchestration.decision import (
+    ORCHESTRATION_SYSTEM_PROMPT,
+    OrchestrationAction,
+    OrchestrationDecision,
+    OrchestrationDecisionError,
+    OrchestrationDecisionModel,
+)
 from docker_agent.orchestration.delegation import (
     AgentCapabilityIndex,
     AgentHandoff,
@@ -9,15 +16,9 @@ from docker_agent.orchestration.delegation import (
     DelegationPolicyError,
     DelegationSourceMismatch,
 )
-from docker_agent.orchestration.decision import (
-    ORCHESTRATION_SYSTEM_PROMPT,
-    OrchestrationAction,
-    OrchestrationDecision,
-    OrchestrationDecisionError,
-    OrchestrationDecisionModel,
-)
 
 __all__ = [
+    "ORCHESTRATION_SYSTEM_PROMPT",
     "AgentCapabilityIndex",
     "AgentHandoff",
     "DelegationCapabilityUnavailable",
@@ -27,7 +28,6 @@ __all__ = [
     "DelegationPolicy",
     "DelegationPolicyError",
     "DelegationSourceMismatch",
-    "ORCHESTRATION_SYSTEM_PROMPT",
     "OrchestrationAction",
     "OrchestrationDecision",
     "OrchestrationDecisionError",
