@@ -26,12 +26,14 @@ def _create_completed_run(
     aggregate_metrics: dict[str, object],
     cases: list[dict[str, object]],
     suite: str = "agent_router",
+    agent_type: str | None = "docker_support",
     dataset_version_value: str = "sha256:dataset",
     config_snapshot: dict[str, object] | None = None,
 ) -> None:
     run = create_evaluation_run(
         engine,
         suite=suite,
+        agent_type=agent_type,
         dataset_name="agent_router_v1.jsonl",
         dataset_version_value=dataset_version_value,
         config_snapshot=config_snapshot or {},
@@ -256,6 +258,42 @@ def test_compare_evaluation_runs_marks_case_set_mismatch_incomplete() -> None:
     assert comparison.baseline_only_case_keys == ("case-2",)
     assert comparison.candidate_only_case_keys == ("case-3",)
 
+
+
+
+def test_compare_evaluation_runs_rejects_cross_agent_runs() -> None:
+    engine = _engine()
+    cases = [
+        {
+            "case_key": "case-1",
+            "case_id": "case-1",
+            "status": "passed",
+        }
+    ]
+    _create_completed_run(
+        engine,
+        run_id="baseline-agent",
+        aggregate_metrics={"exact_match_rate": 1.0},
+        cases=cases,
+        agent_type="docker_support",
+    )
+    _create_completed_run(
+        engine,
+        run_id="candidate-agent",
+        aggregate_metrics={"exact_match_rate": 1.0},
+        cases=cases,
+        agent_type="infrastructure_troubleshooter",
+    )
+
+    with pytest.raises(
+        EvaluationComparisonError,
+        match="Agent types must match",
+    ):
+        compare_evaluation_runs(
+            engine,
+            baseline_run_id="baseline-agent",
+            candidate_run_id="candidate-agent",
+        )
 
 def test_compare_evaluation_runs_rejects_incompatible_runs() -> None:
     engine = _engine()
