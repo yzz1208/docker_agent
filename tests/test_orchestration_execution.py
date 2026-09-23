@@ -25,8 +25,13 @@ class DummyDecision:
 
 
 @dataclass(frozen=True, slots=True)
+class DummyAnswer:
+    answer: str = "public specialist answer"
+
+
+@dataclass(frozen=True, slots=True)
 class DummyTurn:
-    answer: None = None
+    answer: DummyAnswer | None = DummyAnswer()
     decision: DummyDecision = DummyDecision()
     needs_clarification: bool = False
 
@@ -120,6 +125,10 @@ def test_direct_decision_invokes_exactly_one_selected_specialist() -> None:
     assert result.current_agent_type == "docker_support"
     assert result.context.hop_count == 0
     assert result.turn is docker.turn
+    assert result.request_envelope is None
+    assert result.result_envelope is not None
+    assert result.result_envelope.agent_type == "docker_support"
+    assert result.result_envelope.summary == "public specialist answer"
     assert docker.questions == ["web-1 当前内存是多少？"]
     assert infrastructure.questions == []
 
@@ -172,10 +181,109 @@ def test_delegate_appends_handoff_then_invokes_target_once() -> None:
     assert handoff.source_agent_type == "docker_support"
     assert handoff.target_agent_type == "infrastructure_troubleshooter"
     assert handoff.capability == "incident_triage"
-    assert docker.questions == []
-    assert infrastructure.questions == [
+    assert result.request_envelope is not None
+    assert result.request_envelope.source_agent_type == "docker_support"
+    assert result.request_envelope.target_agent_type == (
+        "infrastructure_troubleshooter"
+    )
+    assert result.request_envelope.current_user_message == (
         "容器本身正常，但 checkout 服务仍持续 503。"
-    ]
+    )
+    assert result.result_envelope is not None
+    assert result.result_envelope.agent_type == (
+        "infrastructure_troubleshooter"
+    )
+    assert docker.questions == []
+    assert len(infrastructure.questions) == 1
+    delegated_input = infrastructure.questions[0]
+    assert "Original user query:\ncheckout 服务持续失败" in delegated_input
+    assert (
+        "Current user message:\n"
+        "容器本身正常，但 checkout 服务仍持续 503。"
+        in delegated_input
+    )
+    assert "source_agent_type: docker_support" in delegated_input
+    assert (
+        "target_agent_type: infrastructure_troubleshooter"
+        in delegated_input
+    )
+
+
+def test_delegate_carries_only_explicit_public_prior_result() -> None:
+    service, docker, infrastructure = _service()
+    context = DelegationContext(
+        original_query="checkout 服务持续失败"
+    )
+    decision = OrchestrationDecision(
+        action="delegate",
+        reason="needs service triage",
+        source_agent_type="docker_support",
+        target_agent_type="infrastructure_troubleshooter",
+        capability="incident_triage",
+        clarification=None,
+    )
+    from docker_agent.orchestration import SpecialistResultEnvelope
+
+    prior = SpecialistResultEnvelope(
+        agent_type="docker_support",
+        route="runtime_tools",
+        reason="container inspected",
+        needs_clarification=False,
+        clarification=None,
+        summary="容器运行正常，但服务仍然返回 503。",
+    )
+
+    result = service.execute(
+        "继续排查服务故障",
+        decision=decision,
+        context=context,
+        explicit_user_clarification="影响生产环境 checkout-api。",
+        prior_specialist_result=prior,
+    )
+
+    assert result.request_envelope is not None
+    assert result.request_envelope.prior_specialist_result is prior
+    delegated_input = infrastructure.questions[0]
+    assert "影响生产环境 checkout-api。" in delegated_input
+    assert "容器运行正常，但服务仍然返回 503。" in delegated_input
+    assert "raw tool output" not in delegated_input.lower()
+    assert docker.questions == []
+
+
+def test_delegate_rejects_prior_result_from_wrong_source() -> None:
+    service, docker, infrastructure = _service()
+    decision = OrchestrationDecision(
+        action="delegate",
+        reason="needs service triage",
+        source_agent_type="docker_support",
+        target_agent_type="infrastructure_troubleshooter",
+        capability="incident_triage",
+        clarification=None,
+    )
+    from docker_agent.orchestration import SpecialistResultEnvelope
+
+    wrong_source = SpecialistResultEnvelope(
+        agent_type="infrastructure_troubleshooter",
+        route="triage",
+        reason="already triaged",
+        needs_clarification=False,
+        clarification=None,
+        summary="summary",
+    )
+
+    with pytest.raises(
+        OrchestrationExecutionError,
+        match="must belong to the source Agent",
+    ):
+        service.execute(
+            "继续排查",
+            decision=decision,
+            context=DelegationContext(original_query="服务异常"),
+            prior_specialist_result=wrong_source,
+        )
+
+    assert docker.questions == []
+    assert infrastructure.questions == []
 
 
 def test_execution_revalidates_delegate_loop_before_factory_call() -> None:
@@ -328,7 +436,13 @@ def test_specialist_failure_is_wrapped_with_target_identity() -> None:
 
 
 def test_service_never_recursively_executes_another_agent_from_turn() -> None:
-    clarification_turn = DummyTurn(needs_clarification=True)
+    clarification_turn = DummyTurn(
+        answer=None,
+        decision=DummyDecision(
+            clarification="请提供容器名称。",
+        ),
+        needs_clarification=True,
+    )
     docker = RecordingAgent(turn=clarification_turn)
     infrastructure = RecordingAgent()
     service, _, _ = _service(
@@ -347,6 +461,9 @@ def test_service_never_recursively_executes_another_agent_from_turn() -> None:
     result = service.execute("检查 web-1", decision=decision)
 
     assert result.turn is clarification_turn
+    assert result.result_envelope is not None
+    assert result.result_envelope.needs_clarification is True
+    assert result.result_envelope.clarification == "请提供容器名称。"
     assert docker.questions == ["检查 web-1"]
     assert infrastructure.questions == []
 
