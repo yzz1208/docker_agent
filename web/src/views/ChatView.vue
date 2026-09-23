@@ -336,7 +336,7 @@ onMounted(workspace.initialize);
             </h3>
             <p>
               {{
-                workspace.activeAgent.value?.description ??
+                workspace.agentDescription(workspace.activeAgentType.value) ||
                 "选择一个专家，然后描述你希望解决的问题。"
               }}
             </p>
@@ -481,7 +481,7 @@ onMounted(workspace.initialize);
             >
               <div>
                 <strong>{{ workspace.agentDisplayName(result.agent_type) }}</strong>
-                <span>{{ result.route }}</span>
+                <span>{{ workspace.routeDisplayName(result.route) }}</span>
               </div>
               <p v-if="result.summary">{{ result.summary }}</p>
               <p v-else-if="result.clarification">{{ result.clarification }}</p>
@@ -501,7 +501,10 @@ onMounted(workspace.initialize);
               <dt>专家</dt>
               <dd>{{ workspace.agentDisplayName(workspace.activeAgentType.value) }}</dd>
             </div>
-            <div><dt>路由</dt><dd>{{ workspace.latestTurn.value.route }}</dd></div>
+            <div>
+              <dt>路由</dt>
+              <dd>{{ workspace.routeDisplayName(workspace.latestTurn.value.route) }}</dd>
+            </div>
             <div>
               <dt>文档</dt>
               <dd>{{ workspace.latestTurn.value.use_docs ? "已启用" : "未使用" }}</dd>
@@ -519,7 +522,7 @@ onMounted(workspace.initialize);
 
           <section v-if="workspace.activeAgent.value" class="trace-section">
             <h3>专家能力</h3>
-            <p>{{ workspace.activeAgent.value.description }}</p>
+            <p>{{ workspace.agentDescription(workspace.activeAgentType.value) }}</p>
             <div class="chip-row">
               <span
                 v-for="capability in workspace.activeAgent.value.capabilities"
