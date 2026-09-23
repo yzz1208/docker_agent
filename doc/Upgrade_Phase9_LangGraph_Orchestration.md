@@ -38,7 +38,7 @@ Step 1  Decision Graph Foundation / Shadow Parity       ✅ implemented
 Step 2  Specialist Execution Node                       ✅ implemented
 Step 3  Cross-Agent Envelope + Synthesis Nodes          ✅ implemented
 Step 4  Durable Checkpoint / Resume                      ✅ implemented
-Step 5  Human Approval / Interrupt Boundary              ⏳
+Step 5  Human Approval / Interrupt Boundary              ✅ implemented
 Step 6  Auto Chat Shadow Comparison + Product Cutover    ⏳
 Step 7  Evaluation + Phase Closeout                      ⏳
 ~~~
@@ -1027,3 +1027,315 @@ Step 4 is accepted when:
 - optional local PostgreSQL setup succeeds when the database is available.
 
 Only after this local gate should Step 5 add a user-visible/human-approval interrupt boundary.
+## Step 5 — Human Approval / Interrupt Boundary
+
+### Scope
+
+Step 5 adds a real LangGraph `interrupt(...)` Human-in-the-loop boundary on top of the
+Step 4 durable checkpoint graph.
+
+The approval flow remains shadow-only and does not replace `/chat/auto` yet.
+
+Added:
+
+~~~text
+src/docker_agent/orchestration/approval.py
+src/docker_agent/orchestration/approval_graph.py
+tests/test_orchestration_approval.py
+~~~
+
+### Approval policy
+
+Approval is policy-driven rather than forced on every request.
+
+Default policy:
+
+~~~text
+clarify         → never requires approval
+direct          → no approval by default
+delegate        → approval required by default
+~~~
+
+The policy can also require approval for specific capabilities:
+
+~~~python
+HumanApprovalPolicy(
+    required_actions=frozenset(),
+    required_capabilities=frozenset({"runtime_diagnostics"}),
+)
+~~~
+
+This gives the platform a reusable boundary for future write-capabilities or higher-risk
+tools without changing the graph topology.
+
+### Human-in-the-loop topology
+
+The Step 5 graph is:
+
+~~~text
+START
+  ↓
+decision
+  ├──────── clarify ─────────────────────────────────────────→ END
+  │
+  └──────── direct/delegate
+                ↓
+           approval_gate
+                │
+                ├─ not required ───────────────→ specialist
+                │
+                └─ required
+                      ↓
+                  approval
+                      ↓
+                 interrupt(...)
+                      ↓
+                 durable pause
+                    /     \
+                   /       \
+              approved     denied
+                 ↓           ↓
+            specialist   approval_denied
+                 ↓           ↓
+          complete/synthesis END
+~~~
+
+The interrupt is emitted **before** any specialist execution.
+
+### Interrupt request
+
+The value surfaced to the caller is a bounded public object:
+
+~~~text
+kind = orchestration_approval
+action
+source_agent_type
+target_agent_type
+capability
+reason
+question
+~~~
+
+`reason` is capped at 500 characters and `question` at 1000 characters.
+
+The interrupt also exposes a typed response schema requiring:
+
+~~~text
+approved: boolean
+comment: optional string
+~~~
+
+The public read result exposes the LangGraph interrupt id through `HumanApprovalRequest`, so a
+future API/UI can render a real approval card instead of scraping workflow state.
+
+### Resume contract
+
+Approval resumes through LangGraph `Command(resume=...)` using the exact pending interrupt id.
+
+The helper is:
+
+~~~python
+resume_human_approval_orchestration(
+    graph,
+    thread_id=thread_id,
+    approved=True,
+    comment="允许继续执行。",
+)
+~~~
+
+Because the approval node is restarted by LangGraph on resume, it performs no side effects
+before calling `interrupt(...)`. Specialist execution only occurs after an approved response
+has been returned from the interrupt.
+
+### Approval result states
+
+The durable state uses:
+
+~~~text
+not_required
+pending
+approved
+denied
+~~~
+
+Pending:
+
+~~~text
+completed = false
+next_nodes = ("approval",)
+approval_status = pending
+approval_request = HumanApprovalRequest(...)
+specialist calls = 0
+~~~
+
+Approved:
+
+~~~text
+approval_status = approved
+approval_request = None
+specialist executes exactly once
+workflow continues to complete/synthesis
+~~~
+
+Denied:
+
+~~~text
+approval_status = denied
+specialist calls = 0
+synthesis calls = 0
+final answer = 操作未获批准，工作流已停止执行。
+~~~
+
+### Fast-path preservation
+
+A normal direct read-only request still avoids the approval interrupt:
+
+~~~text
+decision
+  ↓
+approval_skipped
+  ↓
+specialist
+  ↓
+complete
+~~~
+
+This keeps the Phase 8/9 latency principle intact: Human approval is introduced only where
+policy requires it.
+
+### Durable safety boundary
+
+Step 5 continues to checkpoint only the public orchestration state from Step 4.
+
+Approval adds only primitive durable fields:
+
+~~~text
+approval_status
+approval_comment
+~~~
+
+The approval request itself is surfaced through the LangGraph interrupt snapshot and does not
+introduce raw specialist/tool state into the checkpoint.
+
+### Step 5 coverage
+
+Dedicated tests verify:
+
+- default delegate pauses before any specialist execution;
+- pending interrupt exposes target Agent/capability and a typed response schema;
+- approval resumes the same thread using `Command(resume=...)`;
+- approved resume does not rerun the decision model;
+- approved resume executes the target specialist exactly once;
+- delegated approved flow can continue into synthesis exactly once;
+- denial executes zero specialists and zero synthesis calls;
+- direct read-only requests skip approval by default;
+- capability policy can require approval for direct runtime diagnostics;
+- clarification bypasses the approval gate;
+- completed/non-interrupted threads cannot be approval-resumed;
+- invalid approval policy configuration is rejected.
+
+### Product boundary
+
+Step 5 is still **shadow-only**.
+
+It does not change:
+
+~~~text
+POST /chat
+POST /chat/auto
+AutoOrchestrationService
+Web UI
+conversation persistence
+~~~
+
+The approval request/result contracts are intentionally backend-first so Step 6 can add shadow
+comparison and then expose the approval state to the Chinese Web UI during product cutover.
+
+### Step 5 CI result
+
+At implementation head:
+
+~~~text
+Ruff                           passed
+Migration / DB contract        passed
+Backend                        522 passed
+Frontend Typecheck             passed
+Frontend                       30 passed
+Production build               passed
+Production configuration       passed
+~~~
+
+## Local Step 5 gate
+
+After pulling the latest Phase 9 branch:
+
+~~~powershell
+git fetch
+git switch feat/upgrade-phase-9-langgraph-orchestration
+git pull
+
+uv sync --all-groups
+~~~
+
+Run the focused Human-in-the-loop gate:
+
+~~~powershell
+uv run ruff check .
+
+uv run pytest -v `
+  tests/test_orchestration_approval.py `
+  tests/test_orchestration_checkpoint.py `
+  tests/test_orchestration_synthesis_graph.py `
+  tests/test_orchestration_execution_graph.py `
+  tests/test_orchestration_graph.py
+~~~
+
+Then verify the Phase 8 product path remains unchanged:
+
+~~~powershell
+uv run pytest -v `
+  tests/test_auto_orchestration.py `
+  tests/test_auto_chat_api.py `
+  tests/test_orchestration_execution.py `
+  tests/test_orchestration_synthesis.py `
+  tests/test_orchestration_evaluation.py
+~~~
+
+Finally:
+
+~~~powershell
+uv run pytest -v
+
+cd web
+npm run typecheck
+npm test
+npm run build
+cd ..
+~~~
+
+Expected full local results:
+
+~~~text
+backend: 522 passed
+frontend: 30 passed
+production build: passed
+~~~
+
+If PostgreSQL checkpoint tables were already initialized during Step 4, no additional schema
+setup is required for Step 5.
+
+### Step 5 acceptance boundary
+
+Step 5 is accepted when:
+
+- approval pauses durably before specialist execution;
+- approval uses LangGraph interrupt/Command resume semantics;
+- approved resume does not duplicate prior work;
+- denied approval executes no specialist or synthesis work;
+- direct fast paths remain approval-free unless policy explicitly gates the capability;
+- checkpoint state remains public-only;
+- full backend/frontend gates pass;
+- existing `/chat/auto` behavior remains unchanged.
+
+Only after this local gate should Step 6 compare the Phase 8 service path and the Phase 9
+LangGraph path in shadow mode before product cutover.
