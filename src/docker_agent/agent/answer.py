@@ -81,6 +81,59 @@ class AgentAnswer:
     runtime_context_truncated: bool
 
 
+def _static_general_support_answer(question: str) -> str | None:
+    normalized = " ".join(question.strip().lower().split())
+
+    if any(
+        phrase in normalized
+        for phrase in (
+            "谢谢",
+            "感谢",
+            "thank you",
+            "thanks",
+        )
+    ):
+        return (
+            "不客气。你可以继续描述 Docker、容器运行时或服务故障问题，"
+            "我会接着当前对话帮助你。"
+        )
+
+    if any(
+        phrase in normalized
+        for phrase in (
+            "介绍一下自己",
+            "介绍自己",
+            "你是谁",
+            "你能做什么",
+            "你可以做什么",
+            "怎么使用这个系统",
+            "如何使用这个系统",
+            "怎么使用你",
+            "如何使用你",
+            "使用方法",
+        )
+    ):
+        return (
+            "你好，我是这个 Docker 智能支持平台的对话入口。"
+            "我可以帮助你：\n"
+            "- 解答 Docker、Compose、镜像、网络和存储等文档问题；\n"
+            "- 在启用只读运行时工具时检查容器状态、日志和资源使用；\n"
+            "- 当问题扩大到服务级故障时，转交基础设施排障专家继续分析；\n"
+            "- 在跨专家转交前请求你的批准，并保留当前对话上下文。\n\n"
+            "你可以直接描述现象，例如：web-1 容器为什么反复重启？"
+        )
+
+    if any(
+        phrase in normalized
+        for phrase in ("hello", "hi", "hey", "你好", "您好", "嗨")
+    ):
+        return (
+            "你好，我是 Docker 智能支持助手。你可以直接告诉我想了解的 Docker 概念，"
+            "或者描述容器/服务出现的现象，我会选择合适的支持流程。"
+        )
+
+    return None
+
 def generate_general_support_answer(
     question: str,
     model: ChatModel,
@@ -89,15 +142,19 @@ def generate_general_support_answer(
     if not normalized:
         raise ValueError("question must not be empty")
 
-    answer = model.complete(
-        system_prompt=GENERAL_SUPPORT_SYSTEM_PROMPT,
-        user_prompt=(
-            "User message:\n"
-            f"{normalized}\n\n"
-            "Respond naturally and briefly. If useful, suggest one concrete example of what "
-            "the user can ask next."
-        ),
-    ).strip()
+    static_answer = _static_general_support_answer(normalized)
+    if static_answer is not None:
+        answer = static_answer
+    else:
+        answer = model.complete(
+            system_prompt=GENERAL_SUPPORT_SYSTEM_PROMPT,
+            user_prompt=(
+                "User message:\n"
+                f"{normalized}\n\n"
+                "Respond naturally and briefly. If useful, suggest one concrete example of what "
+                "the user can ask next."
+            ),
+        ).strip()
     if not answer:
         raise ValueError("general support model returned an empty answer")
 
