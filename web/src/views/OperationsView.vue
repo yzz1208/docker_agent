@@ -332,7 +332,7 @@ onMounted(dashboard.initialize);
               class="distribution-row"
             >
               <div class="distribution-row__meta">
-                <span>{{ routeLabel(row.label) }}</span>
+                <span>{{ workerLabel(row.label) }}</span>
                 <strong>{{ row.value }}</strong>
               </div>
               <div class="distribution-track">
@@ -357,7 +357,7 @@ onMounted(dashboard.initialize);
               class="distribution-row"
             >
               <div class="distribution-row__meta">
-                <span>{{ routeLabel(row.label) }}</span>
+                <span>{{ row.label }}</span>
                 <strong>{{ row.value }}</strong>
               </div>
               <div class="distribution-track">
@@ -493,7 +493,7 @@ onMounted(dashboard.initialize);
                     class="status-pill"
                     :data-status="activeRun.status"
                   >
-                    {{ activeRun.status }}
+                    {{ statusLabel(activeRun.status) }}
                   </span>
                 </dd>
               </div>
@@ -611,13 +611,13 @@ onMounted(dashboard.initialize);
               <div class="evaluation-card__actions">
                 <button
                   type="button"
-                  @click="dashboard.useAs设为基线(evaluation.id)"
+                  @click="dashboard.useAsBaseline(evaluation.id)"
                 >
                   设为基线
                 </button>
                 <button
                   type="button"
-                  @click="dashboard.useAs设为候选(evaluation.id)"
+                  @click="dashboard.useAsCandidate(evaluation.id)"
                 >
                   设为候选
                 </button>
@@ -723,17 +723,17 @@ onMounted(dashboard.initialize);
         <div class="panel__header">
           <div>
             <p class="section-label">发布质量门禁</p>
-            <h2>设为基线 vs candidate</h2>
+            <h2>基线与候选对比</h2>
           </div>
         </div>
 
         <div class="comparison-form">
           <label>
-            <span>设为基线 run</span>
+            <span>基线运行</span>
             <input v-model="dashboard.baselineId.value" />
           </label>
           <label>
-            <span>设为候选 run</span>
+            <span>候选运行</span>
             <input v-model="dashboard.candidateId.value" />
           </label>
           <label>
