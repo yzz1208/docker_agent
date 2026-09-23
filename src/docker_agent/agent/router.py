@@ -7,7 +7,12 @@ from typing import Any, Literal, cast
 from docker_agent.rag.llm import ChatModel
 from docker_agent.tools.docker_cli import validate_container_ref
 
-AgentRoute = Literal["docs_only", "runtime_tools", "clarify"]
+AgentRoute = Literal[
+    "general_chat",
+    "docs_only",
+    "runtime_tools",
+    "clarify",
+]
 DockerToolName = Literal[
     "docker_info",
     "docker_ps",
@@ -32,12 +37,14 @@ _CONTAINER_TOOLS: frozenset[str] = frozenset(
 ROUTER_SYSTEM_PROMPT = """You route Docker support questions.
 Return JSON only. Never answer the Docker question itself.
 
-Available evidence paths:
-1. docs_only: Docker documentation is sufficient for conceptual, configuration, command,
+Available paths:
+1. general_chat: greetings, assistant self-introduction, platform capability questions,
+   usage guidance, conversational acknowledgements, or lightweight meta conversation.
+2. docs_only: Docker documentation is sufficient for conceptual, configuration, command,
    best-practice, or how-to questions that do not depend on this user's current runtime.
-2. runtime_tools: the question asks about the user's current Docker daemon, containers,
+3. runtime_tools: the question asks about the user's current Docker daemon, containers,
    resource usage, logs, exit/restart state, or other local runtime facts.
-3. clarify: runtime evidence is required but a specific container is needed and the user
+4. clarify: runtime evidence is required but a specific container is needed and the user
    did not provide an exact container name or ID.
 
 Allowed read-only tools:
@@ -50,7 +57,10 @@ Allowed read-only tools:
 Rules:
 - Never invent a container name or ID.
 - Only copy container_ref from the user's question when it is explicitly present.
-- General questions such as "what is a volume?" or "how does depends_on work?" are docs_only.
+- Greetings such as "hello", "你好", "介绍一下自己", "你能做什么", or "怎么使用这个系统"
+  are general_chat unless they also contain a concrete technical request.
+- General Docker questions such as "what is a volume?" or "how does depends_on work?" are docs_only.
+- Do not use clarify merely because a message is conversational or asks about the assistant.
 - Choose the smallest sufficient read-only tool set; do not add tools just in case.
 - Current CPU/memory usage for a named container needs docker_stats.
 - A direct question asking whether a container was OOM-killed needs docker_inspect only; State.OOMKilled and ExitCode are sufficient evidence. Add docker_logs only when the user asks for broader root-cause diagnosis beyond the OOM check.
@@ -67,7 +77,7 @@ Rules:
 
 Return exactly:
 {
-  "route": "docs_only" | "runtime_tools" | "clarify",
+  "route": "general_chat" | "docs_only" | "runtime_tools" | "clarify",
   "reason": "brief reason",
   "container_ref": "exact name/id from question or null",
   "tools": ["allowed tool names"],
@@ -121,7 +131,12 @@ def parse_route_decision(raw: str) -> AgentRouteDecision:
     tools_raw = payload.get("tools")
     use_docs_raw = payload.get("use_docs")
 
-    if route_raw not in {"docs_only", "runtime_tools", "clarify"}:
+    if route_raw not in {
+        "general_chat",
+        "docs_only",
+        "runtime_tools",
+        "clarify",
+    }:
         raise AgentRoutingError(f"Unsupported route: {route_raw!r}")
     route = cast(AgentRoute, route_raw)
 
@@ -162,7 +177,18 @@ def parse_route_decision(raw: str) -> AgentRouteDecision:
             raise AgentRoutingError("clarification must be a string or null")
         clarification = clarification_raw.strip() or None
 
-    if route == "docs_only":
+    if route == "general_chat":
+        if tools:
+            raise AgentRoutingError(
+                "general_chat route must not contain runtime tools"
+            )
+        if container_ref is not None:
+            raise AgentRoutingError(
+                "general_chat route must not contain container_ref"
+            )
+        clarification = None
+        use_docs = False
+    elif route == "docs_only":
         if tools:
             raise AgentRoutingError("docs_only route must not contain runtime tools")
         if container_ref is not None:
