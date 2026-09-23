@@ -74,6 +74,59 @@ function groupDisplayName(value: string): string {
   }[value] ?? value;
 }
 
+function toolsetDisplayName(value: string): string {
+  return {
+    docker_read_only: "Docker 只读工具",
+  }[value] ?? value;
+}
+
+function agentDescription(agentType: string): string {
+  return {
+    docker_support:
+      "结合 Docker 官方文档、检索增强和只读运行时工具，回答 Docker 概念问题并辅助定位容器故障。",
+    infrastructure_troubleshooter:
+      "面向服务级故障进行分诊，整理已知事实、可能原因和下一步安全检查。",
+  }[agentType] ?? settings.descriptor.value?.description ?? "";
+}
+
+function fieldLabel(field: EditableSettingField): string {
+  return {
+    model_temperature: "模型温度",
+    model_max_tokens: "最大输出 Token",
+    retrieval_top_k: "检索 Top K",
+    retrieval_candidate_k: "候选文档数量",
+    retrieval_rrf_k: "RRF 融合参数",
+    retrieval_dense_weight: "语义检索权重",
+    retrieval_keyword_weight: "关键词检索权重",
+    rerank_top_k: "重排保留数量",
+    rag_context_max_chars: "RAG 上下文字符上限",
+    docker_logs_max_lines: "Docker 日志最大行数",
+    runtime_evidence_max_chars: "运行时证据字符上限",
+    dynamic_runtime_max_steps: "运行时最大步骤数",
+    incident_max_hypotheses: "最大故障假设数",
+    incident_max_next_steps: "最大后续检查数",
+  }[field.key] ?? field.label;
+}
+
+function fieldDescription(field: EditableSettingField): string {
+  return {
+    model_temperature: "控制回答的随机性。技术支持通常建议保持较低值。",
+    model_max_tokens: "限制单次模型回答的最大长度。",
+    retrieval_top_k: "最终用于回答的检索结果数量。",
+    retrieval_candidate_k: "语义检索和关键词检索进入融合阶段的候选数量。",
+    retrieval_rrf_k: "控制 RRF 排名融合的平滑程度。",
+    retrieval_dense_weight: "语义向量检索在融合结果中的权重。",
+    retrieval_keyword_weight: "关键词精确匹配在融合结果中的权重。",
+    rerank_top_k: "经过重排模型后保留的文档数量。",
+    rag_context_max_chars: "传给回答模型的文档上下文最大字符数。",
+    docker_logs_max_lines: "单次读取 Docker 日志时允许返回的最大行数。",
+    runtime_evidence_max_chars: "运行时工具证据进入模型上下文的最大字符数。",
+    dynamic_runtime_max_steps: "一次动态诊断最多允许执行的只读工具步骤数。",
+    incident_max_hypotheses: "基础设施排障回答中最多保留的原因假设数量。",
+    incident_max_next_steps: "基础设施排障回答中最多建议的下一步检查数量。",
+  }[field.key] ?? field.description;
+}
+
 function formatValue(value: unknown): string {
   if (value === null || value === undefined || value === "") {
     return "未设置";
@@ -325,7 +378,7 @@ onMounted(loadPage);
         <div>
           <p class="section-label">能力</p>
           <h2>{{ agentDisplayName(settings.descriptor.value.agent_type) }}</h2>
-          <p>{{ settings.descriptor.value.description }}</p>
+          <p>{{ agentDescription(settings.descriptor.value.agent_type) }}</p>
         </div>
         <div class="agent-capability-groups">
           <div>
@@ -348,7 +401,7 @@ onMounted(loadPage);
                 :key="`settings-toolset-${item}`"
                 class="chip"
               >
-                {{ capabilityDisplayName(item) }}
+                {{ toolsetDisplayName(item) }}
               </span>
               <span
                 v-if="settings.descriptor.value.toolsets.length === 0"
@@ -395,7 +448,7 @@ onMounted(loadPage);
             <div class="setting-editor__info">
               <div class="setting-editor__title">
                 <div>
-                  <strong>{{ field.label }}</strong>
+                  <strong>{{ fieldLabel(field) }}</strong>
                   <code>{{ field.key }}</code>
                 </div>
                 <label class="override-toggle">
@@ -409,7 +462,7 @@ onMounted(loadPage);
                 </label>
               </div>
 
-              <p>{{ field.description }}</p>
+              <p>{{ fieldDescription(field) }}</p>
 
               <div class="setting-editor__source">
                 <span
