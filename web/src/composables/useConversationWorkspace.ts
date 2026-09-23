@@ -167,6 +167,7 @@ export function useConversationWorkspace() {
 
   function routeDisplayName(route: string): string {
     const localized: Record<string, string> = {
+      general_chat: "普通对话",
       clarify: "补充信息",
       docs_only: "文档解答",
       runtime_only: "运行时检查",
