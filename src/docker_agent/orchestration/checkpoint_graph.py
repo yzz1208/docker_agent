@@ -222,7 +222,7 @@ def build_checkpointed_orchestration_graph(
 
         synthesis = synthesis_service.synthesize(
             original_query=state["context"].original_query,
-            user_observations=state["user_observations"],
+            user_observations=tuple(state["user_observations"]),
             specialist_results=(prior, current),
         )
         if synthesis.needs_clarification:
@@ -395,11 +395,16 @@ def read_checkpointed_orchestration(
             "checkpoint state contains invalid delegation context"
         )
 
-    trace = values.get("trace", ())
-    if not isinstance(trace, tuple):
+    trace_raw = values.get("trace", ())
+    if not isinstance(trace_raw, (list, tuple)):
         raise TypeError(
-            "checkpoint state trace must be a tuple"
+            "checkpoint state trace must be a sequence"
         )
+    if any(not isinstance(item, str) for item in trace_raw):
+        raise TypeError(
+            "checkpoint state trace items must be strings"
+        )
+    trace = tuple(trace_raw)
     answer = values.get("final_answer")
     clarification = values.get("final_clarification")
     if answer is not None and not isinstance(answer, str):
