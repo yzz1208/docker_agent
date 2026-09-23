@@ -33,6 +33,8 @@ export function useConversationWorkspace() {
   const activeConversationId = ref<string | null>(null);
   const activeSessionId = ref<string | null>(null);
   const draft = ref("");
+  const pendingUserMessage = ref<string | null>(null);
+  const transientAssistantMessage = ref<string | null>(null);
 
   const latestTurns = ref<Record<string, ChatResponse>>({});
   const latestAutoTurns = ref<Record<string, AutoChatResponse>>({});
@@ -304,6 +306,8 @@ export function useConversationWorkspace() {
 
   function startNewConversation(): void {
     conversationRequestVersion += 1;
+    pendingUserMessage.value = null;
+    transientAssistantMessage.value = null;
     activeConversationId.value = null;
     activeSessionId.value = null;
     detail.value = null;
@@ -371,12 +375,16 @@ export function useConversationWorkspace() {
 
   async function submitMessage(): Promise<boolean> {
     const message = draft.value.trim();
-    if (!message || sending.value) {
+    if (!message || sending.value || approving.value || pendingApproval.value) {
       return false;
     }
 
     sending.value = true;
     actionError.value = "";
+    pendingUserMessage.value = message;
+    transientAssistantMessage.value = null;
+
+    let requestCompleted = false;
 
     try {
       if (activeMode.value === "auto") {
@@ -391,7 +399,10 @@ export function useConversationWorkspace() {
           ...latestAutoTurns.value,
           [result.conversation_id]: result,
         };
-        detail.value = await getConversation(result.conversation_id);
+        transientAssistantMessage.value =
+          result.answer ?? result.clarification;
+        requestCompleted = true;
+        await refreshConversationAfterTurn(result.conversation_id);
       } else {
         const result = await sendChat({
           message,
@@ -416,17 +427,43 @@ export function useConversationWorkspace() {
             ...latestTurns.value,
             [result.conversation_id]: result,
           };
-          detail.value = await getConversation(result.conversation_id);
+          transientAssistantMessage.value =
+            result.answer ?? result.clarification;
+          requestCompleted = true;
+          await refreshConversationAfterTurn(result.conversation_id);
         }
       }
 
       await refreshConversations();
       return true;
     } catch (error) {
+      if (requestCompleted) {
+        actionError.value =
+          "回答已经生成，但界面刷新失败。你可以继续提问，或点击历史对话重新载入。";
+        return true;
+      }
       actionError.value = errorText(error);
       return false;
     } finally {
       sending.value = false;
+      if (!requestCompleted) {
+        pendingUserMessage.value = null;
+        transientAssistantMessage.value = null;
+      }
+    }
+  }
+
+  async function refreshConversationAfterTurn(
+    conversationId: string,
+  ): Promise<void> {
+    try {
+      detail.value = await getConversation(conversationId);
+      pendingUserMessage.value = null;
+      transientAssistantMessage.value = null;
+    } catch (error) {
+      actionError.value =
+        "回答已经生成，但历史消息刷新失败。你可以继续提问，稍后重新打开该对话即可同步。";
+      throw error;
     }
   }
 
@@ -457,7 +494,9 @@ export function useConversationWorkspace() {
         ...latestAutoTurns.value,
         [conversationId]: result,
       };
-      detail.value = await getConversation(conversationId);
+      transientAssistantMessage.value =
+        result.answer ?? result.clarification;
+      await refreshConversationAfterTurn(conversationId);
       await refreshConversations();
       return true;
     } catch (error) {
@@ -545,6 +584,8 @@ export function useConversationWorkspace() {
     activeConversationId,
     activeSessionId,
     draft,
+    pendingUserMessage,
+    transientAssistantMessage,
     activeMode,
     activeAgentType,
     activeAgent,
