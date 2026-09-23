@@ -243,7 +243,7 @@ describe("conversation workspace", () => {
     expect(sendChat).toHaveBeenCalledTimes(2);
     expect(sendChat).toHaveBeenLastCalledWith({
       message: "继续追问",
-      agentType: undefined,
+      agentType: "docker_support",
       conversationId: "conversation-1",
       sessionId: null,
     });
