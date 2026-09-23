@@ -10,8 +10,10 @@ from docker_agent.agent.router import (
 class FakeModel:
     def __init__(self, response: str) -> None:
         self.response = response
+        self.calls = 0
 
     def complete(self, *, system_prompt: str, user_prompt: str) -> str:
+        self.calls += 1
         assert "Return JSON only" in system_prompt
         assert "User question" in user_prompt
         return self.response
@@ -124,15 +126,14 @@ def test_runtime_route_can_request_docs_for_remediation() -> None:
 
 
 def test_route_general_chat_for_greeting_and_product_help() -> None:
+    model = FakeModel("must not be called")
     decision = route_question(
         "你好，介绍一下自己，你能做什么？",
-        FakeModel(
-            '{"route":"general_chat","reason":"greeting and capability question",'
-            '"container_ref":null,"tools":[],"clarification":null,"use_docs":false}'
-        ),
+        model,
     )
 
     assert decision.route == "general_chat"
+    assert model.calls == 0
     assert decision.tools == ()
     assert decision.container_ref is None
     assert decision.clarification is None
@@ -146,3 +147,19 @@ def test_general_chat_rejects_runtime_tools() -> None:
             '"container_ref":null,"tools":["docker_info"],'
             '"clarification":null,"use_docs":false}'
         )
+
+
+def test_general_chat_fast_path_does_not_capture_real_docker_question() -> None:
+    model = FakeModel(
+        '{"route":"docs_only","reason":"technical Docker question",'
+        '"container_ref":null,"tools":[],"clarification":null,"use_docs":true}'
+    )
+
+    decision = route_question(
+        "你好，Docker volume 是什么？",
+        model,
+    )
+
+    assert model.calls == 1
+    assert decision.route == "docs_only"
+    assert decision.use_docs is True
