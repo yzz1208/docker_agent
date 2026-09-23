@@ -49,6 +49,7 @@ function statusLabel(status: string): string {
 function routeLabel(route: string | null): string {
   if (!route) return "等待路由";
   return {
+    general_chat: "普通对话",
     clarify: "补充信息",
     docs_only: "文档问答",
     runtime_only: "运行时检查",
