@@ -17,6 +17,7 @@ from docker_agent.orchestration import (
     OrchestrationDecisionModel,
 )
 from docker_agent.persistence import (
+    create_conversation,
     init_persistence_store,
     list_conversations,
     load_conversation,
@@ -168,7 +169,7 @@ def test_auto_chat_first_turn_uses_one_specialist_and_persists_history() -> None
     assert len(conversations) == 1
     assert conversations[0].agent_type == "auto_orchestration"
     snapshot = load_conversation(
-        engine
+        engine,
         turn.conversation.id,
     )
     assert [message.role for message in snapshot.messages] == [
@@ -217,7 +218,7 @@ def test_auto_chat_follow_up_can_handoff_and_synthesize() -> None:
     assert "容器运行正常。" in infrastructure.questions[0]
 
     snapshot = load_conversation(
-        engine
+        engine,
         first.conversation.id,
     )
     assert [message.role for message in snapshot.messages] == [
@@ -252,10 +253,9 @@ def test_auto_chat_clarify_does_not_execute_specialist() -> None:
 
 def test_auto_chat_rejects_manual_agent_conversation() -> None:
     service, engine, _, _, _ = _service(decisions=[])
-    from docker_agent.persistence import create_conversation
 
     manual = create_conversation(
-        engine
+        engine,
         agent_type="docker_support",
         title="manual",
     )
@@ -271,7 +271,7 @@ def test_auto_chat_rejects_manual_agent_conversation() -> None:
 
 
 def test_auto_chat_recent_context_is_bounded_and_marked_untrusted() -> None:
-    service, docker, _, decision_model = _service(
+    service, _engine_value, docker, _, decision_model = _service(
         decisions=[
             (
                 '{"action":"direct","reason":"runtime",'
