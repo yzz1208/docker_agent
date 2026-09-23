@@ -10,6 +10,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from docker_agent.agent.protocol import PersistableAgentTurnProtocol
 from docker_agent.api.chat import ChatSessionManager
+from docker_agent.conversation_context import build_conversation_context
 from docker_agent.observability import correlation_context, metrics
 from docker_agent.persistence.adapter import (
     PersistedAgentTurn,
@@ -19,6 +20,7 @@ from docker_agent.persistence.store import (
     ConversationRecord,
     create_conversation,
     get_conversation,
+    load_conversation,
 )
 from docker_agent.persistence.telemetry import (
     AgentRunNotFound,
@@ -65,6 +67,8 @@ class PersistentChatCoordinator:
     engine: Engine
     sessions: ChatSessionManager
     agent_type: str = "docker_support"
+    context_max_messages: int = 12
+    context_max_chars: int = 6000
     _session_conversations: dict[str, str] = field(default_factory=dict)
     _lock: Lock = field(default_factory=Lock)
 
@@ -131,9 +135,14 @@ class PersistentChatCoordinator:
         )
 
         try:
+            context_text = self._context_text(
+                conversation_id=conversation.id,
+                session_id=session_id,
+            )
             resolved_session_id, active, raw_result = self.sessions.chat(
                 message=normalized_message,
                 session_id=session_id,
+                context=context_text,
             )
             if not isinstance(raw_result, PersistableAgentTurnProtocol):
                 raise TypeError(
@@ -254,6 +263,28 @@ class PersistentChatCoordinator:
             persisted=persisted,
             run=run,
         )
+
+    def _context_text(
+        self,
+        *,
+        conversation_id: str,
+        session_id: str | None,
+    ) -> str | None:
+        if session_id is not None:
+            return None
+
+        snapshot = load_conversation(
+            self.engine,
+            conversation_id,
+        )
+        context = build_conversation_context(
+            snapshot.messages,
+            max_messages=self.context_max_messages,
+            max_chars=self.context_max_chars,
+        )
+        if context.empty:
+            return None
+        return context.text
 
     def reset(
         self,
