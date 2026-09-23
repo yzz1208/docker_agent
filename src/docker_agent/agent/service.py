@@ -6,7 +6,11 @@ from threading import Lock
 
 from sqlalchemy.engine import Engine
 
-from docker_agent.agent.answer import AgentAnswer, generate_agent_answer
+from docker_agent.agent.answer import (
+    AgentAnswer,
+    generate_agent_answer,
+    generate_general_support_answer,
+)
 from docker_agent.agent.evidence import RuntimeEvidenceContext, build_runtime_evidence
 from docker_agent.agent.router import AgentRouteDecision, route_question
 from docker_agent.agent.runtime import execute_runtime_plan
@@ -80,6 +84,14 @@ class DockerSupportAgent:
         decision = route_question(question, self.router_model)
         if decision.route == "clarify":
             return AgentTurnResult(decision=decision, answer=None)
+        if decision.route == "general_chat":
+            return AgentTurnResult(
+                decision=decision,
+                answer=generate_general_support_answer(
+                    question,
+                    self.answer_model,
+                ),
+            )
 
         runtime_context = RuntimeEvidenceContext(
             text="",
