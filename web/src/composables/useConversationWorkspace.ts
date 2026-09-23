@@ -150,6 +150,40 @@ export function useConversationWorkspace() {
     return localized[capability] ?? capability;
   }
 
+  function routeDisplayName(route: string): string {
+    const localized: Record<string, string> = {
+      clarify: "补充信息",
+      docs_only: "文档解答",
+      runtime_only: "运行时检查",
+      runtime_tools: "运行时诊断",
+      triage: "故障分诊",
+      auto: "智能编排",
+      auto_clarify: "智能补充信息",
+      auto_direct: "专家直达",
+      auto_direct_clarify: "专家补充信息",
+      auto_delegate_clarify: "转交后补充信息",
+      auto_synthesis: "多专家综合",
+    };
+    return localized[route] ?? route;
+  }
+
+  function agentDescription(agentType: string): string {
+    const localized: Record<string, string> = {
+      docker_support:
+        "结合 Docker 文档检索、只读运行时诊断与多 Worker 协作，处理容器相关问题。",
+      infrastructure_troubleshooter:
+        "面向服务级故障进行分诊，区分已知事实、可能原因与下一步安全检查。",
+      auto_orchestration:
+        "自动判断问题类型，选择合适专家，并在必要时安全转交与综合结果。",
+    };
+    return (
+      localized[agentType] ??
+      agents.value.find((agent) => agent.agent_type === agentType)
+        ?.description ??
+      ""
+    );
+  }
+
   function traceStageDisplayName(stage: string): string {
     const localized: Record<string, string> = {
       decision: "智能判断",
@@ -452,6 +486,8 @@ export function useConversationWorkspace() {
     canSend,
     agentDisplayName,
     capabilityDisplayName,
+    routeDisplayName,
+    agentDescription,
     traceStageDisplayName,
     initialize,
     refreshAgents,
