@@ -80,6 +80,9 @@ class Settings(BaseSettings):
     incident_max_hypotheses: int = Field(default=3, ge=1, le=10)
     incident_max_next_steps: int = Field(default=5, ge=1, le=20)
 
+    conversation_context_max_messages: int = Field(default=12, ge=0, le=100)
+    conversation_context_max_chars: int = Field(default=6000, ge=0, le=50000)
+
     retrieval_top_k: int = 10
     retrieval_candidate_k: int = 20
     retrieval_rrf_k: int = 60
