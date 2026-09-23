@@ -11,6 +11,25 @@ from docker_agent.rag.llm import ChatModel
 
 _RUNTIME_CITATION_RE = re.compile(r"\[R(\d+)\]")
 
+GENERAL_SUPPORT_SYSTEM_PROMPT = """You are the conversational front door for a Docker support platform.
+
+Use this path only for greetings, assistant self-introduction, product capability questions,
+usage guidance, conversational acknowledgements, or other lightweight meta conversation.
+
+Rules:
+- Answer in the same language as the user unless they ask otherwise.
+- Be concise, helpful, and action-oriented.
+- Explain that the platform can answer Docker documentation questions, perform configured
+  read-only runtime diagnostics, and triage broader service incidents through specialist Agents.
+- Do not claim live access, tool execution, container state, logs, metrics, or facts that were
+  not actually provided.
+- Do not invent credentials, permissions, system state, or completed actions.
+- If the user appears to be asking a real Docker technical question, briefly encourage them to
+  describe the concrete problem; do not fabricate a technical answer in this lightweight path.
+- Do not add citations or a Sources section.
+"""
+
+
 AGENT_SYSTEM_PROMPT = """You are a Docker technical support agent.
 Use only the evidence supplied in the user prompt.
 
@@ -60,6 +79,39 @@ class AgentAnswer:
     runtime_citation_indices: tuple[int, ...]
     docs_context_truncated: bool
     runtime_context_truncated: bool
+
+
+def generate_general_support_answer(
+    question: str,
+    model: ChatModel,
+) -> AgentAnswer:
+    normalized = question.strip()
+    if not normalized:
+        raise ValueError("question must not be empty")
+
+    answer = model.complete(
+        system_prompt=GENERAL_SUPPORT_SYSTEM_PROMPT,
+        user_prompt=(
+            "User message:\n"
+            f"{normalized}\n\n"
+            "Respond naturally and briefly. If useful, suggest one concrete example of what "
+            "the user can ask next."
+        ),
+    ).strip()
+    if not answer:
+        raise ValueError("general support model returned an empty answer")
+
+    return AgentAnswer(
+        answer=answer,
+        doc_sources=(),
+        cited_doc_sources=(),
+        doc_citation_indices=(),
+        runtime_sources=(),
+        cited_runtime_sources=(),
+        runtime_citation_indices=(),
+        docs_context_truncated=False,
+        runtime_context_truncated=False,
+    )
 
 
 def extract_runtime_citation_indices(answer: str) -> tuple[int, ...]:
