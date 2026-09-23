@@ -1,6 +1,7 @@
 import type {
   AgentConfiguration,
   AgentConfigurationCreate,
+  AutoChatResponse,
   AgentDescriptor,
   AgentConfigurationMutation,
   AgentRunRecord,
@@ -125,6 +126,19 @@ export function sendChat(input: {
       agent_type: input.agentType ?? null,
       conversation_id: input.conversationId ?? null,
       session_id: input.sessionId ?? null,
+    }),
+  });
+}
+
+export function sendAutoChat(input: {
+  message: string;
+  conversationId?: string | null;
+}): Promise<AutoChatResponse> {
+  return request<AutoChatResponse>("/chat/auto", {
+    method: "POST",
+    body: jsonBody({
+      message: input.message,
+      conversation_id: input.conversationId ?? null,
     }),
   });
 }
