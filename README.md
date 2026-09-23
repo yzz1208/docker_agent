@@ -20,7 +20,7 @@
 - Upgrade Phase 6：Production / Deployment Hardening ✅
 - Upgrade Phase 7：Generic Multi-Agent Platform ✅
 - Upgrade Phase 8：Advanced Multi-Agent Orchestration ✅
-- Upgrade Phase 9：LangGraph Platform Orchestration（Step 1 Decision Graph Shadow Foundation 已实现，待本地 gate）
+- Upgrade Phase 9：LangGraph Platform Orchestration（Step 1–2 已实现：Decision Graph + Specialist Execution Shadow，待本地 gate）
 
 ## 本地环境
 
