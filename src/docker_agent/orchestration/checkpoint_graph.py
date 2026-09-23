@@ -294,6 +294,12 @@ def start_checkpointed_orchestration(
         original_query=normalized
     )
     config = orchestration_thread_config(thread_id)
+    existing = graph.get_state(config)
+    if existing.values:
+        raise ValueError(
+            "checkpoint thread already contains orchestration state"
+        )
+
     graph.invoke(
         OrchestrationCheckpointGraphState(
             question=normalized,
