@@ -39,7 +39,7 @@ Step 2  Specialist Execution Node                       ✅ implemented
 Step 3  Cross-Agent Envelope + Synthesis Nodes          ✅ implemented
 Step 4  Durable Checkpoint / Resume                      ✅ implemented
 Step 5  Human Approval / Interrupt Boundary              ✅ implemented
-Step 6  Auto Chat Shadow Comparison + Product Cutover    ⏳ (6A parity ✅ / 6B cutover pending)
+Step 6  Auto Chat Shadow Comparison + Product Cutover    ✅ (6A parity + 6B cutover)
 Step 7  Evaluation + Phase Closeout                      ⏳
 ~~~
 
@@ -1553,3 +1553,334 @@ production build: passed
 
 Only after this local gate should Step 6B replace the Phase 8 `/chat/auto` runtime, expose
 pending Human Approval state through the API, and add the Chinese approval UI.
+## Step 6B — Product Cutover + Chinese Approval UI
+
+### Runtime cutover
+
+`POST /chat/auto` now uses:
+
+~~~text
+LangGraphProductAutoOrchestrationService
+    ↓
+HumanApprovalPolicy
+    ↓
+LangGraph durable approval graph
+    ↓
+PostgreSQL PostgresSaver
+~~~
+
+The Phase 8 `AutoOrchestrationService` and the Step 6A
+`LangGraphAutoOrchestrationService` remain in the codebase as the baseline/parity reference,
+but they no longer own the product `/chat/auto` endpoint.
+
+### Product turn lifecycle
+
+Direct fast path:
+
+~~~text
+user message
+  ↓
+decision
+  ↓
+approval policy: not required
+  ↓
+one specialist
+  ↓
+assistant answer
+~~~
+
+The user-visible trace stays concise and does not show a redundant 'approval skipped' step.
+
+Delegate path:
+
+~~~text
+user message
+  ↓
+decision = delegate
+  ↓
+durable interrupt
+  ↓
+persist user message only
+  ↓
+return approval_status=pending
+~~~
+
+After approval:
+
+~~~text
+same conversation
+same LangGraph thread
+  ↓
+Command(resume=...)
+  ↓
+target specialist executes once
+  ↓
+optional synthesis
+  ↓
+persist assistant message
+~~~
+
+After denial, no specialist or synthesis executes and the assistant records a short stop
+message.
+
+### Conversation/checkpoint identity
+
+Approval threads are deterministic per Auto conversation turn:
+
+~~~text
+auto:<conversation_id>:turn:<user_turn_index>
+~~~
+
+The browser does not need to store the LangGraph thread id.
+
+A pending Auto conversation has one unmatched latest user message. On reload, the backend uses
+that durable conversation state to derive the pending turn thread and read the LangGraph
+checkpoint.
+
+This allows approval state to survive:
+
+- browser refresh;
+- frontend navigation;
+- rebuilding the product service;
+- backend process restart when PostgreSQL checkpoint storage remains available.
+
+### Persistence semantics
+
+A pending approval is **not** written as a fake assistant message.
+
+Before approval:
+
+~~~text
+messages:
+user
+assistant
+user  ← pending turn
+~~~
+
+After approval/denial:
+
+~~~text
+messages:
+user
+assistant
+user
+assistant
+~~~
+
+The approval request itself lives in the LangGraph interrupt/checkpoint and API response.
+
+This prevents 'waiting for approval' text from contaminating recent conversation context and
+future routing prompts.
+
+### Approval API
+
+Existing product endpoint:
+
+~~~text
+POST /chat/auto
+~~~
+
+can now return:
+
+~~~text
+route = auto_approval_pending
+approval_status = pending
+needs_approval = true
+approval_request = {...}
+~~~
+
+Reload/recovery endpoint:
+
+~~~text
+GET /chat/auto/{conversation_id}/approval
+~~~
+
+returns the pending Auto turn or `null`.
+
+Resume endpoint:
+
+~~~text
+POST /chat/auto/{conversation_id}/approval
+
+{
+  "approved": true | false,
+  "comment": "optional bounded comment"
+}
+~~~
+
+Checkpoint/PostgreSQL failures are mapped to HTTP 503 instead of leaking an internal 500.
+
+### Chinese Web approval UI
+
+The Auto chat page now renders a dedicated approval card when `needs_approval=true`.
+
+It displays:
+
+~~~text
+需要你的批准
+
+当前专家  →  下一位专家
+转交原因
+目标 capability
+当前用户问题
+
+[拒绝]  [允许继续]
+~~~
+
+While approval is pending:
+
+- the composer is disabled;
+- the send button displays `等待审批`;
+- the right-hand orchestration status shows `等待批准`;
+- the timeline includes an `人工审批` node;
+- approval survives reopening the conversation.
+
+The layout is responsive and becomes a vertical approval flow on narrow screens.
+
+### Frontend state contract
+
+`AutoChatResponse` now includes:
+
+~~~text
+approval_status
+needs_approval
+approval_request
+~~~
+
+The frontend never reads LangGraph checkpoint internals directly.
+
+It uses only:
+
+~~~text
+getAutoApproval(conversationId)
+resolveAutoApproval({ conversationId, approved, comment })
+~~~
+
+### Required checkpoint setup after cutover
+
+Before Step 6B, PostgreSQL checkpoint setup was optional for the product path because Phase 9
+was shadow-only.
+
+After 6B it is required for Auto mode.
+
+Before starting the cutover backend against a database for the first time, run:
+
+~~~powershell
+uv run python scripts/setup_orchestration_checkpoints.py
+~~~
+
+Expected:
+
+~~~text
+LangGraph orchestration checkpoint tables are ready.
+~~~
+
+This remains an explicit deployment/setup operation; API startup does not silently mutate
+checkpoint schema.
+
+### Step 6B coverage
+
+Backend product tests verify:
+
+- direct fast path completes with no pending approval;
+- delegate persists only the user message before approval;
+- target specialist is not called before approval;
+- a new product-service instance recovers the same pending interrupt;
+- approved resume does not repeat the decision;
+- approved resume executes one target specialist and one synthesis;
+- denied resume executes zero target specialists/synthesis calls;
+- pending approval blocks a new user message;
+- resolved conversations no longer report a pending approval.
+
+API tests verify:
+
+- `/chat/auto` pending response shape;
+- approval request schema;
+- pending-approval recovery endpoint;
+- null response when no approval is pending;
+- approval resume request/response contract.
+
+Frontend tests verify:
+
+- approval API serialization;
+- workspace pending state;
+- composer lock while pending;
+- approval resolution;
+- pending approval recovery when reopening history.
+
+### Step 6B CI result
+
+Implementation gate:
+
+~~~text
+Ruff                           passed
+Migration / DB contract        passed
+Backend                        537 passed
+Frontend Typecheck             passed
+Frontend                       33 passed
+Production build               passed
+Production configuration       passed
+~~~
+
+## Local Step 6B gate
+
+~~~powershell
+git fetch
+git switch feat/upgrade-phase-9-langgraph-orchestration
+git pull
+
+uv sync --all-groups
+
+# Required now that /chat/auto is on the durable graph
+uv run python scripts/setup_orchestration_checkpoints.py
+
+uv run ruff check .
+
+uv run pytest -v `
+  tests/test_auto_orchestration_cutover.py `
+  tests/test_auto_chat_api.py `
+  tests/test_auto_orchestration_parity.py `
+  tests/test_orchestration_approval.py `
+  tests/test_orchestration_checkpoint.py
+~~~
+
+Then:
+
+~~~powershell
+uv run pytest -v
+
+cd web
+npm run typecheck
+npm test
+npm run build
+cd ..
+~~~
+
+Expected:
+
+~~~text
+backend: 537 passed
+frontend: 33 passed
+production build: passed
+~~~
+
+### Manual product acceptance
+
+Start the backend and Web app using the project's normal local commands, then:
+
+1. open a new `智能编排` conversation;
+2. send a direct Docker/runtime question and confirm it returns normally with no approval card;
+3. continue the same conversation with a service-level failure that routes from Docker Support
+   to Infrastructure Troubleshooter;
+4. confirm the UI shows the Chinese approval card before the target specialist runs;
+5. refresh the browser and reopen the conversation; confirm the same approval is restored;
+6. click `允许继续`; confirm the workflow resumes and produces the delegated/synthesized result;
+7. repeat with another delegated flow and click `拒绝`; confirm no target-specialist result is
+   produced and the conversation records the stop message.
+
+### Step 6 acceptance boundary
+
+Step 6 is accepted when both 6A and 6B gates pass locally and the manual approval flow works
+through a real PostgreSQL checkpoint backend.
+
+After that, Step 7 should add cutover-focused evaluation/operations coverage and close Phase 9.
