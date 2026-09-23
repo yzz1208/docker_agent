@@ -177,11 +177,9 @@ def test_decision_graph_rejects_empty_question_before_model_call() -> None:
 
 def test_decision_graph_result_rejects_inconsistent_terminal() -> None:
     decision_model, _ = _decision_model(
-        (
-            '{"action":"direct","reason":"runtime",'
-            '"target_agent_type":"docker_support",'
-            '"capability":"runtime_diagnostics","clarification":null}'
-        )
+        '{"action":"direct","reason":"runtime",'
+        '"target_agent_type":"docker_support",'
+        '"capability":"runtime_diagnostics","clarification":null}'
     )
     decision = decision_model.decide("检查 web-1")
 
