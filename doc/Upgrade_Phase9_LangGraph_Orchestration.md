@@ -37,7 +37,7 @@ The migration remains conservative:
 Step 1  Decision Graph Foundation / Shadow Parity       ✅ implemented
 Step 2  Specialist Execution Node                       ✅ implemented
 Step 3  Cross-Agent Envelope + Synthesis Nodes          ✅ implemented
-Step 4  Durable Checkpoint / Resume                      ⏳
+Step 4  Durable Checkpoint / Resume                      ✅ implemented
 Step 5  Human Approval / Interrupt Boundary              ⏳
 Step 6  Auto Chat Shadow Comparison + Product Cutover    ⏳
 Step 7  Evaluation + Phase Closeout                      ⏳
@@ -698,3 +698,332 @@ Step 3 is accepted when:
 - frontend regression gates remain green.
 
 Only after this local gate should Step 4 introduce LangGraph durable checkpoint/resume.
+## Step 4 — Durable Checkpoint / Resume
+
+### Scope
+
+Step 4 gives the Phase 9 shadow workflow a real LangGraph checkpointer boundary. A workflow
+can now persist after a completed node, stop before later work, and resume from the same
+`thread_id` without re-running the already completed decision or specialist nodes.
+
+Added:
+
+~~~text
+src/docker_agent/orchestration/checkpoint.py
+src/docker_agent/orchestration/checkpoint_graph.py
+tests/test_orchestration_checkpoint.py
+scripts/setup_orchestration_checkpoints.py
+~~~
+
+The project also adds:
+
+~~~text
+langgraph-checkpoint-postgres>=3.1.2,<4.0.0
+~~~
+
+for production PostgreSQL-backed persistence.
+
+### Checkpointed graph topology
+
+The Step 4 graph preserves the Step 3 routing rules:
+
+~~~text
+START
+  ↓
+decision
+  ├──────── clarify ─────────────────────────────→ END
+  │
+  ├──────── direct ────→ specialist ─→ complete ─→ END
+  │
+  └──────── delegate ─→ specialist
+                            │
+                            ├─ clarification/no prior ─→ complete ─→ END
+                            │
+                            └─ prior + current public results
+                                      ↓
+                                  synthesis ─────────────→ END
+~~~
+
+but it is compiled with a LangGraph `BaseCheckpointSaver`.
+
+For a delegated flow, an operator/test can interrupt before synthesis:
+
+~~~text
+decision
+  ↓
+specialist
+  ↓
+[checkpoint persisted]
+  ↓
+PAUSED before synthesis
+~~~
+
+and later resume the same thread:
+
+~~~text
+same thread_id
+  ↓
+restore checkpoint
+  ↓
+synthesis
+  ↓
+END
+~~~
+
+The resume path does not call the decision model again and does not execute the specialist
+again.
+
+### Public-only durable state
+
+Step 4 intentionally uses a separate `OrchestrationCheckpointGraphState` instead of
+checkpointing the Step 2/3 raw execution object.
+
+Persisted orchestration state contains:
+
+~~~text
+question
+DelegationContext
+source_agent_type
+explicit_user_clarification
+explicit user_observations
+prior SpecialistResultEnvelope
+validated OrchestrationDecision
+current SpecialistResultEnvelope
+public OrchestratedSynthesisResult
+final answer / clarification
+bounded workflow trace
+~~~
+
+It deliberately does **not** contain:
+
+~~~text
+OrchestrationExecutionResult.turn
+raw specialist turn objects
+raw tool output
+worker state
+system prompts
+credentials
+hidden Agent state
+~~~
+
+This means the durable checkpoint boundary is narrower than the in-process execution boundary.
+
+### Thread contract
+
+Every checkpointed orchestration run requires a non-empty LangGraph `thread_id`.
+
+A new run refuses to start on a thread that already contains orchestration state. Completed
+threads also refuse `resume`, while paused threads expose their pending node names.
+
+The top-level graph uses LangGraph's empty `checkpoint_ns`. Step 4 originally tested a custom
+business namespace, but LangGraph 1.2 interprets a non-empty checkpoint namespace as a
+subgraph namespace when reading state. Isolation therefore remains keyed by `thread_id`,
+which is the intended top-level checkpoint contract.
+
+### PostgreSQL production adapter
+
+`open_postgres_orchestration_checkpointer(...)` converts the existing SQLAlchemy-style
+`postgresql+psycopg://...` DATABASE_URL into a psycopg PostgreSQL URI and opens the connection
+with:
+
+~~~text
+autocommit = true
+row_factory = dict_row
+~~~
+
+The adapter uses `PostgresSaver`, matching LangGraph's production checkpoint backend.
+
+Checkpoint schema setup is explicit rather than hidden in API startup:
+
+~~~powershell
+uv run python scripts/setup_orchestration_checkpoints.py
+~~~
+
+This calls `PostgresSaver.setup()` and should be run as a deployment/setup operation when the
+checkpoint tables are first introduced or when the checkpointer package requires migrations.
+
+### Checkpoint deserialization safety
+
+The PostgreSQL adapter does not rely on permissive default deserialization.
+
+`JsonPlusSerializer` is configured with:
+
+~~~text
+pickle_fallback = false
+explicit allowed_msgpack_modules/types only
+~~~
+
+The allowlist is restricted to the small public orchestration contracts required by durable
+state:
+
+~~~text
+AgentHandoff
+DelegationContext
+OrchestrationDecision
+SpecialistResultEnvelope
+OrchestratedSynthesisResult
+~~~
+
+This reduces the checkpoint deserialization surface if the checkpoint database is ever
+compromised.
+
+### Resume semantics
+
+The checkpoint runner exposes:
+
+~~~python
+start_checkpointed_orchestration(...)
+read_checkpointed_orchestration(...)
+resume_checkpointed_orchestration(...)
+~~~
+
+Runs use `durability="sync"` so checkpoint writes are persisted before the graph proceeds to
+the next step.
+
+A paused result includes:
+
+~~~text
+completed = false
+next_nodes = ("synthesis",)
+public current SpecialistResultEnvelope
+trace = ("decision", "delegate", "specialist")
+~~~
+
+After resume:
+
+~~~text
+completed = true
+next_nodes = ()
+final synthesis result
+trace = ("decision", "delegate", "specialist", "synthesis")
+~~~
+
+Checkpoint list/tuple serialization differences are normalized at the read boundary so public
+result contracts remain immutable tuples.
+
+### Step 4 coverage
+
+Dedicated coverage verifies:
+
+- pause before synthesis persists a pending synthesis node;
+- resume uses the same thread and completes synthesis;
+- decision-model call count does not increase after resume;
+- specialist execution count does not increase after resume;
+- synthesis executes exactly once after resume;
+- a newly compiled graph can read/resume state from the same saver;
+- checkpoint state contains the public SpecialistResultEnvelope and not raw execution/turn state;
+- completed threads cannot be resumed;
+- an existing thread cannot be silently restarted;
+- PostgreSQL URL normalization;
+- required thread configuration and top-level namespace behavior;
+- strict serializer round-trip for allowlisted public state;
+- PostgreSQL adapter uses autocommit, dict-row access, explicit setup, and closes connections.
+
+### Product boundary
+
+Step 4 remains **shadow-only**. It does not change:
+
+~~~text
+POST /chat
+POST /chat/auto
+AutoOrchestrationService
+Web UI
+normal conversation persistence
+~~~
+
+LangGraph checkpoint tables are separate workflow-state infrastructure. They do not replace
+the existing application Conversation / Message / AgentExecution persistence model.
+
+### Step 4 CI result
+
+At implementation head:
+
+~~~text
+Ruff                           passed
+Migration / DB contract        passed
+Backend                        513 passed
+Frontend Typecheck             passed
+Frontend                       30 passed
+Production build               passed
+Production configuration       passed
+~~~
+
+## Local Step 4 gate
+
+After pulling the latest Phase 9 branch, dependency sync matters because Step 4 adds the
+PostgreSQL checkpoint package:
+
+~~~powershell
+git fetch
+git switch feat/upgrade-phase-9-langgraph-orchestration
+git pull
+
+uv sync --all-groups
+~~~
+
+Run the deterministic checkpoint/resume gate first:
+
+~~~powershell
+uv run ruff check .
+
+uv run pytest -v `
+  tests/test_orchestration_checkpoint.py `
+  tests/test_orchestration_synthesis_graph.py `
+  tests/test_orchestration_execution_graph.py `
+  tests/test_orchestration_graph.py
+~~~
+
+Then run the Phase 8/9 regression set:
+
+~~~powershell
+uv run pytest -v `
+  tests/test_orchestration_execution.py `
+  tests/test_orchestration_envelope.py `
+  tests/test_orchestration_synthesis.py `
+  tests/test_auto_orchestration.py `
+  tests/test_auto_chat_api.py `
+  tests/test_orchestration_evaluation.py
+~~~
+
+Finally:
+
+~~~powershell
+uv run pytest -v
+
+cd web
+npm run typecheck
+npm test
+npm run build
+cd ..
+~~~
+
+If your normal local PostgreSQL database is running and already at the application migration
+head, also run the production-backend setup smoke check:
+
+~~~powershell
+uv run python scripts/setup_orchestration_checkpoints.py
+~~~
+
+Expected output:
+
+~~~text
+LangGraph orchestration checkpoint tables are ready.
+~~~
+
+The setup command is optional for the deterministic unit gate but required before a future
+production cutover to PostgreSQL-backed checkpointing.
+
+### Step 4 acceptance boundary
+
+Step 4 is accepted when:
+
+- deterministic pause/resume tests pass;
+- resume does not re-run decision or specialist work;
+- only public orchestration state crosses the durable boundary;
+- PostgreSQL adapter/security contracts pass;
+- the complete backend suite passes;
+- existing `/chat/auto` remains unchanged;
+- frontend regression gates remain green;
+- optional local PostgreSQL setup succeeds when the database is available.
+
+Only after this local gate should Step 5 add a user-visible/human-approval interrupt boundary.
