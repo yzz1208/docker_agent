@@ -983,3 +983,211 @@ Add evaluation datasets for:
 
 Phase 8 is complete only when orchestration behavior is observable, bounded, evaluable, and
 does not regress direct Agent workflows.
+
+### Step 7 implementation status
+
+**IMPLEMENTED and CI-verified**
+
+Added:
+
+~~~text
+data/eval/orchestration_v1.jsonl
+src/docker_agent/orchestration/evaluation.py
+scripts/eval_orchestration.py
+tests/test_orchestration_evaluation.py
+~~~
+
+The generic evaluation comparison layer was also extended to understand orchestration
+behavior and model-call budgets.
+
+### Evaluation dataset
+
+The initial benchmark contains 17 cases covering:
+
+~~~text
+selection
+clarification
+delegation
+safety_guard
+loop_protection
+hop_limit
+cross_agent_quality
+~~~
+
+Decision cases cover Docker documentation/runtime selection, Infrastructure incident and
+hypothesis selection, vague requests that must clarify, keeping an existing specialist, and
+both Docker → Infrastructure and Infrastructure → Docker handoffs.
+
+Deterministic guard cases validate rejection of platform-originated fake delegation,
+self-delegation, Agent revisit loops, handoffs above max_hops, and capability escalation to
+a target that does not expose the requested capability.
+
+Cross-Agent synthesis cases use only public SpecialistResultEnvelope values and cover
+two-Agent synthesis, unresolved/conflicting specialist conclusions, and clarification
+precedence.
+
+The dataset itself is CI-validated for unique IDs, schema shape, and required Step 7
+coverage categories.
+
+### Evaluation metrics
+
+Decision/guard metrics:
+
+~~~text
+safe_decision_rate
+action_accuracy
+specialist_selection_accuracy
+capability_accuracy
+clarification_accuracy
+safety_block_accuracy
+exact_match_accuracy
+~~~
+
+Synthesis metrics:
+
+~~~text
+safe_synthesis_rate
+contributing_agents_accuracy
+answer_presence_accuracy
+clarification_accuracy
+uncertainty_accuracy
+exact_match_accuracy
+~~~
+
+Metrics are also summarized by category so aggregate accuracy cannot hide a handoff, loop,
+clarification, or synthesis regression.
+
+### Performance and call-budget observability
+
+The runner records per case:
+
+~~~text
+latency_ms
+model_call_count
+latency_budget_match
+~~~
+
+and aggregates average/P95 latency, total model calls, average calls per case, and
+latency_budget_pass_rate.
+
+Raw millisecond latency is observable but is not compared directly by the generic absolute
+quality-regression threshold. Instead, latency enters the gate through the normalized
+latency_budget_pass_rate. Default operator-run budgets are 8000 ms for decisions and
+12000 ms for synthesis, and both are configurable.
+
+Model-call counts are lower-is-better regression metrics, so accidental extra model calls
+can fail a baseline/candidate comparison.
+
+### Safe evaluation boundary
+
+scripts/eval_orchestration.py intentionally does not execute specialist Agents or Docker
+tools. It evaluates the real orchestration decision model, deterministic policy guards, and
+the real synthesis model over public specialist envelopes.
+
+This keeps the orchestration benchmark safe while existing specialist evaluation suites and
+the full regression suite continue to cover Docker and Infrastructure Agent behavior.
+
+### Running the benchmark
+
+~~~powershell
+uv run python scripts/eval_orchestration.py `
+  --repeats 3 `
+  --persist `
+  --summary-output reports/orchestration_eval_summary.json
+~~~
+
+A smaller smoke run can use:
+
+~~~powershell
+uv run python scripts/eval_orchestration.py --limit 5
+~~~
+
+Persisted runs use:
+
+~~~text
+suite = orchestration
+agent_type = auto_orchestration
+dataset = orchestration_v1.jsonl
+dataset_version = sha256:<content hash>
+~~~
+
+They also persist the git revision, sanitized model/config snapshot, aggregate metrics,
+per-case expected/actual behavior, and per-case performance metrics.
+
+### Baseline / candidate regression gate
+
+After persisting a known-good baseline and a candidate:
+
+~~~powershell
+uv run python scripts/compare_evaluations.py `
+  --baseline <baseline-run-id> `
+  --candidate <candidate-run-id> `
+  --max-regression 0.02 `
+  --output reports/orchestration_comparison.json
+~~~
+
+For orchestration runs, behavior comparison now recognizes action, target_agent_type,
+capability, current_agent_type, needs_clarification, synthesized, and contributing_agents.
+
+model_call_count and average_model_calls_per_case are compared as lower-is-better metrics.
+A new case failure, quality regression beyond threshold, call-budget regression, or case-set
+mismatch prevents the comparison gate from passing.
+
+### CI versus live-model evaluation
+
+The provider-backed benchmark is intentionally operator-run rather than part of normal CI,
+because an external model call would make CI nondeterministic. CI verifies the deterministic
+evaluation contracts, dataset coverage, safety scoring, synthesis provenance scoring,
+orchestration behavior comparison, call-budget comparison, full backend regressions,
+frontend regressions, and production build.
+
+### Step 7 final gate
+
+~~~text
+backend: 485 passed, 1 warning
+frontend: 30 passed
+frontend production build: passed
+Ruff: passed
+migration/database readiness: passed
+production configuration validation: passed
+~~~
+
+Direct specialist Chat remains covered by the full regression suite.
+
+## Phase 8 closeout
+
+Phase 8 is now **COMPLETE**.
+
+The platform now supports:
+
+~~~text
+Registry-backed capability discovery
+        ↓
+strict orchestration decision
+        ↓
+bounded / acyclic delegation
+        ↓
+one specialist execution per orchestration step
+        ↓
+allowlisted cross-Agent context/result envelope
+        ↓
+optional provenance-safe synthesis
+        ↓
+Chinese Auto-Orchestration Web mode
+        ↓
+durable trace/history
+        ↓
+evaluation dataset + regression gate
+~~~
+
+The original manual workflow remains backward-compatible:
+
+~~~text
+POST /chat       → explicit specialist
+POST /chat/auto  → platform orchestration
+~~~
+
+Phase 8 does not turn every request into a multi-Agent workflow. The intended behavior
+remains latency-conscious: direct when one specialist is sufficient, clarify when required
+information is missing, delegate only when ownership should change, and synthesize only
+when multiple public specialist results are materially useful.
