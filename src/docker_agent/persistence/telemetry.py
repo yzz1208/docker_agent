@@ -51,6 +51,7 @@ class AgentRunSummary:
     failure_rate: float | None
     duration_p50_ms: int | None
     duration_p95_ms: int | None
+    agent_distribution: dict[str, int]
     route_distribution: dict[str, int]
     worker_distribution: dict[str, int]
     error_distribution: dict[str, int]
@@ -163,6 +164,7 @@ def summarize_agent_runs(
     engine: Engine,
     *,
     hours: int = 24,
+    agent_type: str | None = None,
     now: datetime | None = None,
 ) -> AgentRunSummary:
     if hours <= 0:
@@ -179,8 +181,15 @@ def summarize_agent_runs(
         select(AgentRun)
         .where(AgentRun.started_at >= started_at)
         .where(AgentRun.started_at <= ended_at)
-        .order_by(AgentRun.started_at, AgentRun.id)
     )
+    if agent_type is not None:
+        normalized_agent_type = agent_type.strip()
+        if not normalized_agent_type:
+            raise ValueError("agent_type must not be empty")
+        statement = statement.where(
+            AgentRun.agent_type == normalized_agent_type
+        )
+    statement = statement.order_by(AgentRun.started_at, AgentRun.id)
 
     with Session(engine) as session:
         rows = session.scalars(statement).all()
@@ -199,6 +208,7 @@ def summarize_agent_runs(
             and row.duration_ms is not None
         )
     )
+    agents = Counter(str(row.agent_type) for row in rows)
     routes = Counter(
         str(row.route)
         for row in rows
@@ -232,6 +242,7 @@ def summarize_agent_runs(
         ),
         duration_p50_ms=_percentile(durations, 0.50),
         duration_p95_ms=_percentile(durations, 0.95),
+        agent_distribution=dict(sorted(agents.items())),
         route_distribution=dict(sorted(routes.items())),
         worker_distribution=dict(sorted(workers.items())),
         error_distribution=dict(sorted(errors.items())),
