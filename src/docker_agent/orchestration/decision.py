@@ -244,11 +244,11 @@ def _build_decision_prompt(
         "visited_agents": list(context.visited_agents),
     }
     return (
-        "Agent catalog:\\n"
+        "Agent catalog:\n"
         + json.dumps(catalog, ensure_ascii=False, sort_keys=True)
-        + "\\n\\nOrchestration context:\\n"
+        + "\n\nOrchestration context:\n"
         + json.dumps(state, ensure_ascii=False, sort_keys=True)
-        + "\\n\\nCurrent user request:\\n"
+        + "\n\nCurrent user request:\n"
         + question
     )
 
@@ -261,7 +261,7 @@ def _parse_json_object(raw: str) -> dict[str, Any]:
             lines = lines[1:]
         if lines and lines[-1].strip() == "```":
             lines = lines[:-1]
-        text = "\\n".join(lines).strip()
+        text = "\n".join(lines).strip()
     try:
         payload = json.loads(text)
     except json.JSONDecodeError as exc:
