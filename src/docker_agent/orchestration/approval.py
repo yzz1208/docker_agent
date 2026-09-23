@@ -28,6 +28,7 @@ class HumanApprovalRequest:
     capability: str
     reason: str
     question: str
+    response_schema: dict[str, object]
 
 
 @dataclass(frozen=True, slots=True)
@@ -64,6 +65,20 @@ class HumanApprovalPolicy:
         )
 
 
+def approval_response_schema() -> dict[str, object]:
+    """Stable application-owned schema for approval resume payloads."""
+
+    return {
+        "type": "object",
+        "properties": {
+            "approved": {"type": "boolean"},
+            "comment": {"type": "string"},
+        },
+        "required": ["approved"],
+        "additionalProperties": False,
+    }
+
+
 def approval_request_payload(
     *,
     question: str,
@@ -90,6 +105,7 @@ def approval_request_payload(
         "capability": capability,
         "reason": _bounded_text(decision.reason, max_chars=500),
         "question": _bounded_text(question, max_chars=1_000),
+        "response_schema": approval_response_schema(),
     }
 
 
@@ -118,6 +134,7 @@ def parse_approval_request(
     capability = value.get("capability")
     reason = value.get("reason")
     question = value.get("question")
+    response_schema = value.get("response_schema")
     for label, item in {
         "target_agent_type": target,
         "capability": capability,
@@ -129,6 +146,15 @@ def parse_approval_request(
                 f"approval interrupt {label} must be a non-empty string"
             )
 
+    if not isinstance(response_schema, dict):
+        raise TypeError(
+            "approval interrupt response_schema must be an object"
+        )
+    if response_schema != approval_response_schema():
+        raise ValueError(
+            "approval interrupt response_schema is invalid"
+        )
+
     return HumanApprovalRequest(
         interrupt_id=interrupt_id,
         action=action,
@@ -137,6 +163,7 @@ def parse_approval_request(
         capability=capability,
         reason=reason,
         question=question,
+        response_schema=dict(response_schema),
     )
 
 
@@ -168,6 +195,7 @@ __all__ = [
     "HumanApprovalRequest",
     "HumanApprovalResponse",
     "approval_request_payload",
+    "approval_response_schema",
     "normalize_approval_comment",
     "parse_approval_request",
 ]
