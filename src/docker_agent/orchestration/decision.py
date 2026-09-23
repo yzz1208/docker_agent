@@ -4,12 +4,12 @@ import json
 from dataclasses import dataclass
 from typing import Any, Literal, cast
 
-from docker_agent.agent.router import is_general_chat_request
 from docker_agent.agent.registry import (
     AgentNotRegistered,
     AgentRegistry,
     AgentRegistryError,
 )
+from docker_agent.agent.router import is_general_chat_request
 from docker_agent.orchestration.delegation import (
     AgentCapabilityIndex,
     DelegationContext,
