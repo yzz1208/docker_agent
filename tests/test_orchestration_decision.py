@@ -186,11 +186,15 @@ def test_delegation_decision_respects_existing_trace_loop_protection() -> None:
         capability="runtime_diagnostics",
         reason="inspect container runtime",
     )
-    fake = SequenceModel([
-        '{"action":"delegate","reason":"return to triage",'
-        '"target_agent_type":"infrastructure_troubleshooter",'
-        '"capability":"incident_triage","clarification":null}'
-    ])
+    fake = SequenceModel(
+        [
+            (
+                '{"action":"delegate","reason":"return to triage",'
+                '"target_agent_type":"infrastructure_troubleshooter",'
+                '"capability":"incident_triage","clarification":null}'
+            )
+        ]
+    )
     orchestrator = OrchestrationDecisionModel(
         registry=registry,
         model=fake,
