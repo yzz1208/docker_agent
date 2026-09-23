@@ -9,6 +9,7 @@ on:
         type: choice
         options:
           - agent_router
+          - infrastructure_router
           - agent_workflow
       baseline_run_id:
         description: Persisted baseline evaluation run id
@@ -111,6 +112,9 @@ jobs:
           if [[ "$EVAL_SUITE" == "agent_router" ]]; then
             args+=(--repeats "$ROUTER_REPEATS")
             uv run python scripts/eval_agent_router.py "${args[@]}"
+          elif [[ "$EVAL_SUITE" == "infrastructure_router" ]]; then
+            args+=(--repeats "$ROUTER_REPEATS")
+            uv run python scripts/eval_infrastructure_router.py "${args[@]}"
           else
             if [[ "$ENABLE_JUDGE" == "true" ]]; then
               args+=(--judge)
