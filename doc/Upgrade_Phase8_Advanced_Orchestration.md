@@ -623,8 +623,169 @@ Web build, and production configuration validation also pass.
 Allow one bounded orchestration flow to combine specialist results where a single specialist
 is insufficient.
 
-The synthesis layer must distinguish observed facts, specialist claims, and unresolved
-uncertainty.
+The synthesis layer distinguishes user-reported observations, attributed specialist claims,
+synthesis-level hypotheses, and unresolved uncertainty.
+
+### Step 5 implementation status
+
+**IMPLEMENTED and CI-verified**
+
+Added:
+
+~~~text
+src/docker_agent/orchestration/synthesis.py
+tests/test_orchestration_synthesis.py
+~~~
+
+Core flow:
+
+~~~text
+OrchestrationExecutionResult(s)
+        ↓
+public SpecialistResultEnvelope(s)
+        ↓
+OrchestratedSynthesisService
+        ↓
+strict synthesis JSON
+        ↓
+OrchestratedSynthesisResult
+~~~
+
+The service accepts either explicit `SpecialistResultEnvelope` values or completed
+`OrchestrationExecutionResult` values through `synthesize_executions(...)`. Executions with
+no public specialist result are rejected before synthesis.
+
+### Provenance model
+
+Step 5 deliberately keeps provenance outside model-authored fields.
+
+`OrchestratedSynthesisResult` preserves:
+
+~~~text
+original_query
+user_observations
+specialist_results
+answer
+hypotheses
+unresolved_uncertainties
+clarification_questions
+contributing_agents
+~~~
+
+`user_observations` are supplied explicitly by the orchestration caller and are preserved
+unchanged except for whitespace normalization/deduplication. The synthesis model does not
+create or rewrite this provenance list.
+
+`specialist_results` are the Step 4 public result envelopes and remain attributed to their
+canonical `agent_type`. They are not promoted to user-observed facts.
+
+The model is allowed to author only:
+
+~~~text
+answer
+hypotheses
+unresolved_uncertainties
+~~~
+
+This prevents a model-authored JSON response from manufacturing a new `user_observations`
+or `specialist_results` section and presenting it as platform provenance.
+
+### Clarification precedence
+
+If any specialist result still requires clarification, synthesis stops before the model call.
+The unique clarification questions are returned deterministically:
+
+~~~text
+pending specialist clarification
+        ↓
+NO synthesis model call
+        ↓
+clarification_questions
+~~~
+
+In this state the result cannot contain an answer, hypotheses, or unresolved uncertainty.
+Conversely, a completed synthesis must contain a non-empty answer. These invariants are
+enforced on `OrchestratedSynthesisResult` itself.
+
+### Synthesis safety rules
+
+The synthesis prompt treats all transferred user and specialist text as untrusted data.
+It explicitly requires:
+
+- no invented user observations, runtime evidence, tool output, citations, or Agent results;
+- no promotion of a specialist claim into a user-observed fact;
+- Agent attribution for specialist claims;
+- preservation of disagreement rather than fabricated consensus;
+- no unsupported root-cause claims;
+- explicit unresolved uncertainty instead of filling gaps with general knowledge;
+- no tool or Agent invocation from the synthesis layer.
+
+The synthesis layer consumes only Step 4 public envelopes. It has no access to raw tool
+results, worker state, prompts, source objects, credentials, or hidden Agent state.
+
+### Bounded synthesis
+
+Default limits now include:
+
+~~~text
+specialist results              4
+user observations              12
+original query chars         4000
+chars per user observation   2000
+final answer chars           6000
+hypotheses                      6
+unresolved uncertainties        8
+chars per list item          1200
+~~~
+
+All limits are configurable on `OrchestratedSynthesisService`, must be positive, and are
+validated before or immediately after the model call.
+
+The synthesis JSON schema is strict. Missing fields, unexpected fields, invalid JSON,
+oversized output, and non-string list items are rejected.
+
+### Compatibility and non-goals
+
+Step 5 still does **not**:
+
+- change `POST /chat`;
+- enable automatic orchestration for normal Web conversations;
+- persist the synthesis trace/result yet;
+- recursively execute another Agent from synthesis;
+- expose raw evidence from a specialist;
+- add UI for handoffs or synthesis.
+
+Those product-facing behaviors remain Step 6 work.
+
+### Step 5 coverage
+
+Dedicated coverage verifies:
+
+- two-specialist synthesis;
+- stable source Agent attribution;
+- explicit user-observation provenance;
+- untrusted specialist prompt-injection text;
+- clarification short-circuit without a model call;
+- clarification deduplication;
+- direct collection from `OrchestrationExecutionResult` values;
+- rejection of executions without a public result;
+- duplicate Agent-result rejection;
+- empty/missing specialist-result rejection;
+- user-observation normalization/deduplication;
+- code-fenced JSON parsing;
+- missing/unexpected schema-field rejection;
+- invalid JSON rejection;
+- answer/list/query/context size bounds;
+- contradictory terminal-state rejection.
+
+The full backend gate after Step 5 reports:
+
+~~~text
+470 passed, 1 warning
+~~~
+
+Ruff, migration/database readiness, frontend type checking, frontend unit tests, production
+Web build, and production configuration validation also pass.
 
 ## Step 6 — Web Auto-Orchestration Mode
 
