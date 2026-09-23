@@ -5,11 +5,13 @@ import {
   compareEvaluationRuns,
   createAgentConfiguration,
   getAgentDescriptor,
+  getAutoApproval,
   getOperationsSummary,
   listAgentRuns,
   listAgents,
   listEvaluationRuns,
   resetChatSession,
+  resolveAutoApproval,
   sendAutoChat,
   sendChat,
   updateAgentConfiguration,
@@ -135,6 +137,82 @@ describe("API client", () => {
         body: JSON.stringify({
           message: "检查 web-1",
           conversation_id: "auto-1",
+        }),
+      }),
+    );
+  });
+
+  it("loads and resolves durable auto approval", async () => {
+    const pending = {
+      mode: "auto",
+      conversation_id: "auto-1",
+      current_agent_type: "docker_support",
+      route: "auto_approval_pending",
+      answer: null,
+      clarification: null,
+      needs_clarification: false,
+      synthesized: false,
+      trace: [],
+      specialist_results: [],
+      approval_status: "pending",
+      needs_approval: true,
+      approval_request: {
+        interrupt_id: "interrupt-1",
+        action: "delegate",
+        source_agent_type: "docker_support",
+        target_agent_type: "infrastructure_troubleshooter",
+        capability: "incident_triage",
+        reason: "需要服务级排查",
+        question: "继续排查 503",
+        response_schema: {},
+      },
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(pending), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            ...pending,
+            route: "auto_synthesis",
+            answer: "排查完成。",
+            approval_status: "approved",
+            needs_approval: false,
+            approval_request: null,
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        ),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await getAutoApproval("auto-1");
+    await resolveAutoApproval({
+      conversationId: "auto-1",
+      approved: true,
+      comment: "允许继续。",
+    });
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "/chat/auto/auto-1/approval",
+      expect.any(Object),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "/chat/auto/auto-1/approval",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          approved: true,
+          comment: "允许继续。",
         }),
       }),
     );
