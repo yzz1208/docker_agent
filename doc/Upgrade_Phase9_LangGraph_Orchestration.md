@@ -36,7 +36,7 @@ The migration remains conservative:
 ~~~text
 Step 1  Decision Graph Foundation / Shadow Parity       ✅ implemented
 Step 2  Specialist Execution Node                       ✅ implemented
-Step 3  Cross-Agent Envelope + Synthesis Nodes          ⏳
+Step 3  Cross-Agent Envelope + Synthesis Nodes          ✅ implemented
 Step 4  Durable Checkpoint / Resume                      ⏳
 Step 5  Human Approval / Interrupt Boundary              ⏳
 Step 6  Auto Chat Shadow Comparison + Product Cutover    ⏳
@@ -430,3 +430,271 @@ Step 2 is accepted when:
 
 Only after this local gate should Step 3 add synthesis and cross-Agent completion nodes to the
 LangGraph shadow workflow.
+## Step 3 — Cross-Agent Envelope + Synthesis Nodes
+
+### Scope
+
+Step 3 extends the shadow workflow through final public completion while preserving the
+Phase 8 latency and provenance rules.
+
+New topology:
+
+~~~text
+START
+  ↓
+decision
+  ├──────── clarify ─────────────────────────────→ END
+  │
+  ├──────── direct ────→ specialist ─→ complete ─→ END
+  │
+  └──────── delegate ─→ specialist
+                            │
+                            ├─ clarification ─→ complete ─→ END
+                            │
+                            ├─ no prior result ─→ complete ─→ END
+                            │
+                            └─ prior + current public results
+                                      ↓
+                                  synthesis ─────────────→ END
+~~~
+
+The Step 1 decision graph and Step 2 execution graph remain available unchanged. Step 3 adds
+a third explicit shadow entry point:
+
+~~~python
+run_orchestration_synthesis_graph(...)
+~~~
+
+### Synthesis graph state
+
+`OrchestrationSynthesisGraphState` carries:
+
+~~~text
+question
+context
+source_agent_type
+explicit_user_clarification
+user_observations
+prior_specialist_result
+decision
+execution
+synthesis
+final_answer
+final_clarification
+terminal_action
+trace
+~~~
+
+`user_observations` are still caller-supplied provenance. The graph does not manufacture
+observations from specialist text.
+
+The public result contract is `OrchestrationSynthesisGraphResult`:
+
+~~~text
+decision
+execution
+synthesis
+context
+terminal_action
+answer
+clarification
+trace
+synthesized
+~~~
+
+The result enforces that answer and clarification cannot coexist, graph execution must match
+the validated decision/context, and synthesis traces cannot be confused with direct completion.
+
+### Direct fast path
+
+A direct decision never calls the synthesis model:
+
+~~~text
+decision
+  ↓
+specialist
+  ↓
+complete
+~~~
+
+The final public answer is taken from the specialist turn answer, falling back to the public
+`SpecialistResultEnvelope.summary` only when needed.
+
+This preserves the Phase 8 performance rule: one short routing decision plus one specialist
+execution, with zero synthesis calls.
+
+### Delegate + synthesis path
+
+Delegation still runs through `DelegationExecutionService`, so Step 3 continues to reuse the
+Phase 8 `DelegationPolicy` and `CrossAgentContextEnvelope` rather than duplicating them.
+
+Synthesis is entered only when all of the following are true:
+
+~~~text
+decision.action == delegate
+current specialist completed without clarification
+prior public SpecialistResultEnvelope exists
+~~~
+
+The synthesis node passes exactly two attributed public results:
+
+~~~text
+prior specialist public result
+current target specialist public result
+~~~
+
+plus explicit caller-supplied user observations and the original query from
+`DelegationContext.original_query`.
+
+The synthesis layer remains the existing `OrchestratedSynthesisService`, so its strict JSON
+schema, untrusted-data prompt boundary, provenance rules, disagreement handling, output
+bounds, and clarification precedence remain active.
+
+### Clarification precedence
+
+Step 3 has two clarification boundaries:
+
+1. orchestration decision clarification — no specialist executes;
+2. specialist clarification — no synthesis model executes.
+
+If an older public specialist result itself still requires clarification, the synthesis service
+also short-circuits deterministically and returns that clarification without a model call.
+
+Therefore the graph never generates a synthesized answer while a required clarification is
+still unresolved.
+
+### Delegate without a prior result
+
+A validated delegate decision can technically be executed without a prior public result.
+In that case the target specialist still executes and the graph returns its public result
+directly, but synthesis is skipped because there are not two attributed specialist results.
+
+This avoids inventing multi-Agent context merely to force a synthesis step.
+
+### Trace contracts
+
+Decision clarification:
+
+~~~text
+("decision", "clarify")
+~~~
+
+Direct or non-synthesized specialist completion:
+
+~~~text
+("decision", action, "specialist", "complete")
+~~~
+
+Cross-Agent synthesis:
+
+~~~text
+("decision", "delegate", "specialist", "synthesis")
+~~~
+
+These traces are bounded and contain workflow-stage names only. They do not contain prompts,
+raw tools, hidden reasoning, credentials, or worker internals.
+
+### Product boundary
+
+Step 3 remains shadow-only. It still does **not** change:
+
+~~~text
+POST /chat
+POST /chat/auto
+AutoOrchestrationService
+Web UI
+conversation persistence
+~~~
+
+The existing Chinese Auto-Orchestration product path continues to use the Phase 8 service.
+Phase 9 will not receive production traffic until checkpoint/resume and shadow parity are
+implemented and verified.
+
+### Step 3 coverage
+
+Dedicated tests verify:
+
+- direct fast path executes one specialist and zero synthesis calls;
+- decision clarification executes zero specialists and zero synthesis calls;
+- delegate with prior/current public results performs exactly one synthesis call;
+- synthesis receives both canonical contributing Agents;
+- caller-supplied user observations retain explicit provenance;
+- original query, not the follow-up message, anchors synthesis;
+- delegated target still receives the Phase 8 safe cross-Agent envelope;
+- specialist clarification skips synthesis;
+- delegate without prior result skips synthesis;
+- prior unresolved clarification wins without a synthesis-model call.
+
+### Step 3 CI result
+
+At implementation head:
+
+~~~text
+Ruff                           passed
+Migration / DB contract        passed
+Backend                        506 passed
+Frontend Typecheck             passed
+Frontend                       30 passed
+Production build               passed
+Production configuration       passed
+~~~
+
+## Local Step 3 gate
+
+After pulling the latest Phase 9 branch:
+
+~~~powershell
+git fetch
+git switch feat/upgrade-phase-9-langgraph-orchestration
+git pull
+~~~
+
+Run the focused Step 3 gate:
+
+~~~powershell
+uv run ruff check .
+
+uv run pytest -v `
+  tests/test_orchestration_synthesis_graph.py `
+  tests/test_orchestration_execution_graph.py `
+  tests/test_orchestration_graph.py `
+  tests/test_orchestration_synthesis.py `
+  tests/test_orchestration_execution.py `
+  tests/test_orchestration_envelope.py
+~~~
+
+Then verify the Phase 8 production path remains unchanged:
+
+~~~powershell
+uv run pytest -v `
+  tests/test_auto_orchestration.py `
+  tests/test_auto_chat_api.py `
+  tests/test_orchestration_evaluation.py
+~~~
+
+Finally run the complete project gate:
+
+~~~powershell
+uv run pytest -v
+
+cd web
+npm run typecheck
+npm test
+npm run build
+cd ..
+~~~
+
+### Step 3 acceptance boundary
+
+Step 3 is accepted when:
+
+- direct remains synthesis-free;
+- clarification remains higher priority than specialist/synthesis work;
+- delegation still uses the Phase 8 allowlisted envelope;
+- synthesis receives only attributed public specialist results;
+- the original query and explicit user observations retain provenance;
+- the full backend suite passes;
+- existing `/chat/auto` behavior remains unchanged;
+- frontend regression gates remain green.
+
+Only after this local gate should Step 4 introduce LangGraph durable checkpoint/resume.
