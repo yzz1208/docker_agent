@@ -30,12 +30,6 @@ from docker_agent.orchestration.envelope import (
     build_cross_agent_context_envelope,
     build_specialist_result_envelope,
 )
-from docker_agent.orchestration.execution import (
-    DelegationExecutionService,
-    OrchestrationExecutionError,
-    OrchestrationExecutionResult,
-    OrchestrationSpecialistExecutionError,
-)
 from docker_agent.orchestration.evaluation import (
     OrchestrationDecisionExpectation,
     OrchestrationDecisionMetrics,
@@ -47,6 +41,12 @@ from docker_agent.orchestration.evaluation import (
     summarize_orchestration_by_category,
     summarize_orchestration_decisions,
     summarize_orchestration_synthesis,
+)
+from docker_agent.orchestration.execution import (
+    DelegationExecutionService,
+    OrchestrationExecutionError,
+    OrchestrationExecutionResult,
+    OrchestrationSpecialistExecutionError,
 )
 from docker_agent.orchestration.synthesis import (
     SYNTHESIS_SYSTEM_PROMPT,
@@ -81,9 +81,9 @@ __all__ = [
     "OrchestrationAction",
     "OrchestrationDecision",
     "OrchestrationDecisionError",
-    "OrchestrationDecisionModel",
     "OrchestrationDecisionExpectation",
     "OrchestrationDecisionMetrics",
+    "OrchestrationDecisionModel",
     "OrchestrationEvalKind",
     "OrchestrationExecutionError",
     "OrchestrationExecutionResult",
