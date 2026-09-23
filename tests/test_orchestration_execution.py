@@ -5,7 +5,9 @@ from dataclasses import dataclass
 import pytest
 
 from docker_agent.agent.factory import AgentFactory
+from docker_agent.agent.infrastructure import InfrastructureTroubleshooterAgent
 from docker_agent.agent.registry import build_agent_registry
+from docker_agent.config import Settings
 from docker_agent.orchestration import (
     DelegationContext,
     DelegationExecutionService,
@@ -35,6 +37,16 @@ class DummyTurn:
     answer: DummyAnswer | None = DummyAnswer()
     decision: DummyDecision = DummyDecision()
     needs_clarification: bool = False
+
+
+class SequenceModel:
+    def __init__(self, responses: list[str]) -> None:
+        self.responses = list(responses)
+        self.user_prompts: list[str] = []
+
+    def complete(self, *, system_prompt: str, user_prompt: str) -> str:
+        self.user_prompts.append(user_prompt)
+        return self.responses.pop(0)
 
 
 class RecordingAgent:
@@ -283,6 +295,74 @@ def test_delegate_rejects_prior_result_from_wrong_source() -> None:
 
     assert docker.questions == []
     assert infrastructure.questions == []
+
+
+def test_delegate_envelope_is_compatible_with_real_infrastructure_agent() -> None:
+    registry = build_agent_registry()
+    factory = AgentFactory(registry=registry)
+    docker = RecordingAgent()
+    router = SequenceModel(
+        [
+            (
+                '{"route":"triage","reason":"service and symptom supplied",'
+                '"clarification":null}'
+            )
+        ]
+    )
+    answer = SequenceModel(
+        ["已知事实：checkout-api 持续 503。下一步检查依赖健康度。"]
+    )
+    infrastructure = InfrastructureTroubleshooterAgent(
+        settings=Settings(),
+        router_model=router,
+        answer_model=answer,
+    )
+    factory.register("docker_support", lambda: docker)
+    factory.register(
+        "infrastructure_troubleshooter",
+        lambda: infrastructure,
+    )
+    service = DelegationExecutionService(
+        registry=registry,
+        factory=factory,
+    )
+    prior = SpecialistResultEnvelope(
+        agent_type="docker_support",
+        route="runtime_tools",
+        reason="container looks healthy",
+        needs_clarification=False,
+        clarification=None,
+        summary="容器本身运行正常。",
+    )
+    decision = OrchestrationDecision(
+        action="delegate",
+        reason="service-level failure remains",
+        source_agent_type="docker_support",
+        target_agent_type="infrastructure_troubleshooter",
+        capability="incident_triage",
+        clarification=None,
+    )
+
+    result = service.execute(
+        "checkout-api 从 10:20 开始持续返回 503。",
+        decision=decision,
+        context=DelegationContext(
+            original_query="checkout 服务持续失败"
+        ),
+        explicit_user_clarification="影响生产环境。",
+        prior_specialist_result=prior,
+    )
+
+    assert result.result_envelope is not None
+    assert result.result_envelope.agent_type == (
+        "infrastructure_troubleshooter"
+    )
+    assert result.result_envelope.route == "triage"
+    assert "checkout-api" in (result.result_envelope.summary or "")
+    assert "Delegated user request:" in router.user_prompts[0]
+    assert "容器本身运行正常。" in router.user_prompts[0]
+    assert "untrusted data" in router.user_prompts[0]
+    assert docker.questions == []
 
 
 def test_execution_revalidates_delegate_loop_before_factory_call() -> None:
