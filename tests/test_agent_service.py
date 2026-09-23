@@ -175,3 +175,33 @@ def test_default_rag_resources_are_reused_across_requests(
         "embedder": 1,
         "reranker": 1,
     }
+
+
+def test_general_chat_skips_docs_and_runtime_tools() -> None:
+    docs_calls: list[str] = []
+    docker_tools = FakeDockerTools()
+    router = FixedModel(
+        '{"route":"general_chat","reason":"capability question",'
+        '"container_ref":null,"tools":[],"clarification":null,"use_docs":false}'
+    )
+    answer_model = FixedModel(
+        "你好，我可以帮你进行 Docker 文档问答、只读运行时诊断和服务故障分诊。"
+    )
+
+    agent = DockerSupportAgent(
+        settings=Settings(),
+        router_model=router,
+        answer_model=answer_model,
+        docker_tools=docker_tools,  # type: ignore[arg-type]
+        docs_retriever=lambda question: docs_calls.append(question) or _docs_context(),
+    )
+
+    result = agent.handle("你好，介绍一下自己")
+
+    assert docs_calls == []
+    assert docker_tools.calls == []
+    assert result.decision.route == "general_chat"
+    assert result.answer is not None
+    assert "Docker 文档问答" in result.answer.answer
+    assert result.answer.doc_sources == ()
+    assert result.answer.runtime_sources == ()
