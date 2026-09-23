@@ -1118,19 +1118,29 @@ question
 
 `reason` is capped at 500 characters and `question` at 1000 characters.
 
-The interrupt also exposes a typed response schema requiring:
+For compatibility with the full supported LangGraph range, including 1.2.11, the application
+owns the response schema instead of passing a `response_schema=` keyword to `interrupt()`.
+
+The interrupt value therefore includes:
 
 ~~~text
-approved: boolean
-comment: optional string
+response_schema:
+  type: object
+  required: [approved]
+  properties:
+    approved: boolean
+    comment: string
 ~~~
 
-The public read result exposes the LangGraph interrupt id through `HumanApprovalRequest`, so a
-future API/UI can render a real approval card instead of scraping workflow state.
+The public read result exposes both this stable application schema and the LangGraph interrupt
+id through `HumanApprovalRequest`, so a future API/UI can render a real approval card without
+depending on version-specific interrupt metadata.
 
 ### Resume contract
 
-Approval resumes through LangGraph `Command(resume=...)` using the exact pending interrupt id.
+Approval resumes through the single-interrupt compatible LangGraph
+`Command(resume=response)` form. The pending interrupt id remains exposed for correlation and
+future API/UI use, but resume does not depend on newer id-addressed resume syntax.
 
 The helper is:
 
@@ -1222,8 +1232,9 @@ introduce raw specialist/tool state into the checkpoint.
 Dedicated tests verify:
 
 - default delegate pauses before any specialist execution;
-- pending interrupt exposes target Agent/capability and a typed response schema;
-- approval resumes the same thread using `Command(resume=...)`;
+- pending interrupt exposes target Agent/capability and the stable application response schema;
+- approval resumes the same thread using the single-interrupt `Command(resume=response)` form;
+- the interrupt call remains compatible with the LangGraph 1.2.11 one-value signature;
 - approved resume does not rerun the decision model;
 - approved resume executes the target specialist exactly once;
 - delegated approved flow can continue into synthesis exactly once;
@@ -1339,3 +1350,23 @@ Step 5 is accepted when:
 
 Only after this local gate should Step 6 compare the Phase 8 service path and the Phase 9
 LangGraph path in shadow mode before product cutover.
+
+### LangGraph 1.2.11 compatibility correction
+
+Local Step 5 testing exposed an API compatibility issue that CI did not initially reveal:
+the project allows `langgraph>=1.2.11`, while the newer `interrupt(..., response_schema=...)`
+keyword is not available in every allowed version.
+
+Step 5 therefore intentionally uses the common baseline API:
+
+~~~python
+response = interrupt(approval_request_payload(...))
+...
+graph.invoke(Command(resume=response), config)
+~~~
+
+The approval form schema is embedded in the application-owned interrupt payload and parsed into
+`HumanApprovalRequest.response_schema`.
+
+This keeps the Human-in-the-loop contract stable across the supported LangGraph range rather
+than forcing local environments to upgrade to a newer minor release.
