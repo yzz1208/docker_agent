@@ -81,16 +81,22 @@ class OrchestratedSynthesisService:
         model: SynthesisModel,
         max_results: int = 4,
         max_user_observations: int = 12,
+        max_query_chars: int = 4000,
+        max_user_observation_chars: int = 2000,
         max_answer_chars: int = 6000,
         max_hypotheses: int = 6,
         max_uncertainties: int = 8,
+        max_list_item_chars: int = 1200,
     ) -> None:
         limits = {
             "max_results": max_results,
             "max_user_observations": max_user_observations,
+            "max_query_chars": max_query_chars,
+            "max_user_observation_chars": max_user_observation_chars,
             "max_answer_chars": max_answer_chars,
             "max_hypotheses": max_hypotheses,
             "max_uncertainties": max_uncertainties,
+            "max_list_item_chars": max_list_item_chars,
         }
         for name, value in limits.items():
             if value <= 0:
@@ -98,9 +104,12 @@ class OrchestratedSynthesisService:
         self._model = model
         self._max_results = max_results
         self._max_user_observations = max_user_observations
+        self._max_query_chars = max_query_chars
+        self._max_user_observation_chars = max_user_observation_chars
         self._max_answer_chars = max_answer_chars
         self._max_hypotheses = max_hypotheses
         self._max_uncertainties = max_uncertainties
+        self._max_list_item_chars = max_list_item_chars
 
     def synthesize_executions(
         self,
@@ -139,10 +148,16 @@ class OrchestratedSynthesisService:
         query = original_query.strip()
         if not query:
             raise ValueError("original_query must not be empty")
+        if len(query) > self._max_query_chars:
+            raise OrchestrationSynthesisError(
+                f"original_query exceeds maximum length "
+                f"{self._max_query_chars}"
+            )
 
         observations = _normalize_observations(
             user_observations,
             max_items=self._max_user_observations,
+            max_chars=self._max_user_observation_chars,
         )
         results = _validate_specialist_results(
             specialist_results,
@@ -181,11 +196,13 @@ class OrchestratedSynthesisService:
             payload.get("hypotheses"),
             field="hypotheses",
             max_items=self._max_hypotheses,
+            max_chars=self._max_list_item_chars,
         )
         uncertainties = _string_list(
             payload.get("unresolved_uncertainties"),
             field="unresolved_uncertainties",
             max_items=self._max_uncertainties,
+            max_chars=self._max_list_item_chars,
         )
 
         return OrchestratedSynthesisResult(
@@ -275,6 +292,7 @@ def _normalize_observations(
     observations: tuple[str, ...],
     *,
     max_items: int,
+    max_chars: int,
 ) -> tuple[str, ...]:
     if len(observations) > max_items:
         raise OrchestrationSynthesisError(
@@ -286,6 +304,10 @@ def _normalize_observations(
         if not item:
             raise OrchestrationSynthesisError(
                 "user observations must not contain empty items"
+            )
+        if len(item) > max_chars:
+            raise OrchestrationSynthesisError(
+                f"user observation exceeds maximum length {max_chars}"
             )
         if item not in normalized:
             normalized.append(item)
@@ -365,6 +387,7 @@ def _string_list(
     *,
     field: str,
     max_items: int,
+    max_chars: int,
 ) -> tuple[str, ...]:
     if not isinstance(value, list):
         raise OrchestrationSynthesisError(f"{field} must be an array")
@@ -382,6 +405,10 @@ def _string_list(
         if not normalized:
             raise OrchestrationSynthesisError(
                 f"{field} items must not be empty"
+            )
+        if len(normalized) > max_chars:
+            raise OrchestrationSynthesisError(
+                f"{field} item exceeds maximum length {max_chars}"
             )
         if normalized not in items:
             items.append(normalized)
