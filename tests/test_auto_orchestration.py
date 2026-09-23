@@ -231,7 +231,7 @@ def test_auto_chat_follow_up_can_handoff_and_synthesize() -> None:
 
 
 def test_auto_chat_clarify_does_not_execute_specialist() -> None:
-    service, engine, docker, infrastructure, _ = _service(
+    service, _engine_value, docker, infrastructure, _ = _service(
         decisions=[
             (
                 '{"action":"clarify","reason":"范围不明确",'
