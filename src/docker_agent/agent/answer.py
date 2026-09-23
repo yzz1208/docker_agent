@@ -116,7 +116,7 @@ def _static_general_support_answer(question: str) -> str | None:
         return (
             "你好，我是这个 Docker 智能支持平台的对话入口。"
             "我可以帮助你：\n"
-            "- 解答 Docker、Compose、镜像、网络和存储等文档问题；\n"
+            "- 进行 Docker 文档问答，解答 Compose、镜像、网络和存储等问题；\n"
             "- 在启用只读运行时工具时检查容器状态、日志和资源使用；\n"
             "- 当问题扩大到服务级故障时，转交基础设施排障专家继续分析；\n"
             "- 在跨专家转交前请求你的批准，并保留当前对话上下文。\n\n"
