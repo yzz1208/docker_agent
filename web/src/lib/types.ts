@@ -43,7 +43,12 @@ export type ChatResponse = {
 };
 
 export type AutoTraceStep = {
-  stage: "decision" | "handoff" | "specialist" | "synthesis";
+  stage:
+    | "decision"
+    | "approval"
+    | "handoff"
+    | "specialist"
+    | "synthesis";
   label: string;
   agent_type: string | null;
   capability: string | null;
@@ -59,6 +64,23 @@ export type AutoSpecialistResult = {
   summary: string | null;
 };
 
+export type AutoApprovalRequest = {
+  interrupt_id: string;
+  action: "direct" | "delegate";
+  source_agent_type: string | null;
+  target_agent_type: string;
+  capability: string;
+  reason: string;
+  question: string;
+  response_schema: Record<string, unknown>;
+};
+
+export type AutoApprovalStatus =
+  | "not_required"
+  | "pending"
+  | "approved"
+  | "denied";
+
 export type AutoChatResponse = {
   mode: "auto";
   conversation_id: string;
@@ -70,6 +92,9 @@ export type AutoChatResponse = {
   synthesized: boolean;
   trace: AutoTraceStep[];
   specialist_results: AutoSpecialistResult[];
+  approval_status: AutoApprovalStatus | null;
+  needs_approval: boolean;
+  approval_request: AutoApprovalRequest | null;
 };
 
 export type ConversationSummary = {
