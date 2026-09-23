@@ -20,7 +20,7 @@
 - Upgrade Phase 6：Production / Deployment Hardening ✅
 - Upgrade Phase 7：Generic Multi-Agent Platform ✅
 - Upgrade Phase 8：Advanced Multi-Agent Orchestration ✅
-- Upgrade Phase 9：LangGraph Platform Orchestration（Step 1–5 已完成；Step 6A LangGraph Auto Adapter + Shadow Parity 已实现，6B Product Cutover 待本地 gate 后推进）
+- Upgrade Phase 9：LangGraph Platform Orchestration（Step 1–6 已实现：Decision / Specialist / Synthesis / Durable Resume / Human Approval / Auto Product Cutover；待 Step 6B 本地产品 gate 后进入 Step 7）
 
 ## 本地环境
 
