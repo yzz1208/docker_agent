@@ -22,6 +22,7 @@ EvaluationCaseStatusResponse = Literal["passed", "failed", "error"]
 
 class EvaluationRunResponse(BaseModel):
     id: str
+    agent_type: str | None
     suite: str
     dataset_name: str
     dataset_version: str
@@ -84,6 +85,7 @@ class ConfigurationChangeResponse(BaseModel):
 class EvaluationComparisonResponse(BaseModel):
     baseline_run_id: str
     candidate_run_id: str
+    agent_type: str | None
     suite: str
     dataset_name: str
     dataset_version: str
@@ -112,6 +114,7 @@ def build_evaluation_run_response(
 ) -> EvaluationRunResponse:
     return EvaluationRunResponse(
         id=record.id,
+        agent_type=record.agent_type,
         suite=record.suite,
         dataset_name=record.dataset_name,
         dataset_version=record.dataset_version,
@@ -153,6 +156,7 @@ def build_evaluation_comparison_response(
     return EvaluationComparisonResponse(
         baseline_run_id=comparison.baseline_run_id,
         candidate_run_id=comparison.candidate_run_id,
+        agent_type=comparison.agent_type,
         suite=comparison.suite,
         dataset_name=comparison.dataset_name,
         dataset_version=comparison.dataset_version,
