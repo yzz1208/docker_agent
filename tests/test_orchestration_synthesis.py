@@ -459,6 +459,62 @@ def test_synthesis_enforces_answer_and_list_bounds() -> None:
         )
 
 
+def test_synthesis_bounds_query_user_observation_and_list_item_lengths() -> None:
+    query_service = OrchestratedSynthesisService(
+        model=SequenceModel([]),
+        max_query_chars=5,
+    )
+    with pytest.raises(
+        OrchestrationSynthesisError,
+        match="original_query exceeds maximum length 5",
+    ):
+        query_service.synthesize(
+            original_query="123456",
+            specialist_results=(
+                _completed("docker_support", "public answer"),
+            ),
+        )
+
+    observation_service = OrchestratedSynthesisService(
+        model=SequenceModel([]),
+        max_user_observation_chars=5,
+    )
+    with pytest.raises(
+        OrchestrationSynthesisError,
+        match="user observation exceeds maximum length 5",
+    ):
+        observation_service.synthesize(
+            original_query="query",
+            user_observations=("123456",),
+            specialist_results=(
+                _completed("docker_support", "public answer"),
+            ),
+        )
+
+    item_model = SequenceModel(
+        [
+            (
+                '{"answer":"answer","hypotheses":["123456"],'
+                '"unresolved_uncertainties":[]}'
+            )
+        ]
+    )
+    item_service = OrchestratedSynthesisService(
+        model=item_model,
+        max_list_item_chars=5,
+    )
+    with pytest.raises(
+        OrchestrationSynthesisError,
+        match="hypotheses item exceeds maximum length 5",
+    ):
+        item_service.synthesize(
+            original_query="query",
+            specialist_results=(
+                _completed("docker_support", "public answer"),
+            ),
+        )
+
+
 def test_synthesis_rejects_too_many_specialists_before_model_call() -> None:
     model = SequenceModel([])
     service = OrchestratedSynthesisService(
