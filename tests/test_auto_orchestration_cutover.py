@@ -170,7 +170,6 @@ def test_product_direct_fast_path_completes_without_pending_approval() -> None:
     assert turn.needs_approval is False
     assert [item.stage for item in turn.trace] == [
         "decision",
-        "approval",
         "specialist",
     ]
     assert decision.calls == 1
