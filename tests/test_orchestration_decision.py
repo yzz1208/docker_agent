@@ -48,8 +48,8 @@ def test_initial_greeting_routes_to_docker_chat_instead_of_clarify() -> None:
     assert decision.target_agent_type == "docker_support"
     assert decision.capability == "chat"
     assert decision.clarification is None
-    assert "self-introduction" in fake.system_prompts[0]
-    assert "Do not clarify greetings" in fake.system_prompts[0]
+    assert fake.system_prompts == []
+    assert fake.user_prompts == []
 
 
 def test_initial_runtime_request_routes_directly_to_docker_support() -> None:
