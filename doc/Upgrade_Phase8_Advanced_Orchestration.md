@@ -791,13 +791,185 @@ Web build, and production configuration validation also pass.
 
 Add an optional Web mode alongside explicit Agent selection.
 
-The UI should show:
+The UI shows:
 
 - selected/delegated Agent;
 - handoff trace;
 - capability/reason;
 - current owner;
 - direct-specialist mode remains available.
+
+### Step 6 implementation status
+
+**IMPLEMENTED and CI-verified**
+
+Added the product Auto path:
+
+~~~text
+POST /chat/auto
+        ↓
+AutoOrchestrationService
+        ↓
+OrchestrationDecisionModel
+        ↓
+at most one specialist execution per user turn
+        ↓
+optional handoff synthesis
+~~~
+
+New backend/API files include:
+
+~~~text
+src/docker_agent/orchestration/auto_chat.py
+src/docker_agent/api/orchestration.py
+tests/test_auto_orchestration.py
+tests/test_auto_chat_api.py
+~~~
+
+Manual specialist Chat remains on the existing `/chat` endpoint. Auto orchestration uses
+`/chat/auto`, so the new product behavior does not hide orchestration behind the existing
+manual workflow or change the semantics of direct specialist conversations.
+
+### Low-latency execution policy
+
+Step 6 is intentionally optimized for response speed rather than maximizing Agent count.
+
+For a normal direct request:
+
+~~~text
+short orchestration decision
+        ↓
+one selected specialist
+        ↓
+return specialist result directly
+~~~
+
+There is **no synthesis model call** on this fast path.
+
+For a later turn that requires a specialist change:
+
+~~~text
+short orchestration decision
+        ↓
+one delegated target specialist
+        ↓
+safe prior/current public results
+        ↓
+synthesis
+~~~
+
+Each user turn therefore executes at most one specialist. The system does not run Docker
+Support and Infrastructure Troubleshooter in parallel just to demonstrate multi-Agent
+behavior. Decision responses are capped to a small token budget, while synthesis is invoked
+only when a real handoff has produced two relevant public specialist results.
+
+Current orchestration model budgets are:
+
+~~~text
+decision model max tokens     320
+synthesis model max tokens   1200
+delegation max hops             2
+~~~
+
+### Durable Auto conversations
+
+Auto conversations are stored with:
+
+~~~text
+agent_type = auto_orchestration
+~~~
+
+They reuse the existing conversation/message/execution persistence tables, so no database
+migration is required. Auto conversations can be listed, reopened, renamed, and deleted like
+manual conversations.
+
+The safe orchestration trace and resumable public state are persisted inside the existing
+`AgentExecution.worker_trace` JSON metadata. Persisted Auto state contains only canonical
+current-Agent identity and the Step 4 public `SpecialistResultEnvelope`; it does not persist
+raw prompts, raw tool output, or hidden specialist state.
+
+Recent conversation context used for follow-up orchestration is bounded to a small number of
+messages and characters and is explicitly marked as untrusted conversational data.
+
+### Chinese product experience
+
+The main Chat experience is now Chinese-first. The top navigation and backend-health labels
+are also localized.
+
+New-conversation mode selection is presented as a clear segmented control:
+
+~~~text
+手动专家 | 智能编排
+~~~
+
+Manual mode retains the explicit specialist selector. Auto mode displays the currently
+selected specialist once one has been chosen. Existing conversations lock their mode so a
+conversation cannot silently switch between manual and Auto semantics.
+
+The Auto empty state explains three user-facing guarantees:
+
+~~~text
+快速判断   — 一次短路由决策
+受控转交   — 每回合最多执行一个专家
+清晰结果   — 事实、推测与不确定性分开
+~~~
+
+While a request is running the UI shows a compact `正在智能编排` state rather than exposing
+internal model prompts or worker state.
+
+The right-hand orchestration panel presents a visual timeline:
+
+~~~text
+智能判断
+   ↓
+专家处理
+   ↓ optional
+专家转交
+   ↓ optional
+综合结论
+~~~
+
+Each visible step shows only safe product metadata such as localized Agent name, capability,
+and reason. Internal route names are localized for the Chat UI, and the public specialist
+results are displayed separately from the final assistant message.
+
+Agent names/capabilities used in the Chat experience are localized, including:
+
+~~~text
+Docker Support                  → Docker 支持
+Infrastructure Troubleshooter  → 基础设施排障
+runtime_diagnostics             → 运行时诊断
+incident_triage                 → 故障分诊
+~~~
+
+### Step 6 tests
+
+Coverage now verifies:
+
+- direct Auto routing executes exactly one specialist;
+- Auto clarification executes no specialist;
+- a follow-up can hand off Docker Support → Infrastructure Troubleshooter;
+- handoff synthesis uses only the safe prior specialist result;
+- Auto conversations persist in normal conversation history;
+- persisted Auto trace/current-owner state can be restored after reopening history;
+- manual conversations cannot be passed into `/chat/auto`;
+- bounded recent conversation context is marked as untrusted data;
+- `/chat/auto` response headers and trace/result payloads;
+- missing Auto conversations map to 404;
+- the Web calls Auto and manual endpoints separately;
+- Web mode switching and persisted Auto-history restoration;
+- Chinese health/status labels;
+- frontend type checking and production build.
+
+Final Step 6 gate:
+
+~~~text
+backend: 477 passed, 1 warning
+frontend: 30 passed
+frontend production build: passed
+~~~
+
+Ruff, migration/database readiness, and production Compose validation also pass.
 
 ## Step 7 — Orchestration Evaluation and Closeout
 
