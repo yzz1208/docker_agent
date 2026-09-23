@@ -240,10 +240,14 @@ export function getAgentRun(
 
 export function getOperationsSummary(
   hours = 24,
+  agentType?: string,
 ): Promise<AgentRunSummary> {
   const params = new URLSearchParams({
     hours: String(hours),
   });
+  if (agentType) {
+    params.set("agent_type", agentType);
+  }
   return request<AgentRunSummary>(
     `/operations/summary?${params.toString()}`,
   );
@@ -251,6 +255,7 @@ export function getOperationsSummary(
 
 export function listEvaluationRuns(input: {
   suite?: string;
+  agentType?: string;
   limit?: number;
   offset?: number;
 } = {}): Promise<EvaluationRun[]> {
@@ -260,6 +265,9 @@ export function listEvaluationRuns(input: {
   });
   if (input.suite) {
     params.set("suite", input.suite);
+  }
+  if (input.agentType) {
+    params.set("agent_type", input.agentType);
   }
 
   return request<EvaluationRun[]>(
