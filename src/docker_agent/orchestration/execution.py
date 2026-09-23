@@ -116,20 +116,32 @@ class DelegationExecutionService:
         decision: OrchestrationDecision,
         context: DelegationContext,
     ) -> None:
+        if decision.action not in {"clarify", "direct", "delegate"}:
+            raise OrchestrationExecutionError(
+                f"unsupported orchestration action: {decision.action!r}"
+            )
         if not decision.reason.strip():
             raise OrchestrationExecutionError(
                 "decision reason must not be empty"
             )
 
         current = context.current_agent_type
-        if (
-            current is not None
-            and decision.source_agent_type is not None
-            and decision.source_agent_type != current
-        ):
-            raise OrchestrationExecutionError(
-                f"decision source must match current context owner {current!r}"
-            )
+        if current is not None:
+            if decision.source_agent_type is None:
+                raise OrchestrationExecutionError(
+                    "decision source is required when context has an owner"
+                )
+            try:
+                source = self._registry.get(
+                    decision.source_agent_type
+                ).agent_type
+            except AgentRegistryError as exc:
+                raise OrchestrationExecutionError(str(exc)) from exc
+            if source != current:
+                raise OrchestrationExecutionError(
+                    f"decision source must match current context owner "
+                    f"{current!r}"
+                )
 
     def _validate_clarify(
         self,
