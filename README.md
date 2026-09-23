@@ -18,7 +18,7 @@
 - Upgrade Phase 4：Vue 3 Web Product Shell ✅（UI/交互细节后续优化）
 - Upgrade Phase 5：Observability + Evaluation Ops ✅
 - Upgrade Phase 6：Production / Deployment Hardening ✅
-- Upgrade Phase 7：Generic Multi-Agent Platform（实现完成，待最终本地 full gate）
+- Upgrade Phase 7：Generic Multi-Agent Platform（实现完成，待最终本地 full gate）\n- Upgrade Phase 8：Advanced Multi-Agent Orchestration（Step 1 Capability Index / Delegation Contract 已实现待本地 gate）
 
 ## 本地环境
 
