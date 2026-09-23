@@ -34,6 +34,7 @@ from docker_agent.orchestration.synthesis import (
     OrchestratedSynthesisResult,
     OrchestratedSynthesisService,
     OrchestrationSynthesisError,
+    SynthesisModel,
 )
 
 __all__ = [
@@ -62,6 +63,7 @@ __all__ = [
     "OrchestrationSpecialistExecutionError",
     "OrchestrationSynthesisError",
     "SpecialistResultEnvelope",
+    "SynthesisModel",
     "build_cross_agent_context_envelope",
     "build_specialist_result_envelope",
 ]
