@@ -19,9 +19,7 @@ ComparisonVerdict = Literal["pass", "regression", "incomplete"]
 _QUALITY_METRIC_HINTS = (
     "accuracy",
     "coverage",
-    "duration",
     "f1",
-    "latency",
     "match",
     "precision",
     "rate",
