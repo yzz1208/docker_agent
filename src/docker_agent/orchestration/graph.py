@@ -147,7 +147,7 @@ def run_orchestration_decision_graph(
     terminal_action = result.get("terminal_action")
     trace = result.get("trace")
     if not isinstance(decision, OrchestrationDecision):
-        raise ValueError(
+        raise TypeError(
             "orchestration decision graph completed without a decision"
         )
     if terminal_action not in {"clarify", "direct", "delegate"}:
@@ -155,7 +155,7 @@ def run_orchestration_decision_graph(
             "orchestration decision graph completed without a terminal action"
         )
     if not isinstance(trace, tuple):
-        raise ValueError(
+        raise TypeError(
             "orchestration decision graph completed without a trace"
         )
 
