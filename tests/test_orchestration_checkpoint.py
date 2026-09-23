@@ -5,6 +5,7 @@ from dataclasses import dataclass
 import pytest
 from langgraph.checkpoint.memory import InMemorySaver
 
+import docker_agent.orchestration.checkpoint as checkpoint_module
 from docker_agent.agent.factory import AgentFactory
 from docker_agent.agent.registry import build_agent_registry
 from docker_agent.orchestration import (
@@ -14,7 +15,6 @@ from docker_agent.orchestration import (
     OrchestrationDecisionModel,
     SpecialistResultEnvelope,
 )
-import docker_agent.orchestration.checkpoint as checkpoint_module
 from docker_agent.orchestration.checkpoint import (
     CHECKPOINT_NAMESPACE,
     open_postgres_orchestration_checkpointer,
@@ -504,7 +504,7 @@ def test_postgres_checkpointer_uses_safe_connection_and_explicit_setup(
         setup=True,
     ) as saver:
         assert saver is captured["saver"]
-        assert captured["closed"] is not True
+        assert "closed" not in captured
 
     assert captured["uri"] == (
         "postgresql://user:secret@localhost:5432/docker_agent"
