@@ -174,11 +174,19 @@ def reserve_message_timestamps(
         )
 
     now = utc_now()
-    start = (
-        max(now, latest + timedelta(microseconds=1))
-        if latest is not None
-        else now
-    )
+    if latest is None:
+        start = now
+    else:
+        comparable_now = now
+        if latest.tzinfo is None and comparable_now.tzinfo is not None:
+            comparable_now = comparable_now.replace(tzinfo=None)
+        elif latest.tzinfo is not None and comparable_now.tzinfo is None:
+            comparable_now = comparable_now.replace(tzinfo=latest.tzinfo)
+
+        start = max(
+            comparable_now,
+            latest + timedelta(microseconds=1),
+        )
     return tuple(
         start + timedelta(microseconds=index)
         for index in range(count)
