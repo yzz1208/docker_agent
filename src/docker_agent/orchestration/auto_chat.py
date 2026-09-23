@@ -1,10 +1,25 @@
 from __future__ import annotations
 
+from collections.abc import Callable
+from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from typing import Literal
 
+from langgraph.checkpoint.base import BaseCheckpointSaver
 from sqlalchemy.engine import Engine
 
+from docker_agent.orchestration.approval import (
+    ApprovalStatus,
+    HumanApprovalPolicy,
+    HumanApprovalRequest,
+)
+from docker_agent.orchestration.approval_graph import (
+    OrchestrationApprovalRunResult,
+    build_human_approval_orchestration_graph,
+    read_human_approval_orchestration,
+    resume_human_approval_orchestration,
+    start_human_approval_orchestration,
+)
 from docker_agent.orchestration.decision import (
     OrchestrationDecision,
     OrchestrationDecisionModel,
@@ -28,7 +43,13 @@ from docker_agent.persistence.store import (
 )
 
 AUTO_ORCHESTRATION_AGENT_TYPE = "auto_orchestration"
-AutoTraceStage = Literal["decision", "handoff", "specialist", "synthesis"]
+AutoTraceStage = Literal[
+    "decision",
+    "approval",
+    "handoff",
+    "specialist",
+    "synthesis",
+]
 
 
 class AutoOrchestrationError(ValueError):
@@ -54,10 +75,19 @@ class AutoOrchestrationTurn:
     trace: tuple[AutoTraceStep, ...]
     specialist_results: tuple[SpecialistResultEnvelope, ...]
     synthesized: bool
+    approval_status: ApprovalStatus | None = None
+    approval_request: HumanApprovalRequest | None = None
 
     @property
     def needs_clarification(self) -> bool:
         return self.clarification is not None
+
+    @property
+    def needs_approval(self) -> bool:
+        return (
+            self.approval_status == "pending"
+            and self.approval_request is not None
+        )
 
 
 class AutoOrchestrationService:
@@ -349,6 +379,80 @@ class AutoOrchestrationService:
             f"{message}"
         )
 
+    def _persist_user_message(
+        self,
+        *,
+        conversation: ConversationRecord,
+        content: str,
+    ) -> None:
+        (created_at,) = reserve_message_timestamps(
+            self._engine,
+            conversation_id=conversation.id,
+            count=1,
+        )
+        append_message(
+            self._engine,
+            conversation_id=conversation.id,
+            role="user",
+            content=content,
+            created_at=created_at,
+        )
+
+    def _persist_assistant_message(
+        self,
+        *,
+        conversation: ConversationRecord,
+        assistant_content: str,
+        route: str,
+        clarification: str | None,
+        trace: list[AutoTraceStep],
+        current_agent_type: str | None,
+        result_envelope: SpecialistResultEnvelope | None,
+    ) -> None:
+        (created_at,) = reserve_message_timestamps(
+            self._engine,
+            conversation_id=conversation.id,
+            count=1,
+        )
+        assistant = append_message(
+            self._engine,
+            conversation_id=conversation.id,
+            role="assistant",
+            content=assistant_content,
+            route=route,
+            clarification=clarification,
+            created_at=created_at,
+        )
+        trace_payload = [
+            {
+                "kind": "orchestration_trace",
+                "stage": item.stage,
+                "label": item.label,
+                "agent_type": item.agent_type,
+                "capability": item.capability,
+                "reason": item.reason,
+            }
+            for item in trace
+        ]
+        trace_payload.append(
+            _state_payload(
+                current_agent_type=current_agent_type,
+                result=result_envelope,
+            )
+        )
+        agents = tuple(
+            item.agent_type
+            for item in trace
+            if item.agent_type is not None
+        )
+        save_execution(
+            self._engine,
+            message_id=assistant.id,
+            planned_workers=agents,
+            completed_workers=agents,
+            worker_trace=trace_payload,
+        )
+
     def _persist_turn(
         self,
         *,
@@ -602,6 +706,497 @@ class LangGraphAutoOrchestrationService(AutoOrchestrationService):
         )
 
 
+class LangGraphProductAutoOrchestrationService(
+    AutoOrchestrationService
+):
+    """Phase 9 product runtime with durable approval interrupts."""
+
+    def __init__(
+        self,
+        *,
+        engine: Engine,
+        decision_model: OrchestrationDecisionModel,
+        execution_service: DelegationExecutionService,
+        synthesis_service: OrchestratedSynthesisService,
+        checkpointer_context_factory: Callable[
+            [],
+            AbstractContextManager[BaseCheckpointSaver],
+        ],
+        approval_policy: HumanApprovalPolicy | None = None,
+        max_history_messages: int = 6,
+        max_history_message_chars: int = 1200,
+    ) -> None:
+        super().__init__(
+            engine=engine,
+            decision_model=decision_model,
+            execution_service=execution_service,
+            synthesis_service=synthesis_service,
+            max_history_messages=max_history_messages,
+            max_history_message_chars=max_history_message_chars,
+        )
+        self._checkpointer_context_factory = (
+            checkpointer_context_factory
+        )
+        self._approval_policy = (
+            approval_policy or HumanApprovalPolicy()
+        )
+
+    def chat(
+        self,
+        *,
+        message: str,
+        conversation_id: str | None = None,
+    ) -> AutoOrchestrationTurn:
+        normalized = message.strip()
+        if not normalized:
+            raise ValueError("message must not be empty")
+
+        conversation, recent_messages = self._resolve_conversation(
+            normalized,
+            conversation_id=conversation_id,
+        )
+        if _conversation_has_pending_user_turn(recent_messages):
+            raise AutoOrchestrationError(
+                "conversation is waiting for approval"
+            )
+
+        previous_agent, previous_result = self._restore_latest_state(
+            conversation.id
+        )
+        effective_question = self._effective_question(
+            normalized,
+            recent_messages=recent_messages,
+        )
+        original_query = _original_query(
+            normalized,
+            recent_messages=recent_messages,
+        )
+        observations = _recent_user_observations(
+            normalized,
+            recent_messages=recent_messages,
+        )
+        thread_id = _approval_thread_id(
+            conversation.id,
+            _next_auto_turn_index(recent_messages),
+        )
+
+        with self._checkpointer_context_factory() as checkpointer:
+            graph = build_human_approval_orchestration_graph(
+                decision_model=self._decision_model,
+                execution_service=self._execution_service,
+                synthesis_service=self._synthesis_service,
+                checkpointer=checkpointer,
+                approval_policy=self._approval_policy,
+            )
+            result = start_human_approval_orchestration(
+                graph,
+                thread_id=thread_id,
+                question=effective_question,
+                approval_question=normalized,
+                context=DelegationContext(
+                    original_query=original_query
+                ),
+                source_agent_type=previous_agent,
+                user_observations=observations,
+                prior_specialist_result=previous_result,
+            )
+
+        if result.approval_status == "pending":
+            self._persist_user_message(
+                conversation=conversation,
+                content=normalized,
+            )
+            return self._pending_turn(
+                conversation=conversation,
+                result=result,
+                previous_agent=previous_agent,
+                previous_result=previous_result,
+            )
+
+        return self._persist_completed_start(
+            conversation=conversation,
+            user_message=normalized,
+            result=result,
+            previous_agent=previous_agent,
+            previous_result=previous_result,
+        )
+
+    def pending_approval(
+        self,
+        *,
+        conversation_id: str,
+    ) -> AutoOrchestrationTurn | None:
+        conversation, messages = self._resolve_conversation(
+            "pending approval",
+            conversation_id=conversation_id,
+        )
+        thread_id = _pending_approval_thread_id(
+            conversation.id,
+            messages,
+        )
+        if thread_id is None:
+            return None
+
+        with self._checkpointer_context_factory() as checkpointer:
+            graph = build_human_approval_orchestration_graph(
+                decision_model=self._decision_model,
+                execution_service=self._execution_service,
+                synthesis_service=self._synthesis_service,
+                checkpointer=checkpointer,
+                approval_policy=self._approval_policy,
+            )
+            result = read_human_approval_orchestration(
+                graph,
+                thread_id=thread_id,
+            )
+
+        if result.approval_status != "pending":
+            return None
+        previous_agent, previous_result = self._restore_latest_state(
+            conversation.id
+        )
+        return self._pending_turn(
+            conversation=conversation,
+            result=result,
+            previous_agent=previous_agent,
+            previous_result=previous_result,
+        )
+
+    def resume_approval(
+        self,
+        *,
+        conversation_id: str,
+        approved: bool,
+        comment: str | None = None,
+    ) -> AutoOrchestrationTurn:
+        conversation, messages = self._resolve_conversation(
+            "resume approval",
+            conversation_id=conversation_id,
+        )
+        thread_id = _pending_approval_thread_id(
+            conversation.id,
+            messages,
+        )
+        if thread_id is None:
+            raise AutoOrchestrationError(
+                "conversation has no pending approval"
+            )
+
+        previous_agent, previous_result = self._restore_latest_state(
+            conversation.id
+        )
+        with self._checkpointer_context_factory() as checkpointer:
+            graph = build_human_approval_orchestration_graph(
+                decision_model=self._decision_model,
+                execution_service=self._execution_service,
+                synthesis_service=self._synthesis_service,
+                checkpointer=checkpointer,
+                approval_policy=self._approval_policy,
+            )
+            result = resume_human_approval_orchestration(
+                graph,
+                thread_id=thread_id,
+                approved=approved,
+                comment=comment,
+            )
+
+        return self._persist_completed_resume(
+            conversation=conversation,
+            result=result,
+            previous_agent=previous_agent,
+            previous_result=previous_result,
+        )
+
+    def _pending_turn(
+        self,
+        *,
+        conversation: ConversationRecord,
+        result: OrchestrationApprovalRunResult,
+        previous_agent: str | None,
+        previous_result: SpecialistResultEnvelope | None,
+    ) -> AutoOrchestrationTurn:
+        decision = result.decision
+        if decision is None or result.approval_request is None:
+            raise AutoOrchestrationError(
+                "pending approval has no decision/request"
+            )
+        trace = [
+            _decision_trace(decision),
+            _approval_trace(
+                decision,
+                status="pending",
+                comment=None,
+            ),
+        ]
+        return AutoOrchestrationTurn(
+            conversation=get_conversation(
+                self._engine,
+                conversation.id,
+            ),
+            answer=None,
+            clarification=None,
+            current_agent_type=previous_agent,
+            route="auto_approval_pending",
+            trace=tuple(trace),
+            specialist_results=tuple(
+                item
+                for item in (previous_result,)
+                if item is not None
+            ),
+            synthesized=False,
+            approval_status="pending",
+            approval_request=result.approval_request,
+        )
+
+    def _persist_completed_start(
+        self,
+        *,
+        conversation: ConversationRecord,
+        user_message: str,
+        result: OrchestrationApprovalRunResult,
+        previous_agent: str | None,
+        previous_result: SpecialistResultEnvelope | None,
+    ) -> AutoOrchestrationTurn:
+        turn = self._completed_turn(
+            conversation=conversation,
+            result=result,
+            previous_agent=previous_agent,
+            previous_result=previous_result,
+        )
+        assistant_content = turn.answer or turn.clarification
+        if assistant_content is None:
+            raise AutoOrchestrationError(
+                "completed auto turn has no public content"
+            )
+        self._persist_turn(
+            conversation=conversation,
+            user_message=user_message,
+            assistant_content=assistant_content,
+            route=turn.route,
+            clarification=turn.clarification,
+            trace=list(turn.trace),
+            current_agent_type=turn.current_agent_type,
+            result_envelope=(
+                result.current_specialist_result
+                or previous_result
+            ),
+        )
+        return AutoOrchestrationTurn(
+            conversation=get_conversation(
+                self._engine,
+                conversation.id,
+            ),
+            answer=turn.answer,
+            clarification=turn.clarification,
+            current_agent_type=turn.current_agent_type,
+            route=turn.route,
+            trace=turn.trace,
+            specialist_results=turn.specialist_results,
+            synthesized=turn.synthesized,
+            approval_status=turn.approval_status,
+            approval_request=None,
+        )
+
+    def _persist_completed_resume(
+        self,
+        *,
+        conversation: ConversationRecord,
+        result: OrchestrationApprovalRunResult,
+        previous_agent: str | None,
+        previous_result: SpecialistResultEnvelope | None,
+    ) -> AutoOrchestrationTurn:
+        turn = self._completed_turn(
+            conversation=conversation,
+            result=result,
+            previous_agent=previous_agent,
+            previous_result=previous_result,
+        )
+        assistant_content = turn.answer or turn.clarification
+        if assistant_content is None:
+            raise AutoOrchestrationError(
+                "resumed auto turn has no public content"
+            )
+        self._persist_assistant_message(
+            conversation=conversation,
+            assistant_content=assistant_content,
+            route=turn.route,
+            clarification=turn.clarification,
+            trace=list(turn.trace),
+            current_agent_type=turn.current_agent_type,
+            result_envelope=(
+                result.current_specialist_result
+                or previous_result
+            ),
+        )
+        return AutoOrchestrationTurn(
+            conversation=get_conversation(
+                self._engine,
+                conversation.id,
+            ),
+            answer=turn.answer,
+            clarification=turn.clarification,
+            current_agent_type=turn.current_agent_type,
+            route=turn.route,
+            trace=turn.trace,
+            specialist_results=turn.specialist_results,
+            synthesized=turn.synthesized,
+            approval_status=turn.approval_status,
+            approval_request=None,
+        )
+
+    def _completed_turn(
+        self,
+        *,
+        conversation: ConversationRecord,
+        result: OrchestrationApprovalRunResult,
+        previous_agent: str | None,
+        previous_result: SpecialistResultEnvelope | None,
+    ) -> AutoOrchestrationTurn:
+        decision = result.decision
+        if decision is None:
+            raise AutoOrchestrationError(
+                "completed approval graph has no decision"
+            )
+        trace: list[AutoTraceStep] = [
+            _decision_trace(decision)
+        ]
+
+        if decision.action == "clarify":
+            clarification = result.clarification
+            if clarification is None:
+                raise AutoOrchestrationError(
+                    "clarify result has no clarification"
+                )
+            return AutoOrchestrationTurn(
+                conversation=conversation,
+                answer=None,
+                clarification=clarification,
+                current_agent_type=previous_agent,
+                route="auto_clarify",
+                trace=tuple(trace),
+                specialist_results=tuple(
+                    item
+                    for item in (previous_result,)
+                    if item is not None
+                ),
+                synthesized=False,
+                approval_status=result.approval_status,
+            )
+
+        status = result.approval_status
+        if status in {"pending", None}:
+            raise AutoOrchestrationError(
+                "completed auto result has unresolved approval"
+            )
+        trace.append(
+            _approval_trace(
+                decision,
+                status=status,
+                comment=result.approval_comment,
+            )
+        )
+
+        if status == "denied":
+            answer = result.answer
+            if answer is None:
+                raise AutoOrchestrationError(
+                    "denied approval has no public answer"
+                )
+            return AutoOrchestrationTurn(
+                conversation=conversation,
+                answer=answer,
+                clarification=None,
+                current_agent_type=previous_agent,
+                route="auto_approval_denied",
+                trace=tuple(trace),
+                specialist_results=tuple(
+                    item
+                    for item in (previous_result,)
+                    if item is not None
+                ),
+                synthesized=False,
+                approval_status="denied",
+            )
+
+        current = result.current_specialist_result
+        if current is None:
+            raise AutoOrchestrationError(
+                "completed auto flow has no specialist result"
+            )
+        _append_public_execution_trace(
+            trace,
+            decision=decision,
+            agent_type=current.agent_type,
+        )
+        specialist_results = _specialist_results_for_turn(
+            previous_result=previous_result,
+            current_result=current,
+            delegated=decision.action == "delegate",
+        )
+
+        if current.needs_clarification:
+            clarification = result.clarification
+            if clarification is None:
+                raise AutoOrchestrationError(
+                    "specialist clarification has no question"
+                )
+            route = (
+                "auto_delegate_clarify"
+                if decision.action == "delegate"
+                else "auto_direct_clarify"
+            )
+            return AutoOrchestrationTurn(
+                conversation=conversation,
+                answer=None,
+                clarification=clarification,
+                current_agent_type=current.agent_type,
+                route=route,
+                trace=tuple(trace),
+                specialist_results=specialist_results,
+                synthesized=False,
+                approval_status=status,
+            )
+
+        if result.synthesis is not None:
+            trace.append(
+                AutoTraceStep(
+                    stage="synthesis",
+                    label="综合结论",
+                    agent_type=None,
+                    capability=None,
+                    reason="已综合已公开的专家结果。",
+                )
+            )
+            return AutoOrchestrationTurn(
+                conversation=conversation,
+                answer=result.answer,
+                clarification=result.clarification,
+                current_agent_type=current.agent_type,
+                route="auto_synthesis",
+                trace=tuple(trace),
+                specialist_results=specialist_results,
+                synthesized=True,
+                approval_status=status,
+            )
+
+        answer = result.answer
+        if answer is None:
+            raise AutoOrchestrationError(
+                "completed specialist has no public answer"
+            )
+        return AutoOrchestrationTurn(
+            conversation=conversation,
+            answer=answer,
+            clarification=None,
+            current_agent_type=current.agent_type,
+            route="auto_direct",
+            trace=tuple(trace),
+            specialist_results=specialist_results,
+            synthesized=False,
+            approval_status=status,
+        )
+
+
 def _decision_trace(decision: OrchestrationDecision) -> AutoTraceStep:
     return AutoTraceStep(
         stage="decision",
@@ -609,6 +1204,60 @@ def _decision_trace(decision: OrchestrationDecision) -> AutoTraceStep:
         agent_type=decision.target_agent_type,
         capability=decision.capability,
         reason=decision.reason,
+    )
+
+
+def _approval_trace(
+    decision: OrchestrationDecision,
+    *,
+    status: ApprovalStatus,
+    comment: str | None,
+) -> AutoTraceStep:
+    if status == "pending":
+        label = "等待批准"
+        reason = "跨专家转交需要你的批准。"
+    elif status == "approved":
+        label = "已批准"
+        reason = comment or "用户已批准继续执行。"
+    elif status == "denied":
+        label = "已拒绝"
+        reason = comment or "用户拒绝继续执行。"
+    else:
+        label = "无需批准"
+        reason = "当前操作不需要人工批准。"
+    return AutoTraceStep(
+        stage="approval",
+        label=label,
+        agent_type=decision.target_agent_type,
+        capability=decision.capability,
+        reason=reason,
+    )
+
+
+def _append_public_execution_trace(
+    trace: list[AutoTraceStep],
+    *,
+    decision: OrchestrationDecision,
+    agent_type: str,
+) -> None:
+    if decision.action == "delegate":
+        trace.append(
+            AutoTraceStep(
+                stage="handoff",
+                label="专家转交",
+                agent_type=agent_type,
+                capability=decision.capability,
+                reason=decision.reason,
+            )
+        )
+    trace.append(
+        AutoTraceStep(
+            stage="specialist",
+            label="专家处理",
+            agent_type=agent_type,
+            capability=decision.capability,
+            reason=decision.reason,
+        )
     )
 
 
@@ -757,6 +1406,56 @@ def _restore_result_envelope(
         return None
 
 
+def _next_auto_turn_index(
+    recent_messages: tuple[object, ...],
+) -> int:
+    return (
+        sum(
+            1
+            for item in recent_messages
+            if getattr(item, "role", "") == "user"
+        )
+        + 1
+    )
+
+
+def _approval_thread_id(
+    conversation_id: str,
+    turn_index: int,
+) -> str:
+    if turn_index <= 0:
+        raise ValueError("turn_index must be positive")
+    return f"auto:{conversation_id}:turn:{turn_index}"
+
+
+def _conversation_has_pending_user_turn(
+    recent_messages: tuple[object, ...],
+) -> bool:
+    return bool(
+        recent_messages
+        and getattr(recent_messages[-1], "role", "") == "user"
+    )
+
+
+def _pending_approval_thread_id(
+    conversation_id: str,
+    recent_messages: tuple[object, ...],
+) -> str | None:
+    if not _conversation_has_pending_user_turn(recent_messages):
+        return None
+    turn_index = sum(
+        1
+        for item in recent_messages
+        if getattr(item, "role", "") == "user"
+    )
+    if turn_index <= 0:
+        return None
+    return _approval_thread_id(
+        conversation_id,
+        turn_index,
+    )
+
+
 def _default_title(message: str) -> str:
     normalized = " ".join(message.strip().split())
     if len(normalized) <= 80:
@@ -771,4 +1470,5 @@ __all__ = [
     "AutoOrchestrationTurn",
     "AutoTraceStep",
     "LangGraphAutoOrchestrationService",
+    "LangGraphProductAutoOrchestrationService",
 ]
