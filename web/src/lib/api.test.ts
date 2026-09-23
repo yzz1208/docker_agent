@@ -251,9 +251,10 @@ describe("API client", () => {
       limit: 25,
       offset: 5,
     });
-    await getOperationsSummary(168);
+    await getOperationsSummary(168, "docker_support");
     await listEvaluationRuns({
       suite: "agent_router",
+      agentType: "docker_support",
       limit: 10,
       offset: 2,
     });
@@ -268,10 +269,11 @@ describe("API client", () => {
         "&agent_type=docker_support&status=failed&limit=25&offset=5",
     );
     expect(fetchMock.mock.calls[1]?.[0]).toBe(
-      "/operations/summary?hours=168",
+      "/operations/summary?hours=168&agent_type=docker_support",
     );
     expect(fetchMock.mock.calls[2]?.[0]).toBe(
-      "/operations/evaluations?limit=10&offset=2&suite=agent_router",
+      "/operations/evaluations?limit=10&offset=2&suite=agent_router" +
+        "&agent_type=docker_support",
     );
     expect(fetchMock.mock.calls[3]?.[0]).toBe(
       "/operations/evaluations/compare?baseline_id=baseline-1" +
