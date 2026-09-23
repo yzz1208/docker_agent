@@ -6,6 +6,7 @@ from typing import Annotated
 
 from fastapi import FastAPI, HTTPException, Query, Request, Response, status
 from fastapi.responses import JSONResponse
+from psycopg import Error as PsycopgError
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -542,7 +543,7 @@ def agent_configurations() -> list[AgentConfigurationResponse]:
 
     try:
         records = list_agent_configurations(get_persistence_engine())
-    except SQLAlchemyError as exc:
+    except (SQLAlchemyError, PsycopgError) as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="PostgreSQL is unavailable.",
@@ -585,7 +586,7 @@ def effective_agent_configuration(
         )
     except AgentConfigurationNotFound:
         record = None
-    except SQLAlchemyError as exc:
+    except (SQLAlchemyError, PsycopgError) as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="PostgreSQL is unavailable.",
@@ -650,7 +651,7 @@ def agent_configuration_detail(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Agent configuration was not found.",
         ) from exc
-    except SQLAlchemyError as exc:
+    except (SQLAlchemyError, PsycopgError) as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="PostgreSQL is unavailable.",
@@ -730,7 +731,7 @@ def create_agent_configuration_endpoint(
             status_code=status.HTTP_409_CONFLICT,
             detail="Agent configuration already exists.",
         ) from exc
-    except SQLAlchemyError as exc:
+    except (SQLAlchemyError, PsycopgError) as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="PostgreSQL is unavailable.",
@@ -807,7 +808,7 @@ def update_agent_configuration_endpoint(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Agent configuration was not found.",
         ) from exc
-    except SQLAlchemyError as exc:
+    except (SQLAlchemyError, PsycopgError) as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="PostgreSQL is unavailable.",
@@ -844,7 +845,7 @@ def evaluation_runs(
             limit=limit,
             offset=offset,
         )
-    except SQLAlchemyError as exc:
+    except (SQLAlchemyError, PsycopgError) as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="PostgreSQL is unavailable.",
@@ -882,7 +883,7 @@ def compare_evaluations(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Evaluation run was not found.",
         ) from exc
-    except SQLAlchemyError as exc:
+    except (SQLAlchemyError, PsycopgError) as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="PostgreSQL is unavailable.",
@@ -920,7 +921,7 @@ def evaluation_run_detail(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Evaluation run was not found.",
         ) from exc
-    except SQLAlchemyError as exc:
+    except (SQLAlchemyError, PsycopgError) as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="PostgreSQL is unavailable.",
@@ -963,7 +964,7 @@ def operation_runs(
             limit=limit,
             offset=offset,
         )
-    except SQLAlchemyError as exc:
+    except (SQLAlchemyError, PsycopgError) as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="PostgreSQL is unavailable.",
@@ -995,7 +996,7 @@ def operation_run_detail(run_id: str) -> AgentRunResponse:
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Agent run was not found.",
         ) from exc
-    except SQLAlchemyError as exc:
+    except (SQLAlchemyError, PsycopgError) as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="PostgreSQL is unavailable.",
@@ -1026,7 +1027,7 @@ def operations_summary(
             hours=hours,
             agent_type=agent_type,
         )
-    except SQLAlchemyError as exc:
+    except (SQLAlchemyError, PsycopgError) as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="PostgreSQL is unavailable.",
@@ -1057,7 +1058,7 @@ def conversations(
             limit=limit,
             offset=offset,
         )
-    except SQLAlchemyError as exc:
+    except (SQLAlchemyError, PsycopgError) as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="PostgreSQL is unavailable.",
@@ -1089,7 +1090,7 @@ def conversation_detail(conversation_id: str) -> ConversationDetailResponse:
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Conversation was not found.",
         ) from exc
-    except SQLAlchemyError as exc:
+    except (SQLAlchemyError, PsycopgError) as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="PostgreSQL is unavailable.",
@@ -1124,7 +1125,7 @@ def rename_conversation_endpoint(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Conversation was not found.",
         ) from exc
-    except SQLAlchemyError as exc:
+    except (SQLAlchemyError, PsycopgError) as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="PostgreSQL is unavailable.",
@@ -1157,7 +1158,7 @@ def delete_conversation_endpoint(conversation_id: str) -> Response:
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Conversation was not found.",
         ) from exc
-    except SQLAlchemyError as exc:
+    except (SQLAlchemyError, PsycopgError) as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="PostgreSQL is unavailable.",
@@ -1247,7 +1248,7 @@ def auto_chat(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=f"Orchestration model failed: {exc}",
         ) from exc
-    except SQLAlchemyError as exc:
+    except (SQLAlchemyError, PsycopgError) as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="PostgreSQL is unavailable.",
@@ -1298,7 +1299,7 @@ def auto_chat_pending_approval(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=str(exc),
         ) from exc
-    except SQLAlchemyError as exc:
+    except (SQLAlchemyError, PsycopgError) as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="PostgreSQL is unavailable.",
@@ -1360,7 +1361,7 @@ def resolve_auto_chat_approval(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=f"Orchestration model failed: {exc}",
         ) from exc
-    except SQLAlchemyError as exc:
+    except (SQLAlchemyError, PsycopgError) as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="PostgreSQL is unavailable.",
@@ -1440,7 +1441,7 @@ def chat(
             status_code=status.HTTP_504_GATEWAY_TIMEOUT,
             detail=str(exc),
         ) from exc
-    except SQLAlchemyError as exc:
+    except (SQLAlchemyError, PsycopgError) as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="PostgreSQL is unavailable.",
