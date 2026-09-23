@@ -83,6 +83,7 @@ def test_evaluation_run_success_lifecycle() -> None:
     run = create_evaluation_run(
         engine,
         suite="agent_router",
+        agent_type="docker_support",
         dataset_name="agent_router_v1.jsonl",
         dataset_version_value="sha256:abc",
         git_revision="deadbeef",
@@ -126,6 +127,7 @@ def test_evaluation_run_success_lifecycle() -> None:
     )
 
     assert completed.status == "succeeded"
+    assert completed.agent_type == "docker_support"
     assert completed.case_count == 2
     assert completed.passed_count == 1
     assert completed.failed_count == 1
@@ -223,6 +225,7 @@ def test_list_evaluation_runs_supports_suite_filter() -> None:
     create_evaluation_run(
         engine,
         suite="router",
+        agent_type="docker_support",
         dataset_name="router.jsonl",
         dataset_version_value="sha256:a",
         run_id="eval-router",
@@ -230,6 +233,7 @@ def test_list_evaluation_runs_supports_suite_filter() -> None:
     create_evaluation_run(
         engine,
         suite="workflow",
+        agent_type="infrastructure_troubleshooter",
         dataset_name="workflow.jsonl",
         dataset_version_value="sha256:b",
         run_id="eval-workflow",
@@ -238,6 +242,13 @@ def test_list_evaluation_runs_supports_suite_filter() -> None:
     router_runs = list_evaluation_runs(engine, suite="router")
 
     assert [run.id for run in router_runs] == ["eval-router"]
+    assert [
+        run.id
+        for run in list_evaluation_runs(
+            engine,
+            agent_type="infrastructure_troubleshooter",
+        )
+    ] == ["eval-workflow"]
     assert {run.id for run in list_evaluation_runs(engine)} == {
         "eval-router",
         "eval-workflow",
