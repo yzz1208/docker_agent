@@ -3,7 +3,10 @@ from __future__ import annotations
 import pytest
 
 from docker_agent.orchestration import (
+    DelegationContext,
     OrchestratedSynthesisService,
+    OrchestrationDecision,
+    OrchestrationExecutionResult,
     OrchestrationSynthesisError,
     SpecialistResultEnvelope,
 )
@@ -100,6 +103,98 @@ def test_synthesis_preserves_provenance_outside_model_authored_sections() -> Non
         "尚未确认 503 的直接根因",
     )
     assert result.needs_clarification is False
+
+
+def test_synthesis_can_collect_public_results_from_executions() -> None:
+    model = SequenceModel(
+        [
+            (
+                '{"answer":"combined","hypotheses":[],'
+                '"unresolved_uncertainties":["root cause unknown"]}'
+            )
+        ]
+    )
+    service = OrchestratedSynthesisService(model=model)
+    docker_result = _completed(
+        "docker_support",
+        "container is running",
+    )
+    infra_result = _completed(
+        "infrastructure_troubleshooter",
+        "service still returns 503",
+    )
+    direct_decision = OrchestrationDecision(
+        action="direct",
+        reason="runtime check",
+        source_agent_type=None,
+        target_agent_type="docker_support",
+        capability="runtime_diagnostics",
+        clarification=None,
+    )
+    delegate_decision = OrchestrationDecision(
+        action="delegate",
+        reason="service triage",
+        source_agent_type="docker_support",
+        target_agent_type="infrastructure_troubleshooter",
+        capability="incident_triage",
+        clarification=None,
+    )
+    executions = (
+        OrchestrationExecutionResult(
+            decision=direct_decision,
+            context=DelegationContext(original_query="service failing"),
+            agent_type="docker_support",
+            turn=None,
+            result_envelope=docker_result,
+        ),
+        OrchestrationExecutionResult(
+            decision=delegate_decision,
+            context=DelegationContext(original_query="service failing"),
+            agent_type="infrastructure_troubleshooter",
+            turn=None,
+            result_envelope=infra_result,
+        ),
+    )
+
+    result = service.synthesize_executions(
+        original_query="service failing",
+        executions=executions,
+        user_observations=("service returns 503",),
+    )
+
+    assert result.answer == "combined"
+    assert result.specialist_results == (docker_result, infra_result)
+    assert result.contributing_agents == (
+        "docker_support",
+        "infrastructure_troubleshooter",
+    )
+
+
+def test_synthesis_rejects_execution_without_public_result() -> None:
+    service = OrchestratedSynthesisService(model=SequenceModel([]))
+    decision = OrchestrationDecision(
+        action="clarify",
+        reason="need scope",
+        source_agent_type=None,
+        target_agent_type=None,
+        capability=None,
+        clarification="Which service?",
+    )
+    execution = OrchestrationExecutionResult(
+        decision=decision,
+        context=DelegationContext(original_query="service failing"),
+        agent_type=None,
+        turn=None,
+    )
+
+    with pytest.raises(
+        OrchestrationSynthesisError,
+        match="no public specialist result",
+    ):
+        service.synthesize_executions(
+            original_query="service failing",
+            executions=(execution,),
+        )
 
 
 def test_synthesis_prompt_keeps_specialist_claims_attributed_and_untrusted() -> None:
