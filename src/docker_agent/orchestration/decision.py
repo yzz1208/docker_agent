@@ -40,11 +40,18 @@ Choose exactly one action:
 Rules:
 - Use only Agents and capabilities in the supplied catalog.
 - Prefer a specific capability over generic "chat" when one applies.
+- For greetings, self-introduction, platform capability questions, usage guidance, or
+  conversational acknowledgements, choose capability "chat" instead of clarify.
+- When there is no current Agent and the request is lightweight general conversation, route
+  directly to docker_support with capability "chat" as the default conversational front door.
+- When a current Agent already exists and the user sends lightweight conversational follow-up,
+  keep that Agent with direct + "chat"; do not hand off merely for small talk.
 - Never invent tools, permissions, live access, Agent types, or capabilities.
 - If current_agent_type is null, use direct rather than delegate.
 - If action is direct and current_agent_type is non-null, target must be that current Agent.
 - If action is delegate, current_agent_type must be non-null and target must be different.
-- Use clarify when information is insufficient to distinguish the needed specialist/capability.
+- Use clarify only when a real technical request needs missing information to distinguish the
+  specialist/capability or to proceed safely. Do not clarify greetings or product-help questions.
 - clarification must use the same language as the user request.
 
 Return exactly:
