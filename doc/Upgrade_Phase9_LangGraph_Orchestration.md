@@ -39,7 +39,7 @@ Step 2  Specialist Execution Node                       ✅ implemented
 Step 3  Cross-Agent Envelope + Synthesis Nodes          ✅ implemented
 Step 4  Durable Checkpoint / Resume                      ✅ implemented
 Step 5  Human Approval / Interrupt Boundary              ✅ implemented
-Step 6  Auto Chat Shadow Comparison + Product Cutover    ⏳
+Step 6  Auto Chat Shadow Comparison + Product Cutover    ⏳ (6A parity ✅ / 6B cutover pending)
 Step 7  Evaluation + Phase Closeout                      ⏳
 ~~~
 
@@ -1370,3 +1370,186 @@ The approval form schema is embedded in the application-owned interrupt payload 
 
 This keeps the Human-in-the-loop contract stable across the supported LangGraph range rather
 than forcing local environments to upgrade to a newer minor release.
+## Step 6A — Auto Chat Shadow Parity
+
+### Scope
+
+Step 6 is split into two release-safe parts:
+
+~~~text
+6A  Product-compatible LangGraph adapter + shadow parity   ✅
+6B  /chat/auto cutover + approval UI                       ⏳
+~~~
+
+Step 6A does **not** change production traffic. The existing Phase 8
+`AutoOrchestrationService` remains the `/chat/auto` runtime until 6B.
+
+Added:
+
+~~~text
+LangGraphAutoOrchestrationService
+src/docker_agent/orchestration/parity.py
+tests/test_auto_orchestration_parity.py
+~~~
+
+### Product-compatible LangGraph adapter
+
+`LangGraphAutoOrchestrationService` implements the same public `chat(...)` contract as the
+Phase 8 service while using the Step 3 LangGraph synthesis graph internally.
+
+It intentionally reuses the existing Auto conversation behavior:
+
+- auto conversation creation and validation;
+- bounded recent-history rendering;
+- previous specialist owner/result restoration;
+- original-query recovery;
+- explicit user-observation extraction;
+- existing message/execution persistence;
+- existing route names and Chinese trace labels.
+
+Therefore the candidate path can be compared without introducing a second product API.
+
+### Observable parity contract
+
+The comparison layer projects each turn into an
+`AutoOrchestrationParitySnapshot` containing:
+
+~~~text
+route
+current_agent_type
+needs_clarification
+synthesized
+answer_present
+clarification_present
+trace_stages
+trace_agents
+specialist_agents
+~~~
+
+`compare_auto_orchestration_turns(...)` returns the baseline snapshot, candidate snapshot,
+and field-level mismatches. `gate_passed` is true only when the structural product contract
+matches.
+
+The comparator deliberately does not make model-generated prose equality the core release
+gate. Deterministic tests additionally assert exact answer/clarification equality where both
+paths use identical fixture responses.
+
+### Shadow safety model
+
+Step 6A does not dual-execute Phase 8 and Phase 9 against real production specialists.
+
+Doing that for every request would:
+
+- double model/tool latency;
+- potentially execute runtime tools twice;
+- duplicate future write-side effects;
+- distort call-budget measurements.
+
+Instead, shadow parity uses isolated deterministic runtimes with the same model decisions and
+specialist outputs. This validates orchestration topology and product semantics without
+duplicating real side effects.
+
+A future live shadow signal, if added, must be decision-only or otherwise explicitly
+side-effect-free.
+
+### Covered parity scenarios
+
+The Step 6A gate verifies:
+
+- direct Docker specialist flow;
+- orchestration clarification with zero specialist calls;
+- two-turn direct → delegate → cross-Agent synthesis;
+- specialist-generated clarification;
+- recent conversation context parity;
+- target specialist envelope parity;
+- decision-model call-count parity;
+- synthesis-model call-count parity;
+- explicit mismatch detection when baseline/candidate behavior diverges.
+
+The two-turn handoff test compares independent Phase 8 and Phase 9 conversations and confirms
+that both recover the same previous specialist state even though their conversation IDs differ.
+
+### Step 6A CI result
+
+At implementation head:
+
+~~~text
+Ruff                           passed
+Migration / DB contract        passed
+Backend                        528 passed
+Frontend Typecheck             passed
+Frontend                       30 passed
+Production build               passed
+Production configuration       passed
+~~~
+
+### Product boundary after 6A
+
+Production remains:
+
+~~~text
+POST /chat/auto
+    ↓
+AutoOrchestrationService (Phase 8)
+~~~
+
+Candidate remains:
+
+~~~text
+LangGraphAutoOrchestrationService
+    ↓
+run_orchestration_synthesis_graph(...)
+~~~
+
+Step 6B will switch the backend runtime only after this parity gate also passes locally.
+
+## Local Step 6A gate
+
+~~~powershell
+git fetch
+git switch feat/upgrade-phase-9-langgraph-orchestration
+git pull
+
+uv sync --all-groups
+uv run ruff check .
+
+uv run pytest -v `
+  tests/test_auto_orchestration_parity.py `
+  tests/test_auto_orchestration.py `
+  tests/test_auto_chat_api.py `
+  tests/test_orchestration_synthesis_graph.py
+~~~
+
+Then run the complete project gate:
+
+~~~powershell
+uv run pytest -v
+
+cd web
+npm run typecheck
+npm test
+npm run build
+cd ..
+~~~
+
+Expected current full result:
+
+~~~text
+backend: 528 passed
+frontend: 30 passed
+production build: passed
+~~~
+
+### Step 6A acceptance boundary
+
+6A is accepted when:
+
+- all structural parity reports pass for matching scenarios;
+- direct/clarify/delegate call budgets match;
+- two-turn handoff state restoration matches;
+- persistence-visible routes and traces match;
+- the existing `/chat/auto` regression suite stays green;
+- full backend/frontend gates pass.
+
+Only after this local gate should Step 6B replace the Phase 8 `/chat/auto` runtime, expose
+pending Human Approval state through the API, and add the Chinese approval UI.
