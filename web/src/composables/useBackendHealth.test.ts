@@ -44,7 +44,7 @@ describe("backend health", () => {
     expect(health.state.value).toBe("healthy");
     expect(health.apiReachable.value).toBe(true);
     expect(health.databaseReachable.value).toBe(true);
-    expect(health.label.value).toBe("Backend healthy");
+    expect(health.label.value).toBe("后端正常");
   });
 
   it("reports degraded when the API is reachable but database is not", async () => {
