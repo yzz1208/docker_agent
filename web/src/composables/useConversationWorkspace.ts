@@ -3,10 +3,12 @@ import { computed, ref } from "vue";
 import {
   ApiError,
   deleteConversation,
+  getAutoApproval,
   getConversation,
   listAgents,
   listConversations,
   renameConversation,
+  resolveAutoApproval,
   sendAutoChat,
   sendChat,
 } from "../lib/api";
@@ -39,6 +41,7 @@ export function useConversationWorkspace() {
   const loadingList = ref(false);
   const loadingConversation = ref(false);
   const sending = ref(false);
+  const approving = ref(false);
   const renaming = ref(false);
   const deleting = ref(false);
 
@@ -69,6 +72,12 @@ export function useConversationWorkspace() {
     const id = activeConversationId.value;
     return id ? latestAutoTurns.value[id] ?? null : null;
   });
+
+  const pendingApproval = computed(() =>
+    latestAutoTurn.value?.needs_approval
+      ? latestAutoTurn.value.approval_request
+      : null,
+  );
 
   const activeAgentType = computed(() => {
     if (activeMode.value === "auto") {
@@ -112,7 +121,11 @@ export function useConversationWorkspace() {
   );
 
   const canSend = computed(
-    () => draft.value.trim().length > 0 && !sending.value,
+    () =>
+      draft.value.trim().length > 0 &&
+      !sending.value &&
+      !approving.value &&
+      !pendingApproval.value,
   );
 
   function errorText(error: unknown): string {
@@ -163,6 +176,8 @@ export function useConversationWorkspace() {
       auto_direct_clarify: "专家补充信息",
       auto_delegate_clarify: "转交后补充信息",
       auto_synthesis: "多专家综合",
+      auto_approval_pending: "等待人工批准",
+      auto_approval_denied: "人工拒绝",
     };
     return localized[route] ?? route;
   }
@@ -187,6 +202,7 @@ export function useConversationWorkspace() {
   function traceStageDisplayName(stage: string): string {
     const localized: Record<string, string> = {
       decision: "智能判断",
+      approval: "人工审批",
       handoff: "专家转交",
       specialist: "专家处理",
       synthesis: "综合结论",
@@ -252,6 +268,24 @@ export function useConversationWorkspace() {
         if (loaded.conversation.agent_type === AUTO_AGENT_TYPE) {
           selectedMode.value = "auto";
           restoreAutoTurn(loaded);
+          try {
+            const pending = await getAutoApproval(
+              loaded.conversation.id,
+            );
+            if (
+              requestVersion === conversationRequestVersion &&
+              pending
+            ) {
+              latestAutoTurns.value = {
+                ...latestAutoTurns.value,
+                [loaded.conversation.id]: pending,
+              };
+            }
+          } catch (approvalError) {
+            if (requestVersion === conversationRequestVersion) {
+              actionError.value = errorText(approvalError);
+            }
+          }
         } else {
           selectedMode.value = "manual";
           selectedAgentType.value = loaded.conversation.agent_type;
@@ -328,6 +362,9 @@ export function useConversationWorkspace() {
         synthesized: trace.some((item) => item.stage === "synthesis"),
         trace,
         specialist_results: [],
+        approval_status: null,
+        needs_approval: false,
+        approval_request: null,
       },
     };
   }
@@ -393,6 +430,44 @@ export function useConversationWorkspace() {
     }
   }
 
+  async function resolvePendingApproval(
+    approved: boolean,
+  ): Promise<boolean> {
+    const conversationId = activeConversationId.value;
+    if (
+      !conversationId ||
+      !pendingApproval.value ||
+      approving.value
+    ) {
+      return false;
+    }
+
+    approving.value = true;
+    actionError.value = "";
+
+    try {
+      const result = await resolveAutoApproval({
+        conversationId,
+        approved,
+        comment: approved
+          ? "用户批准继续执行。"
+          : "用户拒绝继续执行。",
+      });
+      latestAutoTurns.value = {
+        ...latestAutoTurns.value,
+        [conversationId]: result,
+      };
+      detail.value = await getConversation(conversationId);
+      await refreshConversations();
+      return true;
+    } catch (error) {
+      actionError.value = errorText(error);
+      return false;
+    } finally {
+      approving.value = false;
+    }
+  }
+
   async function renameActiveConversation(
     title: string,
   ): Promise<boolean> {
@@ -446,6 +521,11 @@ export function useConversationWorkspace() {
       const { [deletedId]: _removed, ...remainingTurns } =
         latestTurns.value;
       latestTurns.value = remainingTurns;
+      const {
+        [deletedId]: _removedAuto,
+        ...remainingAutoTurns
+      } = latestAutoTurns.value;
+      latestAutoTurns.value = remainingAutoTurns;
       startNewConversation();
       return true;
     } catch (error) {
@@ -470,10 +550,12 @@ export function useConversationWorkspace() {
     activeAgent,
     latestTurn,
     latestAutoTurn,
+    pendingApproval,
     loadingAgents,
     loadingList,
     loadingConversation,
     sending,
+    approving,
     renaming,
     deleting,
     agentError,
@@ -495,6 +577,7 @@ export function useConversationWorkspace() {
     openConversation,
     startNewConversation,
     submitMessage,
+    resolvePendingApproval,
     renameActiveConversation,
     deleteActiveConversation,
   };
