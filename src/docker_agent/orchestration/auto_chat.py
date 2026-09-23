@@ -15,6 +15,7 @@ from docker_agent.orchestration.execution import (
     DelegationExecutionService,
     OrchestrationExecutionResult,
 )
+from docker_agent.orchestration.graph import run_orchestration_synthesis_graph
 from docker_agent.orchestration.synthesis import OrchestratedSynthesisService
 from docker_agent.persistence.store import (
     ConversationRecord,
@@ -412,6 +413,195 @@ class AutoOrchestrationService:
         )
 
 
+class LangGraphAutoOrchestrationService(AutoOrchestrationService):
+    """Phase 9 product-compatible adapter backed by the shadow LangGraph."""
+
+    def chat(
+        self,
+        *,
+        message: str,
+        conversation_id: str | None = None,
+    ) -> AutoOrchestrationTurn:
+        normalized = message.strip()
+        if not normalized:
+            raise ValueError("message must not be empty")
+
+        conversation, recent_messages = self._resolve_conversation(
+            normalized,
+            conversation_id=conversation_id,
+        )
+        previous_agent, previous_result = self._restore_latest_state(
+            conversation.id
+        )
+        effective_question = self._effective_question(
+            normalized,
+            recent_messages=recent_messages,
+        )
+        original_query = _original_query(
+            normalized,
+            recent_messages=recent_messages,
+        )
+        observations = _recent_user_observations(
+            normalized,
+            recent_messages=recent_messages,
+        )
+        graph_result = run_orchestration_synthesis_graph(
+            effective_question,
+            decision_model=self._decision_model,
+            execution_service=self._execution_service,
+            synthesis_service=self._synthesis_service,
+            context=DelegationContext(original_query=original_query),
+            source_agent_type=previous_agent,
+            user_observations=observations,
+            prior_specialist_result=previous_result,
+        )
+        decision = graph_result.decision
+        trace: list[AutoTraceStep] = [
+            _decision_trace(decision)
+        ]
+
+        if decision.action == "clarify":
+            clarification = graph_result.clarification
+            if clarification is None:
+                raise AutoOrchestrationError(
+                    "clarify graph result has no clarification text"
+                )
+            self._persist_turn(
+                conversation=conversation,
+                user_message=normalized,
+                assistant_content=clarification,
+                route="auto_clarify",
+                clarification=clarification,
+                trace=trace,
+                current_agent_type=previous_agent,
+                result_envelope=previous_result,
+            )
+            return AutoOrchestrationTurn(
+                conversation=get_conversation(
+                    self._engine,
+                    conversation.id,
+                ),
+                answer=None,
+                clarification=clarification,
+                current_agent_type=previous_agent,
+                route="auto_clarify",
+                trace=tuple(trace),
+                specialist_results=tuple(
+                    item
+                    for item in (previous_result,)
+                    if item is not None
+                ),
+                synthesized=False,
+            )
+
+        execution = graph_result.execution
+        if execution is None:
+            raise AutoOrchestrationError(
+                "LangGraph auto flow produced no specialist execution"
+            )
+        _append_execution_trace(trace, decision, execution)
+
+        result = execution.result_envelope
+        if result is None:
+            raise AutoOrchestrationError(
+                "LangGraph auto flow produced no public specialist result"
+            )
+        specialist_results = _specialist_results_for_turn(
+            previous_result=previous_result,
+            current_result=result,
+            delegated=decision.action == "delegate",
+        )
+
+        if result.needs_clarification:
+            clarification = graph_result.clarification
+            if clarification is None:
+                raise AutoOrchestrationError(
+                    "specialist clarification has no question"
+                )
+            route = (
+                "auto_delegate_clarify"
+                if decision.action == "delegate"
+                else "auto_direct_clarify"
+            )
+            self._persist_turn(
+                conversation=conversation,
+                user_message=normalized,
+                assistant_content=clarification,
+                route=route,
+                clarification=clarification,
+                trace=trace,
+                current_agent_type=execution.agent_type,
+                result_envelope=result,
+            )
+            return AutoOrchestrationTurn(
+                conversation=get_conversation(
+                    self._engine,
+                    conversation.id,
+                ),
+                answer=None,
+                clarification=clarification,
+                current_agent_type=execution.agent_type,
+                route=route,
+                trace=tuple(trace),
+                specialist_results=specialist_results,
+                synthesized=False,
+            )
+
+        if graph_result.synthesized:
+            trace.append(
+                AutoTraceStep(
+                    stage="synthesis",
+                    label="综合结论",
+                    agent_type=None,
+                    capability=None,
+                    reason="已综合已公开的专家结果。",
+                )
+            )
+            answer = graph_result.answer
+            clarification = graph_result.clarification
+            assistant_content = answer or clarification
+            if assistant_content is None:
+                raise AutoOrchestrationError(
+                    "LangGraph synthesis produced no public content"
+                )
+            route = "auto_synthesis"
+            synthesized = True
+        else:
+            answer = graph_result.answer
+            clarification = graph_result.clarification
+            if answer is None:
+                raise AutoOrchestrationError(
+                    "LangGraph specialist produced no public answer"
+                )
+            assistant_content = answer
+            route = "auto_direct"
+            synthesized = False
+
+        self._persist_turn(
+            conversation=conversation,
+            user_message=normalized,
+            assistant_content=assistant_content,
+            route=route,
+            clarification=clarification,
+            trace=trace,
+            current_agent_type=execution.agent_type,
+            result_envelope=result,
+        )
+        return AutoOrchestrationTurn(
+            conversation=get_conversation(
+                self._engine,
+                conversation.id,
+            ),
+            answer=answer,
+            clarification=clarification,
+            current_agent_type=execution.agent_type,
+            route=route,
+            trace=tuple(trace),
+            specialist_results=specialist_results,
+            synthesized=synthesized,
+        )
+
+
 def _decision_trace(decision: OrchestrationDecision) -> AutoTraceStep:
     return AutoTraceStep(
         stage="decision",
@@ -580,4 +770,5 @@ __all__ = [
     "AutoOrchestrationService",
     "AutoOrchestrationTurn",
     "AutoTraceStep",
+    "LangGraphAutoOrchestrationService",
 ]
