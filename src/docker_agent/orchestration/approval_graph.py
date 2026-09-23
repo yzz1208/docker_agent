@@ -195,8 +195,7 @@ def build_human_approval_orchestration_graph(
             approval_request_payload(
                 question=state["question"],
                 decision=decision,
-            ),
-            response_schema=HumanApprovalResponse,
+            )
         )
         if not isinstance(response, dict):
             raise TypeError(
@@ -494,11 +493,7 @@ def resume_human_approval_orchestration(
         response["comment"] = normalized_comment
 
     graph.invoke(
-        Command(
-            resume={
-                pending.id: response,
-            }
-        ),
+        Command(resume=response),
         config,
         durability="sync",
     )
