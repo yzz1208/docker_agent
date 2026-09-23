@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from "vue-router";
 
 import ChatView from "./views/ChatView.vue";
+import HelpView from "./views/HelpView.vue";
 import NotFoundView from "./views/NotFoundView.vue";
 import OperationsView from "./views/OperationsView.vue";
 import SettingsView from "./views/SettingsView.vue";
@@ -22,6 +23,11 @@ const router = createRouter({
       path: "/settings",
       name: "settings",
       component: SettingsView,
+    },
+    {
+      path: "/help",
+      name: "help",
+      component: HelpView,
     },
     {
       path: "/:pathMatch(.*)*",
