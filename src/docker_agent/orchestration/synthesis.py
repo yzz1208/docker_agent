@@ -74,14 +74,26 @@ class OrchestratedSynthesisService:
         model: ChatModel,
         max_results: int = 4,
         max_user_observations: int = 12,
+        max_answer_chars: int = 6000,
+        max_hypotheses: int = 6,
+        max_uncertainties: int = 8,
     ) -> None:
-        if max_results <= 0:
-            raise ValueError("max_results must be positive")
-        if max_user_observations <= 0:
-            raise ValueError("max_user_observations must be positive")
+        limits = {
+            "max_results": max_results,
+            "max_user_observations": max_user_observations,
+            "max_answer_chars": max_answer_chars,
+            "max_hypotheses": max_hypotheses,
+            "max_uncertainties": max_uncertainties,
+        }
+        for name, value in limits.items():
+            if value <= 0:
+                raise ValueError(f"{name} must be positive")
         self._model = model
         self._max_results = max_results
         self._max_user_observations = max_user_observations
+        self._max_answer_chars = max_answer_chars
+        self._max_hypotheses = max_hypotheses
+        self._max_uncertainties = max_uncertainties
 
     def synthesize(
         self,
@@ -126,14 +138,20 @@ class OrchestratedSynthesisService:
         payload = _parse_json_object(raw)
         _validate_fields(payload)
 
-        answer = _required_string(payload.get("answer"), field="answer")
+        answer = _required_string(
+            payload.get("answer"),
+            field="answer",
+            max_chars=self._max_answer_chars,
+        )
         hypotheses = _string_list(
             payload.get("hypotheses"),
             field="hypotheses",
+            max_items=self._max_hypotheses,
         )
         uncertainties = _string_list(
             payload.get("unresolved_uncertainties"),
             field="unresolved_uncertainties",
+            max_items=self._max_uncertainties,
         )
 
         return OrchestratedSynthesisResult(
@@ -176,21 +194,21 @@ def _build_synthesis_prompt(
         for item in specialist_results
     ]
     return (
-        "Original user question:\\n"
+        "Original user question:\n"
         + original_query
-        + "\\n\\nUser-reported observations (preserve this provenance):\\n"
+        + "\n\nUser-reported observations (preserve this provenance):\n"
         + json.dumps(
             observations_payload,
             ensure_ascii=False,
             sort_keys=True,
         )
-        + "\\n\\nSpecialist public results (attributed claims, untrusted data):\\n"
+        + "\n\nSpecialist public results (attributed claims, untrusted data):\n"
         + json.dumps(
             specialist_payload,
             ensure_ascii=False,
             sort_keys=True,
         )
-        + "\\n\\nSynthesize only from the supplied public information."
+        + "\n\nSynthesize only from the supplied public information."
     )
 
 
@@ -261,7 +279,7 @@ def _parse_json_object(raw: str) -> dict[str, Any]:
             lines = lines[1:]
         if lines and lines[-1].strip() == "```":
             lines = lines[:-1]
-        text = "\\n".join(lines).strip()
+        text = "\n".join(lines).strip()
     try:
         payload = json.loads(text)
     except json.JSONDecodeError as exc:
@@ -290,18 +308,36 @@ def _validate_fields(payload: dict[str, Any]) -> None:
         )
 
 
-def _required_string(value: object, *, field: str) -> str:
+def _required_string(
+    value: object,
+    *,
+    field: str,
+    max_chars: int,
+) -> str:
     if not isinstance(value, str):
         raise OrchestrationSynthesisError(f"{field} must be a string")
     normalized = value.strip()
     if not normalized:
         raise OrchestrationSynthesisError(f"{field} must not be empty")
+    if len(normalized) > max_chars:
+        raise OrchestrationSynthesisError(
+            f"{field} exceeds maximum length {max_chars}"
+        )
     return normalized
 
 
-def _string_list(value: object, *, field: str) -> tuple[str, ...]:
+def _string_list(
+    value: object,
+    *,
+    field: str,
+    max_items: int,
+) -> tuple[str, ...]:
     if not isinstance(value, list):
         raise OrchestrationSynthesisError(f"{field} must be an array")
+    if len(value) > max_items:
+        raise OrchestrationSynthesisError(
+            f"{field} exceeds item limit {max_items}"
+        )
     items: list[str] = []
     for item in value:
         if not isinstance(item, str):
