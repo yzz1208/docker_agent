@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type {
+  AgentDescriptor,
   AgentRunRecord,
   AgentRunSummary,
   EvaluationComparison,
@@ -24,6 +25,7 @@ vi.mock("../lib/api", () => ({
   getEvaluationRun: vi.fn(),
   getOperationsSummary: vi.fn(),
   listAgentRuns: vi.fn(),
+  listAgents: vi.fn(),
   listEvaluationRuns: vi.fn(),
 }));
 
@@ -33,6 +35,7 @@ import {
   getEvaluationRun,
   getOperationsSummary,
   listAgentRuns,
+  listAgents,
   listEvaluationRuns,
 } from "../lib/api";
 import { useOperationsDashboard } from "./useOperationsDashboard";
@@ -48,10 +51,40 @@ const summary: AgentRunSummary = {
   failure_rate: 0.5,
   duration_p50_ms: 200,
   duration_p95_ms: 290,
+  agent_distribution: { docker_support: 3 },
   route_distribution: { docs_only: 1, runtime_tools: 1 },
   worker_distribution: { diagnosis: 2 },
   error_distribution: { RuntimeError: 1 },
 };
+
+const agents: AgentDescriptor[] = [
+  {
+    agent_type: "docker_support",
+    display_name: "Docker Support",
+    description: "Docker Agent",
+    capabilities: ["chat"],
+    knowledge_sources: [],
+    toolsets: [],
+    worker_roles: [],
+    configuration_groups: [],
+    configuration_schema: [],
+    configuration_rules: [],
+    default_enabled: true,
+  },
+  {
+    agent_type: "infrastructure_troubleshooter",
+    display_name: "Infrastructure Troubleshooter",
+    description: "Incident triage Agent",
+    capabilities: ["chat"],
+    knowledge_sources: [],
+    toolsets: [],
+    worker_roles: [],
+    configuration_groups: [],
+    configuration_schema: [],
+    configuration_rules: [],
+    default_enabled: true,
+  },
+];
 
 function run(id: string): AgentRunRecord {
   return {
@@ -74,6 +107,7 @@ function run(id: string): AgentRunRecord {
 function evaluation(id: string): EvaluationRun {
   return {
     id,
+    agent_type: "docker_support",
     suite: "agent_router",
     dataset_name: "router.jsonl",
     dataset_version: "sha256:same",
@@ -101,6 +135,7 @@ function evaluationDetail(id: string): EvaluationRunDetail {
 const comparison: EvaluationComparison = {
   baseline_run_id: "baseline",
   candidate_run_id: "candidate",
+  agent_type: "docker_support",
   suite: "agent_router",
   dataset_name: "router.jsonl",
   dataset_version: "sha256:same",
@@ -120,6 +155,7 @@ const comparison: EvaluationComparison = {
 
 beforeEach(() => {
   vi.resetAllMocks();
+  vi.mocked(listAgents).mockResolvedValue(agents);
   vi.mocked(getOperationsSummary).mockResolvedValue(summary);
   vi.mocked(listAgentRuns).mockResolvedValue([run("run-1")]);
   vi.mocked(listEvaluationRuns).mockResolvedValue([
@@ -136,22 +172,43 @@ describe("operations dashboard", () => {
   it("loads summary runs and evaluations with active filters", async () => {
     const dashboard = useOperationsDashboard();
     dashboard.hours.value = 168;
+    dashboard.agentType.value = "docker_support";
     dashboard.runStatus.value = "failed";
     dashboard.evaluationSuite.value = "agent_router";
 
     await dashboard.loadOverview();
 
-    expect(getOperationsSummary).toHaveBeenCalledWith(168);
+    expect(getOperationsSummary).toHaveBeenCalledWith(
+      168,
+      "docker_support",
+    );
     expect(listAgentRuns).toHaveBeenCalledWith({
+      agentType: "docker_support",
       status: "failed",
       limit: 25,
     });
     expect(listEvaluationRuns).toHaveBeenCalledWith({
       suite: "agent_router",
+      agentType: "docker_support",
       limit: 25,
     });
     expect(dashboard.summary.value).toEqual(summary);
     expect(dashboard.completedRuns.value).toBe(2);
+  });
+
+
+
+  it("loads the Agent catalog and resolves display names", async () => {
+    const dashboard = useOperationsDashboard();
+
+    await dashboard.initialize();
+
+    expect(listAgents).toHaveBeenCalledTimes(1);
+    expect(dashboard.agents.value).toEqual(agents);
+    expect(
+      dashboard.agentDisplayName("infrastructure_troubleshooter"),
+    ).toBe("Infrastructure Troubleshooter");
+    expect(dashboard.agentDisplayName(null)).toBe("Platform-wide");
   });
 
   it("ignores stale run detail responses", async () => {
