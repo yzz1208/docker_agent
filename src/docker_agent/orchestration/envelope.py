@@ -21,8 +21,13 @@ class SpecialistResultEnvelope:
     summary: str | None
 
     def __post_init__(self) -> None:
-        if not self.agent_type.strip():
-            raise CrossAgentEnvelopeError("agent_type must not be empty")
+        if _canonical_label(
+            self.agent_type,
+            field="agent_type",
+        ) != self.agent_type:
+            raise CrossAgentEnvelopeError(
+                "agent_type must be canonical"
+            )
         if not self.route.strip():
             raise CrossAgentEnvelopeError("route must not be empty")
         if not self.reason.strip():
@@ -63,20 +68,31 @@ class CrossAgentContextEnvelope:
             raise CrossAgentEnvelopeError(
                 "current_user_message must not be empty"
             )
-        if not self.source_agent_type.strip():
+        if _canonical_label(
+            self.source_agent_type,
+            field="source_agent_type",
+        ) != self.source_agent_type:
             raise CrossAgentEnvelopeError(
-                "source_agent_type must not be empty"
+                "source_agent_type must be canonical"
             )
-        if not self.target_agent_type.strip():
+        if _canonical_label(
+            self.target_agent_type,
+            field="target_agent_type",
+        ) != self.target_agent_type:
             raise CrossAgentEnvelopeError(
-                "target_agent_type must not be empty"
+                "target_agent_type must be canonical"
+            )
+        if _canonical_label(
+            self.capability,
+            field="capability",
+        ) != self.capability:
+            raise CrossAgentEnvelopeError(
+                "capability must be canonical"
             )
         if self.source_agent_type == self.target_agent_type:
             raise CrossAgentEnvelopeError(
                 "cross-Agent envelope requires different source and target"
             )
-        if not self.capability.strip():
-            raise CrossAgentEnvelopeError("capability must not be empty")
         if not self.handoff_reason.strip():
             raise CrossAgentEnvelopeError(
                 "handoff_reason must not be empty"
@@ -282,10 +298,10 @@ def _bounded_text(value: str, *, max_chars: int) -> str:
     if len(normalized) <= max_chars:
         return normalized
     suffix = " …[truncated]"
-    keep = max(1, max_summary_body := max_chars - len(suffix))
-    if max_summary_body <= 0:
+    body_chars = max_chars - len(suffix)
+    if body_chars <= 0:
         return normalized[:max_chars]
-    return normalized[:keep].rstrip() + suffix
+    return normalized[:body_chars].rstrip() + suffix
 
 
 __all__ = [
