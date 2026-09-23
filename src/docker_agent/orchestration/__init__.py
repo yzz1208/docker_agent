@@ -25,6 +25,7 @@ from docker_agent.orchestration.auto_chat import (
     AutoOrchestrationTurn,
     AutoTraceStep,
     LangGraphAutoOrchestrationService,
+    LangGraphProductAutoOrchestrationService,
 )
 from docker_agent.orchestration.checkpoint import (
     CHECKPOINT_NAMESPACE,
@@ -146,6 +147,7 @@ __all__ = [
     "HumanApprovalRequest",
     "HumanApprovalResponse",
     "LangGraphAutoOrchestrationService",
+    "LangGraphProductAutoOrchestrationService",
     "OrchestratedSynthesisResult",
     "OrchestratedSynthesisService",
     "OrchestrationAction",
