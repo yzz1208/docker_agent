@@ -40,6 +40,7 @@ class AgentRunSummaryResponse(BaseModel):
     failure_rate: float | None
     duration_p50_ms: int | None
     duration_p95_ms: int | None
+    agent_distribution: dict[str, int] = Field(default_factory=dict)
     route_distribution: dict[str, int] = Field(default_factory=dict)
     worker_distribution: dict[str, int] = Field(default_factory=dict)
     error_distribution: dict[str, int] = Field(default_factory=dict)
@@ -79,6 +80,7 @@ def build_agent_run_summary_response(
         failure_rate=summary.failure_rate,
         duration_p50_ms=summary.duration_p50_ms,
         duration_p95_ms=summary.duration_p95_ms,
+        agent_distribution=dict(summary.agent_distribution),
         route_distribution=dict(summary.route_distribution),
         worker_distribution=dict(summary.worker_distribution),
         error_distribution=dict(summary.error_distribution),
