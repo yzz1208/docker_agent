@@ -457,6 +457,7 @@ def main() -> None:
         evaluation_run = create_evaluation_run(
             engine,
             suite="agent_workflow",
+            agent_type="docker_support",
             dataset_name=args.input.name,
             dataset_version_value=dataset_version(args.input),
             git_revision=resolve_git_revision(),
