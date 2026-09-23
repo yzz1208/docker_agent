@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { nextTick, onMounted, ref, watch } from "vue";
 
 import AppDialog from "../components/AppDialog.vue";
+import MessageContent from "../components/MessageContent.vue";
 import { useConversationWorkspace } from "../composables/useConversationWorkspace";
 
 const workspace = useConversationWorkspace();
@@ -9,6 +10,35 @@ const workspace = useConversationWorkspace();
 const renameDialogOpen = ref(false);
 const deleteDialogOpen = ref(false);
 const renameTitle = ref("");
+const messageStreamRef = ref<HTMLElement | null>(null);
+
+const autoExamplePrompts = [
+  "解释 Docker 容器、镜像和 Compose 的关系。",
+  "web-1 容器为什么反复重启？帮我给出排查步骤。",
+  "容器看起来正常，但 checkout-api 持续返回 503，继续帮我排查服务级问题。",
+];
+
+const manualExamplePrompts = [
+  "介绍一下 Docker 的核心概念，并给我一个入门示例。",
+  "如何查看一个容器当前的 CPU 和内存使用情况？",
+  "Docker Compose 中 depends_on 应该怎么用？",
+];
+
+function useExamplePrompt(prompt: string): void {
+  workspace.draft.value = prompt;
+}
+
+async function scrollToLatest(
+  behavior: ScrollBehavior = "smooth",
+): Promise<void> {
+  await nextTick();
+  const element = messageStreamRef.value;
+  if (!element) return;
+  element.scrollTo({
+    top: element.scrollHeight,
+    behavior,
+  });
+}
 
 function formatDate(value: string): string {
   return new Intl.DateTimeFormat("zh-CN", {
@@ -54,7 +84,24 @@ async function confirmDelete(): Promise<void> {
   if (deleted) deleteDialogOpen.value = false;
 }
 
-onMounted(workspace.initialize);
+onMounted(async () => {
+  await workspace.initialize();
+  await scrollToLatest("auto");
+});
+
+watch(
+  () => [
+    workspace.activeConversationId.value,
+    workspace.detail.value?.messages.length ?? 0,
+    workspace.sending.value,
+    workspace.pendingUserMessage.value,
+    workspace.transientAssistantMessage.value,
+    workspace.pendingApproval.value?.interrupt_id ?? null,
+  ],
+  () => {
+    void scrollToLatest();
+  },
+);
 </script>
 
 <template>
@@ -349,7 +396,7 @@ onMounted(workspace.initialize);
         </div>
       </section>
 
-      <div class="message-stream">
+      <div ref="messageStreamRef" class="message-stream">
         <div v-if="workspace.loadingConversation.value" class="empty-state">
           正在加载对话…
         </div>
@@ -381,7 +428,11 @@ onMounted(workspace.initialize);
               <span>{{ roleLabel(message.role) }}</span>
               <span>{{ formatDate(message.created_at) }}</span>
             </div>
-            <p>{{ message.content }}</p>
+            <MessageContent
+              v-if="message.role === 'assistant'"
+              :content="message.content"
+            />
+            <p v-else class="message__plain-content">{{ message.content }}</p>
 
             <div
               v-if="message.execution && workspace.activeMode.value === 'manual'"
@@ -395,7 +446,10 @@ onMounted(workspace.initialize);
           </article>
         </template>
 
-        <div v-else class="empty-state chat-empty-state">
+        <div
+          v-else-if="!workspace.pendingUserMessage.value"
+          class="empty-state chat-empty-state"
+        >
           <div
             class="empty-state__badge"
             :class="{
@@ -413,6 +467,16 @@ onMounted(workspace.initialize);
               <div><strong>快速判断</strong><span>一次短路由决策</span></div>
               <div><strong>受控转交</strong><span>每回合最多执行一个专家</span></div>
               <div><strong>清晰结果</strong><span>事实、推测与不确定性分开</span></div>
+            </div>
+            <div class="starter-prompts">
+              <button
+                v-for="prompt in autoExamplePrompts"
+                :key="prompt"
+                type="button"
+                @click="useExamplePrompt(prompt)"
+              >
+                {{ prompt }}
+              </button>
             </div>
           </template>
 
@@ -444,8 +508,65 @@ onMounted(workspace.initialize);
                 </span>
               </div>
             </div>
+            <div class="starter-prompts">
+              <button
+                v-for="prompt in manualExamplePrompts"
+                :key="prompt"
+                type="button"
+                @click="useExamplePrompt(prompt)"
+              >
+                {{ prompt }}
+              </button>
+            </div>
           </template>
         </div>
+
+        <article
+          v-if="workspace.pendingUserMessage.value"
+          class="message message--user message--transient"
+        >
+          <div class="message__meta">
+            <span>你</span>
+            <span>刚刚</span>
+          </div>
+          <p class="message__plain-content">
+            {{ workspace.pendingUserMessage.value }}
+          </p>
+        </article>
+
+        <article
+          v-if="workspace.sending.value"
+          class="message message--assistant message--thinking"
+          aria-live="polite"
+        >
+          <div class="message__meta">
+            <span>助手</span>
+            <span>处理中</span>
+          </div>
+          <div class="thinking-line">
+            <span class="thinking-line__dots"><i /><i /><i /></span>
+            <span>
+              {{
+                workspace.activeMode.value === "auto"
+                  ? "正在理解问题、选择专家并准备证据…"
+                  : "正在分析问题并整理回答…"
+              }}
+            </span>
+          </div>
+        </article>
+
+        <article
+          v-else-if="workspace.transientAssistantMessage.value"
+          class="message message--assistant message--transient"
+        >
+          <div class="message__meta">
+            <span>助手</span>
+            <span>刚刚</span>
+          </div>
+          <MessageContent
+            :content="workspace.transientAssistantMessage.value"
+          />
+        </article>
       </div>
 
       <form class="composer" @submit.prevent="workspace.submitMessage">
@@ -497,7 +618,10 @@ onMounted(workspace.initialize);
           {{
             workspace.pendingApproval.value
               ? "当前工作流已暂停，审批后会从原位置继续。"
-              : "Ctrl + Enter 发送"
+              : workspace.latestTurn.value ||
+                  workspace.latestAutoTurn.value
+                ? "Ctrl + Enter 发送 · 回答完成后可以直接继续追问"
+                : "Ctrl + Enter 发送"
           }}
         </p>
       </form>
