@@ -110,6 +110,65 @@ def test_existing_specialist_can_choose_validated_delegation() -> None:
     assert '"current_agent_type": "docker_support"' in fake.user_prompts[0]
 
 
+def test_direct_action_can_keep_current_specialist() -> None:
+    orchestrator, _, _ = _model(
+        '{"action":"direct","reason":"current specialist owns capability",'
+        '"target_agent_type":"docker_support",'
+        '"capability":"documentation_qa","clarification":null}'
+    )
+
+    decision = orchestrator.decide(
+        "Docker volume 和 bind mount 有什么区别？",
+        source_agent_type="docker_support",
+    )
+
+    assert decision.action == "direct"
+    assert decision.source_agent_type == "docker_support"
+    assert decision.target_agent_type == "docker_support"
+    assert decision.capability == "documentation_qa"
+
+
+def test_code_fenced_json_is_accepted() -> None:
+    orchestrator, _, _ = _model(
+        """```json
+{"action":"direct","reason":"needs runtime evidence","target_agent_type":"docker_support","capability":"runtime_diagnostics","clarification":null}
+```"""
+    )
+
+    decision = orchestrator.decide("web-1 当前内存是多少？")
+
+    assert decision.target_agent_type == "docker_support"
+    assert decision.capability == "runtime_diagnostics"
+
+
+def test_decision_schema_rejects_unexpected_fields() -> None:
+    orchestrator, _, _ = _model(
+        '{"action":"direct","reason":"runtime","target_agent_type":"docker_support",'
+        '"capability":"runtime_diagnostics","clarification":null,'
+        '"tool":"docker_restart"}'
+    )
+
+    with pytest.raises(
+        OrchestrationDecisionError,
+        match="unexpected fields: tool",
+    ):
+        orchestrator.decide("检查 web-1")
+
+
+def test_decision_schema_rejects_missing_fields() -> None:
+    orchestrator, _, _ = _model(
+        '{"action":"direct","reason":"runtime",'
+        '"target_agent_type":"docker_support",'
+        '"capability":"runtime_diagnostics"}'
+    )
+
+    with pytest.raises(
+        OrchestrationDecisionError,
+        match="missing fields: clarification",
+    ):
+        orchestrator.decide("检查 web-1")
+
+
 def test_initial_platform_dispatch_cannot_be_delegate() -> None:
     orchestrator, _, _ = _model(
         '{"action":"delegate","reason":"runtime request",'
