@@ -175,6 +175,7 @@ export type AgentRunSummary = {
   failure_rate: number | null;
   duration_p50_ms: number | null;
   duration_p95_ms: number | null;
+  agent_distribution: Record<string, number>;
   route_distribution: Record<string, number>;
   worker_distribution: Record<string, number>;
   error_distribution: Record<string, number>;
@@ -182,6 +183,7 @@ export type AgentRunSummary = {
 
 export type EvaluationRun = {
   id: string;
+  agent_type: string | null;
   suite: string;
   dataset_name: string;
   dataset_version: string;
@@ -244,6 +246,7 @@ export type ConfigurationChange = {
 export type EvaluationComparison = {
   baseline_run_id: string;
   candidate_run_id: string;
+  agent_type: string | null;
   suite: string;
   dataset_name: string;
   dataset_version: string;
