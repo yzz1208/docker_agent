@@ -4,6 +4,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from threading import Lock
 
+from sqlalchemy.engine import Engine
+
 from docker_agent.agent.answer import AgentAnswer, generate_agent_answer
 from docker_agent.agent.evidence import RuntimeEvidenceContext, build_runtime_evidence
 from docker_agent.agent.router import AgentRouteDecision, route_question
@@ -50,7 +52,7 @@ class DockerSupportAgent:
         answer_model: ChatModel | None = None,
         docker_tools: DockerReadOnlyTools | None = None,
         docs_retriever: DocsRetriever | None = None,
-        docs_engine: object | None = None,
+        docs_engine: Engine | None = None,
         embedder: BgeM3Embedder | None = None,
         reranker: PairScorer | None = None,
     ) -> None:
@@ -153,7 +155,7 @@ class DockerSupportAgent:
             max_chars=self.settings.rag_context_max_chars,
         )
 
-    def _get_docs_engine(self):
+    def _get_docs_engine(self) -> Engine:
         if self._docs_engine is not None:
             return self._docs_engine
         with self._docs_resource_lock:
