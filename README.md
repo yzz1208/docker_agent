@@ -19,6 +19,7 @@
 - Upgrade Phase 5：Observability + Evaluation Ops ✅
 - Upgrade Phase 6：Production / Deployment Hardening ✅
 - Upgrade Phase 7：Generic Multi-Agent Platform ✅
+- Upgrade Phase 8：Memory & Context Engineering（Step 1 Conversation Context Builder 已实现待本地 gate）
 
 ## 本地环境
 
