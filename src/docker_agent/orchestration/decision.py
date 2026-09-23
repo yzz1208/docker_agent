@@ -4,6 +4,7 @@ import json
 from dataclasses import dataclass
 from typing import Any, Literal, cast
 
+from docker_agent.agent.router import is_general_chat_request
 from docker_agent.agent.registry import (
     AgentNotRegistered,
     AgentRegistry,
@@ -114,6 +115,22 @@ class OrchestrationDecisionModel:
             raise ValueError("question must not be empty")
         active_context = context or DelegationContext(original_query=normalized)
         source = self._resolve_source(active_context, source_agent_type)
+
+        if is_general_chat_request(normalized):
+            target = source or self._registry.get("docker_support").agent_type
+            if not self._capabilities.supports(target, "chat"):
+                raise OrchestrationDecisionError(
+                    f"Agent {target!r} does not expose capability 'chat'"
+                )
+            return OrchestrationDecision(
+                action="direct",
+                reason="lightweight conversational or product-help request",
+                source_agent_type=source,
+                target_agent_type=target,
+                capability="chat",
+                clarification=None,
+            )
+
         raw = self._model.complete(
             system_prompt=ORCHESTRATION_SYSTEM_PROMPT,
             user_prompt=_build_decision_prompt(
