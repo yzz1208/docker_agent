@@ -167,12 +167,10 @@ def test_diagnosis_worker_handles_general_chat_without_evidence() -> None:
 
     result = worker.run(state, decision)
 
-    assert model.calls == 1
+    assert model.calls == 0
     assert result.answer.doc_sources == ()
     assert result.answer.runtime_sources == ()
-    assert result.state.answer == (
-        "你好，我可以帮助你进行 Docker 支持和故障排查。"
-    )
+    assert "Docker 智能支持平台" in result.state.answer
 
 
 def test_diagnosis_worker_generates_docs_only_answer() -> None:
