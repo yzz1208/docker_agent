@@ -2,10 +2,9 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Protocol
 
 from docker_agent.orchestration.envelope import SpecialistResultEnvelope
-from docker_agent.rag.llm import ChatModel
 
 
 SYNTHESIS_SYSTEM_PROMPT = """You are the platform orchestration synthesis model.
@@ -34,6 +33,14 @@ Return exactly:
   "unresolved_uncertainties": ["remaining uncertainty", "..."]
 }
 """
+
+
+class SynthesisModel(Protocol):
+    """Minimal model contract required by orchestration synthesis."""
+
+    def complete(self, *, system_prompt: str, user_prompt: str) -> str:
+        """Return one synthesis response."""
+        ...
 
 
 class OrchestrationSynthesisError(ValueError):
@@ -71,7 +78,7 @@ class OrchestratedSynthesisService:
     def __init__(
         self,
         *,
-        model: ChatModel,
+        model: SynthesisModel,
         max_results: int = 4,
         max_user_observations: int = 12,
         max_answer_chars: int = 6000,
@@ -359,4 +366,5 @@ __all__ = [
     "OrchestratedSynthesisResult",
     "OrchestratedSynthesisService",
     "OrchestrationSynthesisError",
+    "SynthesisModel",
 ]
