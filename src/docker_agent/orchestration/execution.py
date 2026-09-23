@@ -16,6 +16,13 @@ from docker_agent.orchestration.delegation import (
     DelegationPolicy,
     DelegationPolicyError,
 )
+from docker_agent.orchestration.envelope import (
+    CrossAgentContextEnvelope,
+    CrossAgentEnvelopeError,
+    SpecialistResultEnvelope,
+    build_cross_agent_context_envelope,
+    build_specialist_result_envelope,
+)
 
 
 class OrchestrationExecutionError(RuntimeError):
@@ -32,6 +39,8 @@ class OrchestrationExecutionResult:
     context: DelegationContext
     agent_type: str | None
     turn: AgentTurnProtocol | None
+    request_envelope: CrossAgentContextEnvelope | None = None
+    result_envelope: SpecialistResultEnvelope | None = None
 
     @property
     def executed(self) -> bool:
@@ -68,6 +77,8 @@ class DelegationExecutionService:
         *,
         decision: OrchestrationDecision,
         context: DelegationContext | None = None,
+        explicit_user_clarification: str | None = None,
+        prior_specialist_result: SpecialistResultEnvelope | None = None,
     ) -> OrchestrationExecutionResult:
         normalized_question = question.strip()
         if not normalized_question:
@@ -87,21 +98,55 @@ class DelegationExecutionService:
                 turn=None,
             )
 
+        request_envelope: CrossAgentContextEnvelope | None = None
         if decision.action == "direct":
+            if prior_specialist_result is not None:
+                raise OrchestrationExecutionError(
+                    "prior specialist result is only valid for delegation"
+                )
             target = self._validate_direct(decision, active_context)
             next_context = active_context
+            agent_input = normalized_question
         else:
             target, next_context = self._validate_delegate(
                 decision,
                 active_context,
             )
+            handoff = next_context.handoffs[-1]
+            try:
+                request_envelope = build_cross_agent_context_envelope(
+                    original_query=active_context.original_query,
+                    current_user_message=normalized_question,
+                    explicit_user_clarification=(
+                        explicit_user_clarification
+                    ),
+                    source_agent_type=handoff.source_agent_type or "",
+                    target_agent_type=handoff.target_agent_type,
+                    capability=handoff.capability,
+                    handoff_reason=handoff.reason,
+                    handoff_index=handoff.index,
+                    prior_specialist_result=prior_specialist_result,
+                )
+            except CrossAgentEnvelopeError as exc:
+                raise OrchestrationExecutionError(str(exc)) from exc
+            agent_input = request_envelope.render_for_target()
 
         try:
             agent = self._factory.get(target)
-            turn = agent.handle(normalized_question)
+            turn = agent.handle(agent_input)
         except Exception as exc:
             raise OrchestrationSpecialistExecutionError(
                 f"Agent {target!r} failed during orchestration execution"
+            ) from exc
+
+        try:
+            result_envelope = build_specialist_result_envelope(
+                agent_type=target,
+                turn=turn,
+            )
+        except CrossAgentEnvelopeError as exc:
+            raise OrchestrationExecutionError(
+                "specialist result violates cross-Agent envelope contract"
             ) from exc
 
         return OrchestrationExecutionResult(
@@ -109,6 +154,8 @@ class DelegationExecutionService:
             context=next_context,
             agent_type=target,
             turn=turn,
+            request_envelope=request_envelope,
+            result_envelope=result_envelope,
         )
 
     def _validate_common(
