@@ -321,10 +321,17 @@ def get_chat_coordinator(
 
     descriptor = agent_registry.get(agent_type)
     canonical = descriptor.agent_type
+    runtime_settings = get_settings()
     return PersistentChatCoordinator(
         engine=get_persistence_engine(),
         sessions=get_chat_sessions(canonical),
         agent_type=canonical,
+        context_max_messages=(
+            runtime_settings.conversation_context_max_messages
+        ),
+        context_max_chars=(
+            runtime_settings.conversation_context_max_chars
+        ),
     )
 
 
