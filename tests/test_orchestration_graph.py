@@ -46,11 +46,9 @@ def _decision_model(response: str) -> tuple[
 
 def test_decision_graph_routes_direct_to_terminal_without_execution() -> None:
     decision_model, model = _decision_model(
-        (
-            '{"action":"direct","reason":"runtime diagnostics",'
-            '"target_agent_type":"docker_support",'
-            '"capability":"runtime_diagnostics","clarification":null}'
-        )
+        '{"action":"direct","reason":"runtime diagnostics",'
+        '"target_agent_type":"docker_support",'
+        '"capability":"runtime_diagnostics","clarification":null}'
     )
 
     result = run_orchestration_decision_graph(
@@ -69,11 +67,9 @@ def test_decision_graph_routes_direct_to_terminal_without_execution() -> None:
 
 def test_decision_graph_routes_clarification_to_terminal() -> None:
     decision_model, model = _decision_model(
-        (
-            '{"action":"clarify","reason":"scope is ambiguous",'
-            '"target_agent_type":null,"capability":null,'
-            '"clarification":"你希望检查容器还是服务级故障？"}'
-        )
+        '{"action":"clarify","reason":"scope is ambiguous",'
+        '"target_agent_type":null,"capability":null,'
+        '"clarification":"你希望检查容器还是服务级故障？"}'
     )
 
     result = run_orchestration_decision_graph(
@@ -92,11 +88,9 @@ def test_decision_graph_routes_clarification_to_terminal() -> None:
 
 def test_decision_graph_routes_validated_delegate_without_execution() -> None:
     decision_model, model = _decision_model(
-        (
-            '{"action":"delegate","reason":"service-level incident",'
-            '"target_agent_type":"infrastructure_troubleshooter",'
-            '"capability":"incident_triage","clarification":null}'
-        )
+        '{"action":"delegate","reason":"service-level incident",'
+        '"target_agent_type":"infrastructure_troubleshooter",'
+        '"capability":"incident_triage","clarification":null}'
     )
     context = DelegationContext(
         original_query="检查 checkout 服务",
@@ -145,11 +139,9 @@ def test_decision_graph_matches_direct_decision_contract() -> None:
 
 def test_decision_graph_preserves_policy_rejection() -> None:
     decision_model, model = _decision_model(
-        (
-            '{"action":"delegate","reason":"invalid initial handoff",'
-            '"target_agent_type":"docker_support",'
-            '"capability":"runtime_diagnostics","clarification":null}'
-        )
+        '{"action":"delegate","reason":"invalid initial handoff",'
+        '"target_agent_type":"docker_support",'
+        '"capability":"runtime_diagnostics","clarification":null}'
     )
 
     with pytest.raises(
@@ -166,11 +158,9 @@ def test_decision_graph_preserves_policy_rejection() -> None:
 
 def test_decision_graph_rejects_empty_question_before_model_call() -> None:
     decision_model, model = _decision_model(
-        (
-            '{"action":"direct","reason":"runtime",'
-            '"target_agent_type":"docker_support",'
-            '"capability":"runtime_diagnostics","clarification":null}'
-        )
+        '{"action":"direct","reason":"runtime",'
+        '"target_agent_type":"docker_support",'
+        '"capability":"runtime_diagnostics","clarification":null}'
     )
 
     with pytest.raises(
