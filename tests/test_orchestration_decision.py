@@ -35,6 +35,23 @@ def _model(response: str, *, max_hops: int = 2):
     )
 
 
+def test_initial_greeting_routes_to_docker_chat_instead_of_clarify() -> None:
+    orchestrator, fake, _ = _model(
+        '{"action":"direct","reason":"lightweight conversational request",'
+        '"target_agent_type":"docker_support",'
+        '"capability":"chat","clarification":null}'
+    )
+
+    decision = orchestrator.decide("你好，介绍一下自己，你能做什么？")
+
+    assert decision.action == "direct"
+    assert decision.target_agent_type == "docker_support"
+    assert decision.capability == "chat"
+    assert decision.clarification is None
+    assert "self-introduction" in fake.system_prompts[0]
+    assert "Do not clarify greetings" in fake.system_prompts[0]
+
+
 def test_initial_runtime_request_routes_directly_to_docker_support() -> None:
     orchestrator, fake, _ = _model(
         '{"action":"direct","reason":"needs runtime facts",'
