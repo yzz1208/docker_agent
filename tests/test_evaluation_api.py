@@ -26,6 +26,7 @@ def _seed_evaluation(engine: Engine) -> str:
     run = create_evaluation_run(
         engine,
         suite="agent_router",
+        agent_type="docker_support",
         dataset_name="agent_router_v1.jsonl",
         dataset_version_value="sha256:abc",
         git_revision="deadbeef",
@@ -72,6 +73,7 @@ def test_evaluation_runs_list_safe_history(monkeypatch) -> None:
     payload = response.json()
     assert [item["id"] for item in payload] == [run_id]
     assert payload[0]["suite"] == "agent_router"
+    assert payload[0]["agent_type"] == "docker_support"
     assert payload[0]["status"] == "succeeded"
     assert payload[0]["case_count"] == 1
     assert payload[0]["passed_count"] == 1
@@ -91,6 +93,7 @@ def test_evaluation_runs_support_suite_filter_and_pagination(
     create_evaluation_run(
         engine,
         suite="agent_workflow",
+        agent_type="infrastructure_troubleshooter",
         dataset_name="workflow_v1.jsonl",
         dataset_version_value="sha256:def",
         run_id="eval-workflow",
@@ -107,6 +110,15 @@ def test_evaluation_runs_support_suite_filter_and_pagination(
     assert filtered.status_code == 200
     assert [item["id"] for item in filtered.json()] == [
         "eval-api-run"
+    ]
+
+    agent_filtered = client.get(
+        "/operations/evaluations",
+        params={"agent_type": "infrastructure_troubleshooter"},
+    )
+    assert agent_filtered.status_code == 200
+    assert [item["id"] for item in agent_filtered.json()] == [
+        "eval-workflow"
     ]
 
     page = client.get("/operations/evaluations?limit=1&offset=1")
