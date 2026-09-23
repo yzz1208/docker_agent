@@ -41,7 +41,7 @@ function statusLabel(status: string): string {
     running: "运行中",
     succeeded: "成功",
     failed: "失败",
-    通过: "通过",
+    passed: "通过",
     error: "错误",
   }[status] ?? status;
 }
@@ -602,7 +602,7 @@ onMounted(dashboard.initialize);
                   {{ statusLabel(evaluation.status) }}
                 </span>
                 <span>
-                  {{ evaluation.通过_count }}/{{ evaluation.case_count }}
+                  {{ evaluation.passed_count }}/{{ evaluation.case_count }}
                   通过
                 </span>
                 <span>{{ formatDate(evaluation.started_at) }}</span>
