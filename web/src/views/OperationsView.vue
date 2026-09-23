@@ -15,6 +15,9 @@ const activeEvaluation = computed(
 );
 const comparison = computed(() => dashboard.comparison.value);
 
+const agentRows = computed(() =>
+  distributionRows(dashboard.summary.value?.agent_distribution ?? {}),
+);
 const routeRows = computed(() =>
   distributionRows(dashboard.summary.value?.route_distribution ?? {}),
 );
@@ -88,7 +91,7 @@ async function openRunFromOverview(runId: string): Promise<void> {
   selectTab("runs");
 }
 
-onMounted(dashboard.loadOverview);
+onMounted(dashboard.initialize);
 </script>
 
 <template>
@@ -104,6 +107,22 @@ onMounted(dashboard.loadOverview);
       </div>
 
       <div class="operations-hero__actions">
+        <label>
+          <span>Agent</span>
+          <select
+            v-model="dashboard.agentType.value"
+            @change="dashboard.loadOverview"
+          >
+            <option value="">All Agents</option>
+            <option
+              v-for="agent in dashboard.agents.value"
+              :key="agent.agent_type"
+              :value="agent.agent_type"
+            >
+              {{ agent.display_name }}
+            </option>
+          </select>
+        </label>
         <label>
           <span>Window</span>
           <select v-model.number="dashboard.hours.value">
@@ -199,6 +218,31 @@ onMounted(dashboard.loadOverview);
       </section>
 
       <section class="operations-grid">
+        <article class="panel distribution-panel">
+          <div class="panel__header">
+            <div>
+              <p class="section-label">Agents</p>
+              <h2>Agent distribution</h2>
+            </div>
+          </div>
+          <div v-if="agentRows.length" class="distribution-list">
+            <div
+              v-for="row in agentRows"
+              :key="row.label"
+              class="distribution-row"
+            >
+              <div class="distribution-row__meta">
+                <span>{{ dashboard.agentDisplayName(row.label) }}</span>
+                <strong>{{ row.value }}</strong>
+              </div>
+              <div class="distribution-track">
+                <span :style="{ width: row.width + '%' }" />
+              </div>
+            </div>
+          </div>
+          <div v-else class="empty-state compact">No Agent data yet.</div>
+        </article>
+
         <article class="panel distribution-panel">
           <div class="panel__header">
             <div>
@@ -300,7 +344,10 @@ onMounted(dashboard.loadOverview);
           >
             <span>
               <strong>{{ run.route || "route pending" }}</strong>
-              <small>{{ run.id.slice(0, 10) }}</small>
+              <small>
+                {{ dashboard.agentDisplayName(run.agent_type) }}
+                · {{ run.id.slice(0, 10) }}
+              </small>
             </span>
             <span class="status-pill" :data-status="run.status">
               {{ run.status }}
@@ -346,7 +393,10 @@ onMounted(dashboard.loadOverview);
             >
               <span>
                 <strong>{{ run.route || "route pending" }}</strong>
-                <small>{{ run.id }}</small>
+                <small>
+                  {{ dashboard.agentDisplayName(run.agent_type) }}
+                  · {{ run.id }}
+                </small>
               </span>
               <span class="status-pill" :data-status="run.status">
                 {{ run.status }}
@@ -382,6 +432,10 @@ onMounted(dashboard.loadOverview);
 
           <template v-else>
             <dl class="operations-facts">
+              <div>
+                <dt>Agent</dt>
+                <dd>{{ dashboard.agentDisplayName(activeRun.agent_type) }}</dd>
+              </div>
               <div>
                 <dt>Status</dt>
                 <dd>
@@ -489,7 +543,10 @@ onMounted(dashboard.loadOverview);
               >
                 <span>
                   <strong>{{ evaluation.suite }}</strong>
-                  <small>{{ evaluation.dataset_name }}</small>
+                  <small>
+                    {{ dashboard.agentDisplayName(evaluation.agent_type) }}
+                    · {{ evaluation.dataset_name }}
+                  </small>
                 </span>
                 <span class="status-pill" :data-status="evaluation.status">
                   {{ evaluation.status }}
@@ -544,6 +601,12 @@ onMounted(dashboard.loadOverview);
 
           <template v-else>
             <dl class="operations-facts">
+              <div>
+                <dt>Agent</dt>
+                <dd>
+                  {{ dashboard.agentDisplayName(activeEvaluation.run.agent_type) }}
+                </dd>
+              </div>
               <div>
                 <dt>Suite</dt>
                 <dd>{{ activeEvaluation.run.suite }}</dd>
@@ -658,6 +721,12 @@ onMounted(dashboard.loadOverview);
                 :data-verdict="comparison.verdict"
               >
                 {{ comparison.verdict }}
+              </strong>
+            </div>
+            <div>
+              <span>Agent</span>
+              <strong>
+                {{ dashboard.agentDisplayName(comparison.agent_type) }}
               </strong>
             </div>
             <div>
