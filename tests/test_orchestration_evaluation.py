@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import pytest
 
 from docker_agent.orchestration.decision import OrchestrationDecision
@@ -259,3 +262,74 @@ def test_category_summary_keeps_decision_and_synthesis_groups() -> None:
         summary["cross_agent_quality"]["exact_match_accuracy"]
         == 1.0
     )
+
+
+def test_orchestration_dataset_has_required_step7_coverage() -> None:
+    path = Path("data/eval/orchestration_v1.jsonl")
+    rows = [
+        json.loads(line)
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+
+    ids = [str(row.get("id") or "") for row in rows]
+    assert len(rows) >= 15
+    assert len(ids) == len(set(ids))
+    assert all(ids)
+
+    kinds = {str(row.get("kind") or "") for row in rows}
+    assert kinds == {"decision", "guard", "synthesis"}
+
+    categories = {
+        str(row.get("category") or "")
+        for row in rows
+    }
+    assert {
+        "selection",
+        "clarification",
+        "delegation",
+        "loop_protection",
+        "hop_limit",
+        "safety_guard",
+        "cross_agent_quality",
+    } <= categories
+
+    for row in rows:
+        expected = row.get("expected")
+        assert isinstance(expected, dict)
+        kind = row["kind"]
+        if kind in {"decision", "guard"}:
+            OrchestrationDecisionExpectation(
+                action=expected.get("action"),
+                target_agent_type=expected.get(
+                    "target_agent_type"
+                ),
+                capability=expected.get("capability"),
+                clarification_required=(
+                    expected.get("clarification_required") is True
+                ),
+                blocked=expected.get("blocked") is True,
+            )
+        else:
+            agents = expected.get("contributing_agents")
+            assert isinstance(agents, list)
+            OrchestrationSynthesisExpectation(
+                contributing_agents=tuple(
+                    str(item) for item in agents
+                ),
+                answer_required=(
+                    expected.get("answer_required") is True
+                ),
+                clarification_required=(
+                    expected.get("clarification_required") is True
+                ),
+                unresolved_uncertainty_required=(
+                    expected.get(
+                        "unresolved_uncertainty_required"
+                    )
+                    is True
+                ),
+            )
+            results = row.get("specialist_results")
+            assert isinstance(results, list)
+            assert results
