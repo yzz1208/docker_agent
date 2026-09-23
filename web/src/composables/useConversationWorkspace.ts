@@ -7,25 +7,33 @@ import {
   listAgents,
   listConversations,
   renameConversation,
+  sendAutoChat,
   sendChat,
 } from "../lib/api";
 import type {
   AgentDescriptor,
+  AutoChatResponse,
   ChatResponse,
   ConversationDetail,
   ConversationSummary,
 } from "../lib/types";
+
+type ChatMode = "manual" | "auto";
+
+const AUTO_AGENT_TYPE = "auto_orchestration";
 
 export function useConversationWorkspace() {
   const agents = ref<AgentDescriptor[]>([]);
   const conversations = ref<ConversationSummary[]>([]);
   const detail = ref<ConversationDetail | null>(null);
   const selectedAgentType = ref("docker_support");
+  const selectedMode = ref<ChatMode>("manual");
   const activeConversationId = ref<string | null>(null);
   const activeSessionId = ref<string | null>(null);
   const draft = ref("");
 
   const latestTurns = ref<Record<string, ChatResponse>>({});
+  const latestAutoTurns = ref<Record<string, AutoChatResponse>>({});
 
   const loadingAgents = ref(false);
   const loadingList = ref(false);
@@ -46,21 +54,46 @@ export function useConversationWorkspace() {
       return detail.value.conversation.title;
     }
     return activeConversationId.value
-      ? "Conversation"
-      : "New conversation";
+      ? "对话"
+      : "新对话";
   });
 
-  const activeAgentType = computed(
-    () =>
-      detail.value?.conversation.agent_type ??
-      selectedAgentType.value,
+  const activeMode = computed<ChatMode>(() =>
+    detail.value?.conversation.agent_type === AUTO_AGENT_TYPE ||
+    (!detail.value && selectedMode.value === "auto")
+      ? "auto"
+      : "manual",
   );
+
+  const latestAutoTurn = computed(() => {
+    const id = activeConversationId.value;
+    return id ? latestAutoTurns.value[id] ?? null : null;
+  });
+
+  const activeAgentType = computed(() => {
+    if (activeMode.value === "auto") {
+      return (
+        latestAutoTurn.value?.current_agent_type ??
+        AUTO_AGENT_TYPE
+      );
+    }
+    return (
+      detail.value?.conversation.agent_type ??
+      selectedAgentType.value
+    );
+  });
 
   const activeAgent = computed(
     () =>
-      agents.value.find(
-        (agent) => agent.agent_type === activeAgentType.value,
-      ) ?? null,
+      activeMode.value === "manual"
+        ? agents.value.find(
+            (agent) => agent.agent_type === activeAgentType.value,
+          ) ?? null
+        : agents.value.find(
+            (agent) =>
+              agent.agent_type ===
+              latestAutoTurn.value?.current_agent_type,
+          ) ?? null,
   );
 
   const latestTurn = computed(() => {
@@ -68,8 +101,14 @@ export function useConversationWorkspace() {
     return id ? latestTurns.value[id] ?? null : null;
   });
 
-  const canSelectAgent = computed(
+  const canSelectMode = computed(
     () => !activeConversationId.value && !sending.value,
+  );
+
+  const canSelectAgent = computed(
+    () =>
+      canSelectMode.value &&
+      selectedMode.value === "manual",
   );
 
   const canSend = computed(
@@ -83,14 +122,42 @@ export function useConversationWorkspace() {
     if (error instanceof Error) {
       return error.message;
     }
-    return "Something went wrong.";
+    return "发生了未知错误，请稍后重试。";
   }
 
   function agentDisplayName(agentType: string): string {
+    const localized: Record<string, string> = {
+      auto_orchestration: "智能编排",
+      docker_support: "Docker 支持",
+      infrastructure_troubleshooter: "基础设施排障",
+    };
     return (
+      localized[agentType] ??
       agents.value.find((agent) => agent.agent_type === agentType)
-        ?.display_name ?? agentType
+        ?.display_name ??
+      agentType
     );
+  }
+
+  function capabilityDisplayName(capability: string): string {
+    const localized: Record<string, string> = {
+      chat: "对话",
+      documentation_qa: "文档问答",
+      runtime_diagnostics: "运行时诊断",
+      multi_agent_supervision: "多智能体监督",
+      incident_triage: "故障分诊",
+    };
+    return localized[capability] ?? capability;
+  }
+
+  function traceStageDisplayName(stage: string): string {
+    const localized: Record<string, string> = {
+      decision: "智能判断",
+      handoff: "专家转交",
+      specialist: "专家处理",
+      synthesis: "综合结论",
+    };
+    return localized[stage] ?? stage;
   }
 
   async function refreshAgents(): Promise<void> {
@@ -148,7 +215,13 @@ export function useConversationWorkspace() {
       const loaded = await getConversation(id);
       if (requestVersion === conversationRequestVersion) {
         detail.value = loaded;
-        selectedAgentType.value = loaded.conversation.agent_type;
+        if (loaded.conversation.agent_type === AUTO_AGENT_TYPE) {
+          selectedMode.value = "auto";
+          restoreAutoTurn(loaded);
+        } else {
+          selectedMode.value = "manual";
+          selectedAgentType.value = loaded.conversation.agent_type;
+        }
       }
     } catch (error) {
       if (requestVersion === conversationRequestVersion) {
@@ -172,6 +245,59 @@ export function useConversationWorkspace() {
     loadingConversation.value = false;
   }
 
+  function restoreAutoTurn(loaded: ConversationDetail): void {
+    if (loaded.conversation.agent_type !== AUTO_AGENT_TYPE) {
+      return;
+    }
+    const assistant = [...loaded.messages]
+      .reverse()
+      .find((message) => message.role === "assistant");
+    if (!assistant) {
+      return;
+    }
+    const workerTrace = assistant.execution?.worker_trace ?? [];
+    const trace = workerTrace
+      .filter((item) => item.kind === "orchestration_trace")
+      .map((item) => ({
+        stage: String(item.stage ?? "specialist") as
+          AutoChatResponse["trace"][number]["stage"],
+        label: String(item.label ?? ""),
+        agent_type:
+          typeof item.agent_type === "string" && item.agent_type
+            ? item.agent_type
+            : null,
+        capability:
+          typeof item.capability === "string" && item.capability
+            ? item.capability
+            : null,
+        reason: String(item.reason ?? ""),
+      }));
+    const state = [...workerTrace]
+      .reverse()
+      .find((item) => item.kind === "auto_state");
+    const currentAgent =
+      typeof state?.current_agent_type === "string" &&
+      state.current_agent_type
+        ? state.current_agent_type
+        : null;
+
+    latestAutoTurns.value = {
+      ...latestAutoTurns.value,
+      [loaded.conversation.id]: {
+        mode: "auto",
+        conversation_id: loaded.conversation.id,
+        current_agent_type: currentAgent,
+        route: assistant.route ?? "auto",
+        answer: assistant.clarification ? null : assistant.content,
+        clarification: assistant.clarification,
+        needs_clarification: Boolean(assistant.clarification),
+        synthesized: trace.some((item) => item.stage === "synthesis"),
+        trace,
+        specialist_results: [],
+      },
+    };
+  }
+
   async function submitMessage(): Promise<boolean> {
     const message = draft.value.trim();
     if (!message || sending.value) {
@@ -182,30 +308,45 @@ export function useConversationWorkspace() {
     actionError.value = "";
 
     try {
-      const result = await sendChat({
-        message,
-        agentType:
-          detail.value?.conversation.agent_type ??
-          (activeConversationId.value
-            ? undefined
-            : selectedAgentType.value),
-        conversationId: activeConversationId.value,
-        sessionId: activeSessionId.value,
-      });
-
-      selectedAgentType.value = result.agent_type;
-      activeConversationId.value = result.conversation_id;
-      activeSessionId.value = result.session_active
-        ? result.session_id
-        : null;
-      draft.value = "";
-
-      if (result.conversation_id) {
-        latestTurns.value = {
-          ...latestTurns.value,
+      if (activeMode.value === "auto") {
+        const result = await sendAutoChat({
+          message,
+          conversationId: activeConversationId.value,
+        });
+        activeConversationId.value = result.conversation_id;
+        activeSessionId.value = null;
+        draft.value = "";
+        latestAutoTurns.value = {
+          ...latestAutoTurns.value,
           [result.conversation_id]: result,
         };
         detail.value = await getConversation(result.conversation_id);
+      } else {
+        const result = await sendChat({
+          message,
+          agentType:
+            detail.value?.conversation.agent_type ??
+            (activeConversationId.value
+              ? undefined
+              : selectedAgentType.value),
+          conversationId: activeConversationId.value,
+          sessionId: activeSessionId.value,
+        });
+
+        selectedAgentType.value = result.agent_type;
+        activeConversationId.value = result.conversation_id;
+        activeSessionId.value = result.session_active
+          ? result.session_id
+          : null;
+        draft.value = "";
+
+        if (result.conversation_id) {
+          latestTurns.value = {
+            ...latestTurns.value,
+            [result.conversation_id]: result,
+          };
+          detail.value = await getConversation(result.conversation_id);
+        }
       }
 
       await refreshConversations();
@@ -286,12 +427,15 @@ export function useConversationWorkspace() {
     conversations,
     detail,
     selectedAgentType,
+    selectedMode,
     activeConversationId,
     activeSessionId,
     draft,
+    activeMode,
     activeAgentType,
     activeAgent,
     latestTurn,
+    latestAutoTurn,
     loadingAgents,
     loadingList,
     loadingConversation,
@@ -303,9 +447,12 @@ export function useConversationWorkspace() {
     conversationError,
     actionError,
     activeTitle,
+    canSelectMode,
     canSelectAgent,
     canSend,
     agentDisplayName,
+    capabilityDisplayName,
+    traceStageDisplayName,
     initialize,
     refreshAgents,
     refreshConversations,
