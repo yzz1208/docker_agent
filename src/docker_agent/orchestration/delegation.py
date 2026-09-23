@@ -4,7 +4,6 @@ from dataclasses import dataclass
 
 from docker_agent.agent.registry import (
     AgentDescriptor,
-    AgentNotRegistered,
     AgentRegistry,
 )
 
@@ -61,10 +60,16 @@ class DelegationContext:
 
     @property
     def visited_agents(self) -> tuple[str, ...]:
-        return tuple(
-            handoff.target_agent_type
-            for handoff in self.handoffs
-        )
+        visited: list[str] = []
+        for handoff in self.handoffs:
+            if (
+                handoff.source_agent_type is not None
+                and handoff.source_agent_type not in visited
+            ):
+                visited.append(handoff.source_agent_type)
+            if handoff.target_agent_type not in visited:
+                visited.append(handoff.target_agent_type)
+        return tuple(visited)
 
     def append(self, handoff: AgentHandoff) -> DelegationContext:
         expected_index = self.hop_count + 1
