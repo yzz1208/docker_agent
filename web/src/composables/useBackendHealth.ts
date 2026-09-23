@@ -12,7 +12,7 @@ export function useBackendHealth() {
   const state = ref<BackendHealthState>("checking");
   const apiReachable = ref(false);
   const databaseReachable = ref(false);
-  const detail = ref("Checking backend…");
+  const detail = ref("正在检查后端状态…");
   const lastCheckedAt = ref<Date | null>(null);
 
   let requestVersion = 0;
@@ -21,13 +21,13 @@ export function useBackendHealth() {
   const label = computed(() => {
     switch (state.value) {
       case "healthy":
-        return "Backend healthy";
+        return "后端正常";
       case "degraded":
-        return "Backend degraded";
+        return "后端降级";
       case "offline":
-        return "Backend offline";
+        return "后端离线";
       default:
-        return "Checking backend";
+        return "检查中";
     }
   });
 
@@ -49,7 +49,7 @@ export function useBackendHealth() {
       databaseReachable.value = false;
       state.value = "offline";
       detail.value =
-        error instanceof Error ? error.message : "Backend is unreachable.";
+        error instanceof Error ? error.message : "无法连接后端。";
       lastCheckedAt.value = new Date();
       return;
     }
@@ -61,7 +61,7 @@ export function useBackendHealth() {
       }
       databaseReachable.value = true;
       state.value = "healthy";
-      detail.value = "API and PostgreSQL are reachable.";
+      detail.value = "API 与 PostgreSQL 连接正常。";
     } catch (error) {
       if (version !== requestVersion) {
         return;
@@ -73,7 +73,7 @@ export function useBackendHealth() {
           ? error.detail
           : error instanceof Error
             ? error.message
-            : "Database health check failed.";
+            : "数据库健康检查失败。";
     } finally {
       if (version === requestVersion) {
         lastCheckedAt.value = new Date();
