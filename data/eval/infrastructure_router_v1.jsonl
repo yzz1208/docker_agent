@@ -1,0 +1,8 @@
+{"id":"infra-triage-503-zh","question":"checkout-api 从 10:20 开始持续返回 503，依赖请求超时明显增加。","expected_route":"triage"}
+{"id":"infra-triage-latency-en","question":"payments-api P95 latency rose from 180ms to 3s after 14:00 and dependency timeouts increased.","expected_route":"triage"}
+{"id":"infra-triage-auth-zh","question":"登录服务 auth-service 从发布后开始大量返回 401，影响生产环境用户。","expected_route":"triage"}
+{"id":"infra-triage-dns-en","question":"orders-service cannot resolve inventory.internal since the network change this morning.","expected_route":"triage"}
+{"id":"infra-triage-storage-zh","question":"reporting 服务写入持续失败，用户看到磁盘空间不足错误。","expected_route":"triage"}
+{"id":"infra-clarify-vague-zh","question":"服务好像有问题，帮我看看。","expected_route":"clarify"}
+{"id":"infra-clarify-component-en","question":"We are seeing repeated timeouts but I do not know which service is affected.","expected_route":"clarify"}
+{"id":"infra-clarify-symptom-zh","question":"checkout-api 不太对劲。","expected_route":"clarify"}
