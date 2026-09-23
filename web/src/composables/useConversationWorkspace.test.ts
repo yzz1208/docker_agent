@@ -212,6 +212,71 @@ describe("conversation workspace", () => {
     expect(workspace.activeSessionId.value).toBeNull();
   });
 
+  it("allows another message after a completed turn", async () => {
+    vi.mocked(sendChat)
+      .mockResolvedValueOnce(
+        chatTurn({
+          answer: "第一轮完成",
+          session_active: false,
+        }),
+      )
+      .mockResolvedValueOnce(
+        chatTurn({
+          answer: "第二轮完成",
+          session_active: false,
+        }),
+      );
+    vi.mocked(getConversation).mockResolvedValue(
+      detailFor("conversation-1"),
+    );
+
+    const workspace = useConversationWorkspace();
+    workspace.draft.value = "第一条问题";
+
+    expect(await workspace.submitMessage()).toBe(true);
+    expect(workspace.sending.value).toBe(false);
+
+    workspace.draft.value = "继续追问";
+    expect(workspace.canSend.value).toBe(true);
+    expect(await workspace.submitMessage()).toBe(true);
+
+    expect(sendChat).toHaveBeenCalledTimes(2);
+    expect(sendChat).toHaveBeenLastCalledWith({
+      message: "继续追问",
+      agentType: undefined,
+      conversationId: "conversation-1",
+      sessionId: null,
+    });
+    expect(workspace.sending.value).toBe(false);
+  });
+
+  it("keeps a completed answer visible when history refresh fails", async () => {
+    vi.mocked(sendChat).mockResolvedValue(
+      chatTurn({
+        answer: "回答已经完成",
+        session_active: false,
+      }),
+    );
+    vi.mocked(getConversation).mockRejectedValueOnce(
+      new Error("temporary refresh failure"),
+    );
+
+    const workspace = useConversationWorkspace();
+    workspace.draft.value = "检查 Docker";
+
+    expect(await workspace.submitMessage()).toBe(true);
+    expect(workspace.transientAssistantMessage.value).toBe(
+      "回答已经完成",
+    );
+    expect(workspace.sending.value).toBe(false);
+    expect(workspace.actionError.value).toContain(
+      "回答已经生成",
+    );
+
+    workspace.draft.value = "继续追问";
+    expect(workspace.canSend.value).toBe(true);
+  });
+
   it("uses the selected Agent when starting a new conversation", async () => {
     vi.mocked(sendChat).mockResolvedValue(
       chatTurn({
