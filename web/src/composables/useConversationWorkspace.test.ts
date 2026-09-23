@@ -20,20 +20,24 @@ vi.mock("../lib/api", () => ({
     }
   },
   deleteConversation: vi.fn(),
+  getAutoApproval: vi.fn(),
   getConversation: vi.fn(),
   listAgents: vi.fn(),
   listConversations: vi.fn(),
   renameConversation: vi.fn(),
+  resolveAutoApproval: vi.fn(),
   sendAutoChat: vi.fn(),
   sendChat: vi.fn(),
 }));
 
 import {
   deleteConversation,
+  getAutoApproval,
   getConversation,
   listAgents,
   listConversations,
   renameConversation,
+  resolveAutoApproval,
   sendAutoChat,
   sendChat,
 } from "../lib/api";
@@ -120,6 +124,9 @@ function autoTurn(
         reason: "需要运行时诊断",
       },
     ],
+    approval_status: null,
+    needs_approval: false,
+    approval_request: null,
     specialist_results: [
       {
         agent_type: "docker_support",
@@ -162,8 +169,10 @@ beforeEach(() => {
   vi.mocked(getConversation).mockResolvedValue(
     detailFor("conversation-1"),
   );
+  vi.mocked(getAutoApproval).mockResolvedValue(null);
   vi.mocked(renameConversation).mockResolvedValue(conversation);
   vi.mocked(deleteConversation).mockResolvedValue(undefined);
+  vi.mocked(resolveAutoApproval).mockResolvedValue(autoTurn());
 });
 
 describe("conversation workspace", () => {
@@ -321,6 +330,103 @@ describe("conversation workspace", () => {
     expect(workspace.agentDisplayName("docker_support")).toBe(
       "Docker 支持",
     );
+  });
+
+  it("locks sending while auto approval is pending and resolves it", async () => {
+    const pending = autoTurn({
+      route: "auto_approval_pending",
+      answer: null,
+      current_agent_type: "docker_support",
+      approval_status: "pending",
+      needs_approval: true,
+      approval_request: {
+        interrupt_id: "interrupt-1",
+        action: "delegate",
+        source_agent_type: "docker_support",
+        target_agent_type: "infrastructure_troubleshooter",
+        capability: "incident_triage",
+        reason: "需要服务级排查",
+        question: "继续排查 checkout-api 503",
+        response_schema: {},
+      },
+    });
+    const completed = autoTurn({
+      route: "auto_synthesis",
+      current_agent_type: "infrastructure_troubleshooter",
+      answer: "服务级排查完成。",
+      synthesized: true,
+      approval_status: "approved",
+      needs_approval: false,
+      approval_request: null,
+    });
+    vi.mocked(sendAutoChat).mockResolvedValue(pending);
+    vi.mocked(resolveAutoApproval).mockResolvedValue(completed);
+    vi.mocked(getConversation).mockResolvedValue(
+      detailFor(
+        "auto-conversation",
+        "Auto issue",
+        "auto_orchestration",
+      ),
+    );
+
+    const workspace = useConversationWorkspace();
+    workspace.selectedMode.value = "auto";
+    workspace.draft.value = "继续排查 checkout-api 503";
+
+    expect(await workspace.submitMessage()).toBe(true);
+    expect(workspace.pendingApproval.value?.capability).toBe(
+      "incident_triage",
+    );
+    workspace.draft.value = "不应该现在发送";
+    expect(workspace.canSend.value).toBe(false);
+
+    expect(
+      await workspace.resolvePendingApproval(true),
+    ).toBe(true);
+    expect(resolveAutoApproval).toHaveBeenCalledWith({
+      conversationId: "auto-conversation",
+      approved: true,
+      comment: "用户批准继续执行。",
+    });
+    expect(workspace.pendingApproval.value).toBeNull();
+    expect(workspace.latestAutoTurn.value?.synthesized).toBe(true);
+  });
+
+  it("recovers pending auto approval when reopening history", async () => {
+    const autoDetail = detailFor(
+      "auto-conversation",
+      "Auto issue",
+      "auto_orchestration",
+    );
+    const pending = autoTurn({
+      route: "auto_approval_pending",
+      answer: null,
+      approval_status: "pending",
+      needs_approval: true,
+      approval_request: {
+        interrupt_id: "interrupt-1",
+        action: "delegate",
+        source_agent_type: "docker_support",
+        target_agent_type: "infrastructure_troubleshooter",
+        capability: "incident_triage",
+        reason: "需要服务级排查",
+        question: "继续排查 checkout-api 503",
+        response_schema: {},
+      },
+    });
+    vi.mocked(getConversation).mockResolvedValueOnce(autoDetail);
+    vi.mocked(getAutoApproval).mockResolvedValueOnce(pending);
+
+    const workspace = useConversationWorkspace();
+    await workspace.openConversation("auto-conversation");
+
+    expect(getAutoApproval).toHaveBeenCalledWith(
+      "auto-conversation",
+    );
+    expect(workspace.pendingApproval.value?.target_agent_type).toBe(
+      "infrastructure_troubleshooter",
+    );
+    expect(workspace.canSend.value).toBe(false);
   });
 
   it("restores persisted auto trace when opening history", async () => {
