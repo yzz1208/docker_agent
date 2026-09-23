@@ -27,6 +27,20 @@ cross-Agent Operations
 
 Existing Docker Support behavior remains the compatibility baseline.
 
+### Phase 7 implementation status
+
+**COMPLETE and CI-verified**
+
+The platform now runs two real Agent types through the same product surface:
+
+~~~text
+docker_support
+infrastructure_troubleshooter
+~~~
+
+Registry, runtime construction, Chat, durable persistence, configuration, Web selection,
+Operations telemetry, and evaluation history all preserve canonical Agent identity.
+
 ## Step 1 — Agent Registry and Descriptor
 
 Create one authoritative runtime catalog for supported Agent types.
@@ -1230,14 +1244,93 @@ Targets:
 - per-Agent evaluation suites where applicable;
 - platform closeout tests/documentation.
 
+### Step 7 implementation status
+
+**IMPLEMENTED and CI-verified**
+
+Operations now treats Agent identity as a first-class filter and reporting dimension.
+
+`GET /operations/summary` accepts an optional `agent_type` and returns
+`agent_distribution` alongside route, worker, error, success-rate, and latency metrics.
+The Web Operations page loads the Agent registry, provides one Agent filter shared by the
+overview, run history, and evaluation history, and surfaces Agent identity in run details,
+evaluation cards, evaluation details, and baseline/candidate comparisons.
+
+Evaluation persistence now includes nullable `evaluation_runs.agent_type`. The field is
+backed by Alembic revision `20260923_0002`, exposed through the API, filterable through
+`GET /operations/evaluations?agent_type=...`, and included in comparison compatibility.
+Two persisted runs from different Agent types cannot be compared as one regression gate.
+
+Docker-specific evaluation suites now persist:
+
+~~~text
+agent_type = docker_support
+suite = agent_router | agent_workflow
+~~~
+
+The second real Agent has its own benchmark and regression-gate-compatible suite:
+
+~~~text
+agent_type = infrastructure_troubleshooter
+suite = infrastructure_router
+dataset = data/eval/infrastructure_router_v1.jsonl
+runner = scripts/eval_infrastructure_router.py
+~~~
+
+The Infrastructure suite evaluates triage-vs-clarify routing and clarification behavior
+without live infrastructure access. It supports repeats, JSONL reports, persisted cases,
+aggregate metrics, and the same baseline/candidate comparison workflow as Docker suites.
+
+The manual Evaluation Regression Gate now supports:
+
+~~~text
+agent_router
+infrastructure_router
+agent_workflow
+~~~
+
+### Step 7 coverage and closeout gate
+
+Coverage includes:
+
+- global and Agent-filtered run summaries;
+- Agent run distributions;
+- Agent-filtered evaluation history;
+- persisted evaluation Agent identity;
+- cross-Agent comparison rejection;
+- Infrastructure routing metrics;
+- Infrastructure benchmark cases;
+- Web Agent filtering across Operations;
+- Web Agent identity rendering for telemetry and evaluation.
+
+Final Phase 7 gate:
+
+~~~bash
+uv run ruff check .
+uv run pytest -v
+
+cd web
+npm run typecheck
+npm test
+npm run build
+~~~
+
+The final code gate passed backend migrations/database readiness, the full backend test suite,
+frontend type checking, frontend unit tests, production Web build, and production Compose
+configuration validation.
+
 ## Phase 7 Completion Criteria
 
 Phase 7 is complete when:
 
-- runtime-supported Agents come from a Registry rather than scattered constants;
-- Chat can create conversations for more than one real Agent type;
-- sessions cannot cross Agent boundaries;
-- settings are selected/rendered by Agent metadata;
-- the Web can choose an Agent for a new conversation;
-- Operations can distinguish Agent types;
-- existing Docker Support behavior and tests remain compatible.
+- [x] runtime-supported Agents come from a Registry rather than scattered constants;
+- [x] Chat can create conversations for more than one real Agent type;
+- [x] sessions cannot cross Agent boundaries;
+- [x] settings are selected/rendered by Agent metadata;
+- [x] the Web can choose an Agent for a new conversation;
+- [x] Operations can distinguish and filter Agent types;
+- [x] evaluation history and regression comparison preserve Agent identity;
+- [x] both real Agents have an Agent-specific evaluation path;
+- [x] existing Docker Support behavior and tests remain compatible.
+
+**Phase 7 is complete.**
