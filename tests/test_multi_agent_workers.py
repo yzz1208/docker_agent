@@ -147,6 +147,34 @@ def test_runtime_worker_collects_runtime_state_without_answering() -> None:
     assert result.state.answer is None
 
 
+def test_diagnosis_worker_handles_general_chat_without_evidence() -> None:
+    model = SequenceModel(
+        ["你好，我可以帮助你进行 Docker 支持和故障排查。"]
+    )
+    worker = DiagnosisWorker(model)
+    state = AgentState(question="你好，介绍一下自己").with_route(
+        "general_chat",
+        use_docs=False,
+    )
+    decision = AgentRouteDecision(
+        route="general_chat",
+        reason="greeting",
+        container_ref=None,
+        tools=(),
+        clarification=None,
+        use_docs=False,
+    )
+
+    result = worker.run(state, decision)
+
+    assert model.calls == 1
+    assert result.answer.doc_sources == ()
+    assert result.answer.runtime_sources == ()
+    assert result.state.answer == (
+        "你好，我可以帮助你进行 Docker 支持和故障排查。"
+    )
+
+
 def test_diagnosis_worker_generates_docs_only_answer() -> None:
     model = SequenceModel(["Docker volume 由 Docker 管理。[1]"])
     worker = DiagnosisWorker(model)
