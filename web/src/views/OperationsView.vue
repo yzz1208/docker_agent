@@ -28,6 +28,57 @@ const errorRows = computed(() =>
   distributionRows(dashboard.summary.value?.error_distribution ?? {}),
 );
 
+function tabLabel(tab: OperationsTab): string {
+  return {
+    overview: "概览",
+    runs: "运行记录",
+    evaluations: "评测",
+  }[tab];
+}
+
+function statusLabel(status: string): string {
+  return {
+    running: "运行中",
+    succeeded: "成功",
+    failed: "失败",
+    通过: "通过",
+    error: "错误",
+  }[status] ?? status;
+}
+
+function routeLabel(route: string | null): string {
+  if (!route) return "等待路由";
+  return {
+    clarify: "补充信息",
+    docs_only: "文档问答",
+    runtime_only: "运行时检查",
+    runtime_tools: "运行时诊断",
+    triage: "故障分诊",
+    auto_clarify: "智能补充信息",
+    auto_direct: "专家直达",
+    auto_synthesis: "多专家综合",
+    auto_approval_pending: "等待审批",
+    auto_approval_denied: "审批拒绝",
+  }[route] ?? route;
+}
+
+function workerLabel(worker: string): string {
+  return {
+    knowledge: "知识检索",
+    runtime: "运行时检查",
+    diagnosis: "分析诊断",
+    triage: "故障分诊",
+  }[worker] ?? worker;
+}
+
+function verdictLabel(verdict: string): string {
+  return {
+    pass: "通过",
+    regression: "存在回归",
+    incomplete: "数据不完整",
+  }[verdict] ?? verdict;
+}
+
 function distributionRows(values: Record<string, number>) {
   const entries = Object.entries(values).sort((a, b) => b[1] - a[1]);
   const max = Math.max(1, ...entries.map(([, value]) => value));
@@ -42,7 +93,7 @@ function formatDate(value: string | null): string {
   if (!value) {
     return "—";
   }
-  return new Intl.DateTimeFormat(undefined, {
+  return new Intl.DateTimeFormat("zh-CN", {
     month: "short",
     day: "2-digit",
     hour: "2-digit",
@@ -98,11 +149,10 @@ onMounted(dashboard.initialize);
   <section class="operations-page">
     <header class="operations-hero panel">
       <div>
-        <p class="section-label">Observability & evaluation</p>
-        <h2>Operations</h2>
+        <p class="section-label">运行观测与质量评测</p>
+        <h2>运行观测</h2>
         <p>
-          Inspect runtime health, recent Agent runs, persisted evaluations,
-          and regression gates from one operational surface.
+          在一个页面查看运行健康、最近 Agent 执行、持久化评测结果与版本回归门禁。
         </p>
       </div>
 
@@ -113,7 +163,7 @@ onMounted(dashboard.initialize);
             v-model="dashboard.agentType.value"
             @change="dashboard.loadOverview"
           >
-            <option value="">All Agents</option>
+            <option value="">全部 Agent</option>
             <option
               v-for="agent in dashboard.agents.value"
               :key="agent.agent_type"
@@ -124,13 +174,13 @@ onMounted(dashboard.initialize);
           </select>
         </label>
         <label>
-          <span>Window</span>
+          <span>时间范围</span>
           <select v-model.number="dashboard.hours.value">
-            <option :value="1">1 hour</option>
-            <option :value="6">6 hours</option>
-            <option :value="24">24 hours</option>
-            <option :value="168">7 days</option>
-            <option :value="720">30 days</option>
+            <option :value="1">1 小时</option>
+            <option :value="6">6 小时</option>
+            <option :value="24">24 小时</option>
+            <option :value="168">7 天</option>
+            <option :value="720">30 天</option>
           </select>
         </label>
         <button
@@ -141,8 +191,8 @@ onMounted(dashboard.initialize);
         >
           {{
             dashboard.loadingOverview.value
-              ? "Refreshing…"
-              : "Refresh"
+              ? "刷新中…"
+              : "刷新"
           }}
         </button>
       </div>
@@ -155,14 +205,14 @@ onMounted(dashboard.initialize);
       <span>{{ dashboard.errorMessage.value }}</span>
       <button
         type="button"
-        aria-label="Dismiss error"
+        aria-label="关闭错误提示"
         @click="dashboard.errorMessage.value = ''"
       >
         ×
       </button>
     </div>
 
-    <nav class="operations-tabs" aria-label="Operations sections">
+    <nav class="operations-tabs" aria-label="运行观测导航">
       <button
         v-for="tab in tabs"
         :key="tab"
@@ -170,30 +220,30 @@ onMounted(dashboard.initialize);
         :class="{ 'operations-tab--active': activeTab === tab }"
         @click="selectTab(tab)"
       >
-        {{ tab }}
+        {{ tabLabel(tab) }}
       </button>
     </nav>
 
     <template v-if="activeTab === 'overview'">
       <section class="operations-kpis">
         <article class="kpi-card panel">
-          <span>Total runs</span>
+          <span>总执行次数</span>
           <strong>{{ dashboard.summary.value?.total_runs ?? "—" }}</strong>
           <small>
-            {{ dashboard.summary.value?.running_runs ?? 0 }} running
+            {{ dashboard.summary.value?.running_runs ?? 0 }} 个运行中
           </small>
         </article>
 
         <article class="kpi-card panel">
-          <span>Success rate</span>
+          <span>成功率</span>
           <strong>
             {{ formatRate(dashboard.summary.value?.success_rate ?? null) }}
           </strong>
-          <small>{{ dashboard.completedRuns.value }} completed</small>
+          <small>已完成 {{ dashboard.completedRuns.value }} 次</small>
         </article>
 
         <article class="kpi-card panel">
-          <span>P50 latency</span>
+          <span>P50 延迟</span>
           <strong>
             {{
               formatDuration(
@@ -201,11 +251,11 @@ onMounted(dashboard.initialize);
               )
             }}
           </strong>
-          <small>completed runs</small>
+          <small>已完成执行</small>
         </article>
 
         <article class="kpi-card panel">
-          <span>P95 latency</span>
+          <span>P95 延迟</span>
           <strong>
             {{
               formatDuration(
@@ -213,7 +263,7 @@ onMounted(dashboard.initialize);
               )
             }}
           </strong>
-          <small>completed runs</small>
+          <small>已完成执行</small>
         </article>
       </section>
 
@@ -221,8 +271,8 @@ onMounted(dashboard.initialize);
         <article class="panel distribution-panel">
           <div class="panel__header">
             <div>
-              <p class="section-label">Agents</p>
-              <h2>Agent distribution</h2>
+              <p class="section-label">Agent</p>
+              <h2>Agent 分布</h2>
             </div>
           </div>
           <div v-if="agentRows.length" class="distribution-list">
@@ -240,14 +290,14 @@ onMounted(dashboard.initialize);
               </div>
             </div>
           </div>
-          <div v-else class="empty-state compact">No Agent data yet.</div>
+          <div v-else class="empty-state compact">暂无 Agent 数据。</div>
         </article>
 
         <article class="panel distribution-panel">
           <div class="panel__header">
             <div>
-              <p class="section-label">Routing</p>
-              <h2>Route distribution</h2>
+              <p class="section-label">路由</p>
+              <h2>路由分布</h2>
             </div>
           </div>
           <div v-if="routeRows.length" class="distribution-list">
@@ -257,7 +307,7 @@ onMounted(dashboard.initialize);
               class="distribution-row"
             >
               <div class="distribution-row__meta">
-                <span>{{ row.label }}</span>
+                <span>{{ routeLabel(row.label) }}</span>
                 <strong>{{ row.value }}</strong>
               </div>
               <div class="distribution-track">
@@ -265,14 +315,14 @@ onMounted(dashboard.initialize);
               </div>
             </div>
           </div>
-          <div v-else class="empty-state compact">No route data yet.</div>
+          <div v-else class="empty-state compact">暂无路由数据。</div>
         </article>
 
         <article class="panel distribution-panel">
           <div class="panel__header">
             <div>
-              <p class="section-label">Workers</p>
-              <h2>Worker distribution</h2>
+              <p class="section-label">Worker</p>
+              <h2>Worker 分布</h2>
             </div>
           </div>
           <div v-if="workerRows.length" class="distribution-list">
@@ -282,7 +332,7 @@ onMounted(dashboard.initialize);
               class="distribution-row"
             >
               <div class="distribution-row__meta">
-                <span>{{ row.label }}</span>
+                <span>{{ routeLabel(row.label) }}</span>
                 <strong>{{ row.value }}</strong>
               </div>
               <div class="distribution-track">
@@ -290,14 +340,14 @@ onMounted(dashboard.initialize);
               </div>
             </div>
           </div>
-          <div v-else class="empty-state compact">No worker data yet.</div>
+          <div v-else class="empty-state compact">暂无 Worker 数据。</div>
         </article>
 
         <article class="panel distribution-panel">
           <div class="panel__header">
             <div>
-              <p class="section-label">Failures</p>
-              <h2>Error categories</h2>
+              <p class="section-label">失败</p>
+              <h2>错误分类</h2>
             </div>
           </div>
           <div v-if="errorRows.length" class="distribution-list">
@@ -307,7 +357,7 @@ onMounted(dashboard.initialize);
               class="distribution-row"
             >
               <div class="distribution-row__meta">
-                <span>{{ row.label }}</span>
+                <span>{{ routeLabel(row.label) }}</span>
                 <strong>{{ row.value }}</strong>
               </div>
               <div class="distribution-track">
@@ -315,22 +365,22 @@ onMounted(dashboard.initialize);
               </div>
             </div>
           </div>
-          <div v-else class="empty-state compact">No failures recorded.</div>
+          <div v-else class="empty-state compact">当前没有失败记录。</div>
         </article>
       </section>
 
       <section class="panel operations-recent">
         <div class="panel__header">
           <div>
-            <p class="section-label">Latest activity</p>
-            <h2>Recent Agent runs</h2>
+            <p class="section-label">最近活动</p>
+            <h2>最近 Agent 执行</h2>
           </div>
           <button
             class="button button--ghost"
             type="button"
             @click="selectTab('runs')"
           >
-            Inspect runs
+            查看运行记录
           </button>
         </div>
 
@@ -343,20 +393,20 @@ onMounted(dashboard.initialize);
             @click="openRunFromOverview(run.id)"
           >
             <span>
-              <strong>{{ run.route || "route pending" }}</strong>
+              <strong>{{ routeLabel(run.route) }}</strong>
               <small>
                 {{ dashboard.agentDisplayName(run.agent_type) }}
                 · {{ run.id.slice(0, 10) }}
               </small>
             </span>
             <span class="status-pill" :data-status="run.status">
-              {{ run.status }}
+              {{ statusLabel(run.status) }}
             </span>
             <span>{{ formatDuration(run.duration_ms) }}</span>
             <span>{{ formatDate(run.started_at) }}</span>
           </button>
         </div>
-        <div v-else class="empty-state compact">No runs in this window.</div>
+        <div v-else class="empty-state compact">当前时间范围内没有运行记录。</div>
       </section>
     </template>
 
@@ -365,17 +415,17 @@ onMounted(dashboard.initialize);
         <article class="panel operations-list-panel">
           <div class="panel__header operations-filter-header">
             <div>
-              <p class="section-label">Runtime telemetry</p>
-              <h2>Recent runs</h2>
+              <p class="section-label">运行遥测</p>
+              <h2>最近运行</h2>
             </div>
             <select
               v-model="dashboard.runStatus.value"
               @change="dashboard.loadOverview"
             >
-              <option value="">All statuses</option>
-              <option value="running">Running</option>
-              <option value="succeeded">Succeeded</option>
-              <option value="failed">Failed</option>
+              <option value="">全部状态</option>
+              <option value="running">运行中</option>
+              <option value="succeeded">成功</option>
+              <option value="failed">失败</option>
             </select>
           </div>
 
@@ -392,27 +442,27 @@ onMounted(dashboard.initialize);
               @click="dashboard.openRun(run.id)"
             >
               <span>
-                <strong>{{ run.route || "route pending" }}</strong>
+                <strong>{{ routeLabel(run.route) }}</strong>
                 <small>
                   {{ dashboard.agentDisplayName(run.agent_type) }}
                   · {{ run.id }}
                 </small>
               </span>
               <span class="status-pill" :data-status="run.status">
-                {{ run.status }}
+                {{ statusLabel(run.status) }}
               </span>
               <span>{{ formatDuration(run.duration_ms) }}</span>
               <span>{{ formatDate(run.started_at) }}</span>
             </button>
           </div>
-          <div v-else class="empty-state">No runs match this filter.</div>
+          <div v-else class="empty-state">没有符合筛选条件的运行记录。</div>
         </article>
 
         <aside class="panel operations-detail-panel">
           <div class="panel__header">
             <div>
-              <p class="section-label">Run detail</p>
-              <h2>Execution trace</h2>
+              <p class="section-label">运行详情</p>
+              <h2>执行轨迹</h2>
             </div>
           </div>
 
@@ -420,14 +470,14 @@ onMounted(dashboard.initialize);
             v-if="dashboard.loadingRun.value"
             class="empty-state compact"
           >
-            Loading run…
+            正在加载运行记录…
           </div>
 
           <div
             v-else-if="!activeRun"
             class="empty-state"
           >
-            Select a run to inspect its route, workers, duration, and error.
+            选择一条运行记录，查看路由、Worker、耗时和错误信息。
           </div>
 
           <template v-else>
@@ -437,7 +487,7 @@ onMounted(dashboard.initialize);
                 <dd>{{ dashboard.agentDisplayName(activeRun.agent_type) }}</dd>
               </div>
               <div>
-                <dt>Status</dt>
+                <dt>状态</dt>
                 <dd>
                   <span
                     class="status-pill"
@@ -448,11 +498,11 @@ onMounted(dashboard.initialize);
                 </dd>
               </div>
               <div>
-                <dt>Run ID</dt>
+                <dt>运行 ID</dt>
                 <dd><code>{{ activeRun.id }}</code></dd>
               </div>
               <div>
-                <dt>Conversation</dt>
+                <dt>对话</dt>
                 <dd>
                   <code>
                     {{ activeRun.conversation_id }}
@@ -460,30 +510,30 @@ onMounted(dashboard.initialize);
                 </dd>
               </div>
               <div>
-                <dt>Route</dt>
-                <dd>{{ activeRun.route || "—" }}</dd>
+                <dt>路由</dt>
+                <dd>{{ routeLabel(activeRun.route) }}</dd>
               </div>
               <div>
-                <dt>Duration</dt>
+                <dt>耗时</dt>
                 <dd>
                   {{ formatDuration(activeRun.duration_ms) }}
                 </dd>
               </div>
               <div>
-                <dt>Started</dt>
+                <dt>开始时间</dt>
                 <dd>{{ formatDate(activeRun.started_at) }}</dd>
               </div>
             </dl>
 
             <section class="operations-detail-section">
-              <h3>Workers</h3>
+              <h3>Worker</h3>
               <div class="chip-row">
                 <span
                   v-for="worker in activeRun.completed_workers"
                   :key="worker"
                   class="chip"
                 >
-                  {{ worker }}
+                  {{ workerLabel(worker) }}
                 </span>
                 <span
                   v-if="
@@ -491,7 +541,7 @@ onMounted(dashboard.initialize);
                   "
                   class="field-hint"
                 >
-                  No completed workers.
+                  暂无已完成 Worker。
                 </span>
               </div>
             </section>
@@ -501,7 +551,7 @@ onMounted(dashboard.initialize);
               class="operations-detail-section operations-error-detail"
             >
               <h3>{{ activeRun.error_type }}</h3>
-              <p>{{ activeRun.error_message || "No detail." }}</p>
+              <p>{{ activeRun.error_message || "暂无详细信息。" }}</p>
             </section>
           </template>
         </aside>
@@ -513,12 +563,12 @@ onMounted(dashboard.initialize);
         <article class="panel operations-list-panel">
           <div class="panel__header operations-filter-header">
             <div>
-              <p class="section-label">Quality history</p>
-              <h2>Evaluation runs</h2>
+              <p class="section-label">质量历史</p>
+              <h2>评测记录</h2>
             </div>
             <input
               v-model="dashboard.evaluationSuite.value"
-              placeholder="Filter suite"
+              placeholder="筛选评测套件"
               @keydown.enter="dashboard.loadOverview"
             />
           </div>
@@ -549,11 +599,11 @@ onMounted(dashboard.initialize);
                   </small>
                 </span>
                 <span class="status-pill" :data-status="evaluation.status">
-                  {{ evaluation.status }}
+                  {{ statusLabel(evaluation.status) }}
                 </span>
                 <span>
-                  {{ evaluation.passed_count }}/{{ evaluation.case_count }}
-                  passed
+                  {{ evaluation.通过_count }}/{{ evaluation.case_count }}
+                  通过
                 </span>
                 <span>{{ formatDate(evaluation.started_at) }}</span>
               </button>
@@ -561,27 +611,27 @@ onMounted(dashboard.initialize);
               <div class="evaluation-card__actions">
                 <button
                   type="button"
-                  @click="dashboard.useAsBaseline(evaluation.id)"
+                  @click="dashboard.useAs设为基线(evaluation.id)"
                 >
-                  Baseline
+                  设为基线
                 </button>
                 <button
                   type="button"
-                  @click="dashboard.useAsCandidate(evaluation.id)"
+                  @click="dashboard.useAs设为候选(evaluation.id)"
                 >
-                  Candidate
+                  设为候选
                 </button>
               </div>
             </article>
           </div>
-          <div v-else class="empty-state">No persisted evaluations yet.</div>
+          <div v-else class="empty-state">暂无持久化评测记录。</div>
         </article>
 
         <aside class="panel operations-detail-panel">
           <div class="panel__header">
             <div>
-              <p class="section-label">Evaluation detail</p>
-              <h2>Cases & metrics</h2>
+              <p class="section-label">评测详情</p>
+              <h2>用例与指标</h2>
             </div>
           </div>
 
@@ -589,14 +639,14 @@ onMounted(dashboard.initialize);
             v-if="dashboard.loadingEvaluation.value"
             class="empty-state compact"
           >
-            Loading evaluation…
+            正在加载评测…
           </div>
 
           <div
             v-else-if="!activeEvaluation"
             class="empty-state"
           >
-            Select an evaluation run to inspect persisted cases.
+            选择一条评测记录以查看持久化用例。
           </div>
 
           <template v-else>
@@ -608,17 +658,17 @@ onMounted(dashboard.initialize);
                 </dd>
               </div>
               <div>
-                <dt>Suite</dt>
+                <dt>套件</dt>
                 <dd>{{ activeEvaluation.run.suite }}</dd>
               </div>
               <div>
-                <dt>Dataset</dt>
+                <dt>数据集</dt>
                 <dd>
                   {{ activeEvaluation.run.dataset_name }}
                 </dd>
               </div>
               <div>
-                <dt>Revision</dt>
+                <dt>版本</dt>
                 <dd>
                   <code>
                     {{
@@ -629,7 +679,7 @@ onMounted(dashboard.initialize);
                 </dd>
               </div>
               <div>
-                <dt>Cases</dt>
+                <dt>用例数</dt>
                 <dd>
                   {{ activeEvaluation.run.case_count }}
                 </dd>
@@ -637,7 +687,7 @@ onMounted(dashboard.initialize);
             </dl>
 
             <section class="operations-detail-section">
-              <h3>Aggregate metrics</h3>
+              <h3>聚合指标</h3>
               <pre class="operations-json">{{
                 JSON.stringify(
                   activeEvaluation.run.aggregate_metrics,
@@ -648,7 +698,7 @@ onMounted(dashboard.initialize);
             </section>
 
             <section class="operations-detail-section">
-              <h3>Cases</h3>
+              <h3>用例</h3>
               <div class="evaluation-case-list">
                 <div
                   v-for="evaluationCase in activeEvaluation.cases"
@@ -660,7 +710,7 @@ onMounted(dashboard.initialize);
                     class="status-pill"
                     :data-status="evaluationCase.status"
                   >
-                    {{ evaluationCase.status }}
+                    {{ statusLabel(evaluationCase.status) }}
                   </span>
                 </div>
               </div>
@@ -672,22 +722,22 @@ onMounted(dashboard.initialize);
       <section class="panel comparison-panel">
         <div class="panel__header">
           <div>
-            <p class="section-label">Release quality gate</p>
-            <h2>Baseline vs candidate</h2>
+            <p class="section-label">发布质量门禁</p>
+            <h2>设为基线 vs candidate</h2>
           </div>
         </div>
 
         <div class="comparison-form">
           <label>
-            <span>Baseline run</span>
+            <span>设为基线 run</span>
             <input v-model="dashboard.baselineId.value" />
           </label>
           <label>
-            <span>Candidate run</span>
+            <span>设为候选 run</span>
             <input v-model="dashboard.candidateId.value" />
           </label>
           <label>
-            <span>Max regression</span>
+            <span>最大允许回归</span>
             <input
               v-model.number="dashboard.maxRegression.value"
               type="number"
@@ -705,7 +755,7 @@ onMounted(dashboard.initialize);
             "
             @click="dashboard.compare"
           >
-            {{ dashboard.comparing.value ? "Comparing…" : "Compare" }}
+            {{ dashboard.comparing.value ? "对比中…" : "开始对比" }}
           </button>
         </div>
 
@@ -715,12 +765,12 @@ onMounted(dashboard.initialize);
         >
           <div class="comparison-verdict">
             <div>
-              <p class="section-label">Verdict</p>
+              <p class="section-label">结论</p>
               <strong
                 class="verdict-badge"
                 :data-verdict="comparison.verdict"
               >
-                {{ comparison.verdict }}
+                {{ verdictLabel(comparison.verdict) }}
               </strong>
             </div>
             <div>
@@ -730,19 +780,19 @@ onMounted(dashboard.initialize);
               </strong>
             </div>
             <div>
-              <span>Common cases</span>
+              <span>共有用例</span>
               <strong>
                 {{ comparison.common_case_count }}
               </strong>
             </div>
             <div>
-              <span>New failures</span>
+              <span>新增失败</span>
               <strong>
                 {{ comparison.new_failures.length }}
               </strong>
             </div>
             <div>
-              <span>New passes</span>
+              <span>新增通过</span>
               <strong>
                 {{ comparison.new_passes.length }}
               </strong>
@@ -750,7 +800,7 @@ onMounted(dashboard.initialize);
           </div>
 
           <section class="comparison-section">
-            <h3>Metric deltas</h3>
+            <h3>指标变化</h3>
             <div
               v-if="comparison.metric_comparisons.length"
               class="comparison-metrics"
@@ -772,13 +822,13 @@ onMounted(dashboard.initialize);
               </div>
             </div>
             <p v-else class="field-hint">
-              No common numeric quality metrics were found.
+              没有可比较的公共数值质量指标。
             </p>
           </section>
 
           <section class="comparison-section comparison-columns">
             <div>
-              <h3>New failures</h3>
+              <h3>新增失败</h3>
               <code
                 v-for="caseKey in comparison.new_failures"
                 :key="caseKey"
@@ -789,12 +839,12 @@ onMounted(dashboard.initialize);
                 v-if="!comparison.new_failures.length"
                 class="field-hint"
               >
-                None
+                无
               </span>
             </div>
 
             <div>
-              <h3>Behavior changes</h3>
+              <h3>行为变化</h3>
               <div
                 v-for="change in comparison.behavior_changes"
                 :key="`${change.case_key}-${change.field}`"
@@ -811,12 +861,12 @@ onMounted(dashboard.initialize);
                 v-if="!comparison.behavior_changes.length"
                 class="field-hint"
               >
-                None
+                无
               </span>
             </div>
 
             <div>
-              <h3>Configuration changes</h3>
+              <h3>配置变化</h3>
               <div
                 v-for="change in comparison.configuration_changes"
                 :key="change.path"
@@ -833,7 +883,7 @@ onMounted(dashboard.initialize);
                 v-if="!comparison.configuration_changes.length"
                 class="field-hint"
               >
-                None
+                无
               </span>
             </div>
           </section>
