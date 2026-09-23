@@ -50,6 +50,7 @@ def test_conversation_reuses_pending_question_on_follow_up() -> None:
     assert agent.questions[1] == "我的容器为什么一直重启？\nUser clarification: web"
     assert conversation.state.pending_question is None
     assert conversation.state.pending_context is None
+    assert conversation.state.pending_context is None
 
 
 def test_conversation_preserves_initial_context_across_clarification() -> None:
