@@ -18,7 +18,7 @@ from docker_agent.orchestration.delegation import (
 from docker_agent.orchestration.envelope import SpecialistResultEnvelope
 from docker_agent.orchestration.synthesis import OrchestratedSynthesisResult
 
-CHECKPOINT_NAMESPACE = "phase9_orchestration"
+CHECKPOINT_NAMESPACE = ""
 
 
 def postgres_checkpoint_uri(database_url: str) -> str:
