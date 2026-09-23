@@ -66,6 +66,7 @@ class ConfigurationChange:
 class EvaluationComparison:
     baseline_run_id: str
     candidate_run_id: str
+    agent_type: str | None
     suite: str
     dataset_name: str
     dataset_version: str
@@ -173,6 +174,7 @@ def compare_evaluation_runs(
     return EvaluationComparison(
         baseline_run_id=baseline.id,
         candidate_run_id=candidate.id,
+        agent_type=baseline.agent_type,
         suite=baseline.suite,
         dataset_name=baseline.dataset_name,
         dataset_version=baseline.dataset_version,
@@ -202,6 +204,10 @@ def _validate_comparable_runs(
     if baseline.status != "succeeded" or candidate.status != "succeeded":
         raise EvaluationComparisonError(
             "baseline and candidate evaluation runs must both be succeeded"
+        )
+    if baseline.agent_type != candidate.agent_type:
+        raise EvaluationComparisonError(
+            "baseline and candidate Agent types must match"
         )
     if baseline.suite != candidate.suite:
         raise EvaluationComparisonError(
