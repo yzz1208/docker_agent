@@ -181,6 +181,10 @@ def test_operations_summary_uses_completed_runs_for_rates_and_latency(
     assert payload["failure_rate"] == 0.5
     assert payload["duration_p50_ms"] == 200
     assert payload["duration_p95_ms"] == 290
+    assert payload["agent_distribution"] == {
+        "docker_support": 2,
+        "future_agent": 1,
+    }
     assert payload["route_distribution"] == {
         "docs_only": 1,
         "runtime_tools": 1,
@@ -194,6 +198,35 @@ def test_operations_summary_uses_completed_runs_for_rates_and_latency(
         "RuntimeError": 1,
     }
 
+
+
+
+def test_operations_summary_supports_agent_filter(monkeypatch) -> None:
+    engine = _engine()
+    _seed_runs(engine)
+    monkeypatch.setattr(
+        "docker_agent.main.get_persistence_engine",
+        lambda: engine,
+    )
+    client = TestClient(app)
+
+    response = client.get(
+        "/operations/summary?hours=24&agent_type=docker_support"
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total_runs"] == 2
+    assert payload["running_runs"] == 0
+    assert payload["succeeded_runs"] == 1
+    assert payload["failed_runs"] == 1
+    assert payload["agent_distribution"] == {
+        "docker_support": 2,
+    }
+    assert payload["route_distribution"] == {
+        "docs_only": 1,
+        "runtime_tools": 1,
+    }
 
 def test_operations_summary_handles_no_completed_runs(monkeypatch) -> None:
     engine = _engine()
