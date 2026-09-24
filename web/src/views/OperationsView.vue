@@ -68,6 +68,8 @@ function statusLabel(value: string): string {
     failed: "失败",
     passed: "通过",
     error: "错误",
+    regression: "存在回归",
+    incomplete: "不完整",
   };
   return labels[value] ?? value;
 }
@@ -80,6 +82,8 @@ function routeLabel(value: string): string {
     runtime_tools: "运行时诊断",
     triage: "故障分诊",
     auto_direct: "专家直达",
+    auto_direct_clarify: "专家补充信息",
+    auto_delegate_clarify: "转交后补充信息",
     auto_synthesis: "多专家综合",
     auto_approval_pending: "等待审批",
     auto_approval_denied: "审批拒绝",
@@ -179,7 +183,7 @@ onBeforeUnmount(() => {
               :key="agent.agent_type"
               :value="agent.agent_type"
             >
-              {{ agent.display_name }}
+              {{ dashboard.agentDisplayName(agent.agent_type) }}
             </option>
           </select>
         </label>
@@ -521,7 +525,7 @@ onBeforeUnmount(() => {
               </div>
               <div>
                 <dt>路由</dt>
-                <dd>{{ activeRun.route || "—" }}</dd>
+                <dd>{{ activeRun.route ? routeLabel(activeRun.route) : "—" }}</dd>
               </div>
               <div>
                 <dt>耗时</dt>
@@ -551,7 +555,7 @@ onBeforeUnmount(() => {
                   "
                   class="field-hint"
                 >
-                  No 已完成 workers.
+                  暂无已完成工作单元。
                 </span>
               </div>
             </section>
@@ -697,7 +701,7 @@ onBeforeUnmount(() => {
             </dl>
 
             <section class="operations-detail-section">
-              <h3>Aggregate metrics</h3>
+              <h3>汇总指标</h3>
               <pre class="operations-json">{{
                 JSON.stringify(
                   activeEvaluation.run.aggregate_metrics,
@@ -732,18 +736,18 @@ onBeforeUnmount(() => {
       <section class="panel comparison-panel">
         <div class="panel__header">
           <div>
-            <p class="section-label">Release quality gate</p>
-            <h2>设为基线 vs candidate</h2>
+            <p class="section-label">发布质量门禁</p>
+            <h2>基线与候选版本对比</h2>
           </div>
         </div>
 
         <div class="comparison-form">
           <label>
-            <span>设为基线 run</span>
+            <span>基线评测</span>
             <input v-model="dashboard.baselineId.value" />
           </label>
           <label>
-            <span>设为候选 run</span>
+            <span>候选评测</span>
             <input v-model="dashboard.candidateId.value" />
           </label>
           <label>
@@ -765,7 +769,7 @@ onBeforeUnmount(() => {
             "
             @click="dashboard.compare"
           >
-            {{ dashboard.comparing.value ? "对比中…" : "Compare" }}
+            {{ dashboard.comparing.value ? "对比中…" : "开始对比" }}
           </button>
         </div>
 
@@ -849,7 +853,7 @@ onBeforeUnmount(() => {
                 v-if="!comparison.new_failures.length"
                 class="field-hint"
               >
-                None
+                暂无
               </span>
             </div>
 
@@ -871,7 +875,7 @@ onBeforeUnmount(() => {
                 v-if="!comparison.behavior_changes.length"
                 class="field-hint"
               >
-                None
+                暂无
               </span>
             </div>
 
@@ -893,7 +897,7 @@ onBeforeUnmount(() => {
                 v-if="!comparison.configuration_changes.length"
                 class="field-hint"
               >
-                None
+                暂无
               </span>
             </div>
           </section>
