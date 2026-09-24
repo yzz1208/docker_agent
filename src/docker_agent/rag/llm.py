@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import time
 from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import Any, Protocol
 
 import httpx
@@ -227,29 +228,31 @@ class OpenAICompatibleChatClient:
             payload["max_tokens"] = self.max_tokens
         return payload
 
+    @contextmanager
     def _stream_once(
         self,
         *,
         headers: dict[str, str],
         payload: dict[str, Any],
-    ):
+    ) -> Iterator[httpx.Response]:
         if self._client is not None:
-            return self._client.stream(
+            with self._client.stream(
                 "POST",
                 self.endpoint,
                 headers=headers,
                 json=payload,
-            )
-        client = httpx.Client(timeout=self.timeout_seconds)
-        return _OwnedStreamContext(
-            client,
-            client.stream(
+            ) as response:
+                yield response
+            return
+
+        with httpx.Client(timeout=self.timeout_seconds) as client:
+            with client.stream(
                 "POST",
                 self.endpoint,
                 headers=headers,
                 json=payload,
-            ),
-        )
+            ) as response:
+                yield response
 
     def _post_with_retry(
         self,
@@ -296,31 +299,6 @@ class OpenAICompatibleChatClient:
 
         with httpx.Client(timeout=self.timeout_seconds) as client:
             return client.post(self.endpoint, headers=headers, json=payload)
-
-
-class _OwnedStreamContext:
-    """Close a temporary httpx client together with its response stream."""
-
-    def __init__(self, client: httpx.Client, stream_context: Any) -> None:
-        self._client = client
-        self._stream_context = stream_context
-
-    def __enter__(self) -> httpx.Response:
-        try:
-            return self._stream_context.__enter__()
-        except Exception:
-            self._client.close()
-            raise
-
-    def __exit__(self, exc_type: Any, exc: Any, traceback: Any) -> bool | None:
-        try:
-            return self._stream_context.__exit__(
-                exc_type,
-                exc,
-                traceback,
-            )
-        finally:
-            self._client.close()
 
 
 def _message_content(data: object) -> str:
