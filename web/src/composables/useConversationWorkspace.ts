@@ -36,6 +36,7 @@ export function useConversationWorkspace() {
   const activeSessionId = ref<string | null>(null);
   const draft = ref("");
   const pendingUserMessage = ref<string | null>(null);
+  const streamingAssistantText = ref("");
   const optimisticMessages = ref<ConversationMessage[]>([]);
   const optimisticConversationId = ref<string | null>(null);
   const syncingConversation = ref(false);
@@ -670,6 +671,7 @@ export function useConversationWorkspace() {
 
     sending.value = true;
     pendingUserMessage.value = message;
+    streamingAssistantText.value = "";
     actionError.value = "";
 
     try {
@@ -686,6 +688,9 @@ export function useConversationWorkspace() {
           },
           (progress) => {
             autoProgress.value = progress;
+          },
+          (delta) => {
+            streamingAssistantText.value += delta;
           },
         );
         activeConversationId.value = result.conversation_id;
@@ -793,6 +798,7 @@ export function useConversationWorkspace() {
       sending.value = false;
       pendingUserMessage.value = null;
       autoProgress.value = null;
+      streamingAssistantText.value = "";
     }
   }
 
@@ -936,6 +942,7 @@ export function useConversationWorkspace() {
     activeSessionId,
     draft,
     pendingUserMessage,
+    streamingAssistantText,
     optimisticMessages,
     displayMessages,
     activeMode,
