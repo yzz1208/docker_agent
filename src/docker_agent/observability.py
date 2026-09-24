@@ -64,6 +64,7 @@ _STAGE_DURATION_BUCKETS = (
 _LATENCY_STAGES = frozenset(
     {
         "decision",
+        "orchestration_decision",
         "rag_database",
         "embedding",
         "dense_retrieval",
