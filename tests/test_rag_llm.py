@@ -1,10 +1,12 @@
 import httpx
 import pytest
 
+from docker_agent.observability import public_text_context
 from docker_agent.rag.llm import (
     ModelRequestError,
     ModelResponseError,
     OpenAICompatibleChatClient,
+    complete_public_response,
 )
 
 
@@ -99,3 +101,69 @@ def test_openai_compatible_client_raises_after_retry_exhaustion() -> None:
             client.complete(system_prompt="system", user_prompt="user")
 
     assert calls == 2
+
+
+
+def test_openai_compatible_client_streams_chat_completion_deltas() -> None:
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            headers={"content-type": "text/event-stream"},
+            text=(
+                'data: {"choices":[{"delta":{"content":"Hello"}}]}\n\n'
+                'data: {"choices":[{"delta":{"content":" world"}}]}\n\n'
+                "data: [DONE]\n\n"
+            ),
+        )
+
+    transport = httpx.MockTransport(handler)
+    with httpx.Client(transport=transport) as http_client:
+        client = OpenAICompatibleChatClient(
+            model="test-model",
+            base_url="https://example.test/v1",
+            client=http_client,
+        )
+
+        assert list(
+            client.stream_complete(
+                system_prompt="system",
+                user_prompt="user",
+            )
+        ) == ["Hello", " world"]
+
+
+def test_public_response_streams_only_when_context_is_active() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = request.content.decode()
+        if '"stream":true' in body:
+            return httpx.Response(
+                200,
+                headers={"content-type": "text/event-stream"},
+                text=(
+                    'data: {"choices":[{"delta":{"content":"A"}}]}\n\n'
+                    'data: {"choices":[{"delta":{"content":"B"}}]}\n\n'
+                    "data: [DONE]\n\n"
+                ),
+            )
+        return httpx.Response(
+            200,
+            json={"choices": [{"message": {"content": "AB"}}]},
+        )
+
+    deltas: list[str] = []
+    transport = httpx.MockTransport(handler)
+    with httpx.Client(transport=transport) as http_client:
+        client = OpenAICompatibleChatClient(
+            model="test-model",
+            base_url="https://example.test/v1",
+            client=http_client,
+        )
+        with public_text_context(deltas.append):
+            answer = complete_public_response(
+                client,
+                system_prompt="system",
+                user_prompt="user",
+            )
+
+    assert answer == "AB"
+    assert deltas == ["A", "B"]
