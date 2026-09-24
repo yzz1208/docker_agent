@@ -92,9 +92,8 @@ def test_redact_log_text_covers_common_secret_forms() -> None:
 def test_stage_timer_emits_started_and_completed_events() -> None:
     events = []
 
-    with stage_event_context(events.append):
-        with stage_timer("decision"):
-            pass
+    with stage_event_context(events.append), stage_timer("decision"):
+        pass
 
     assert [event.status for event in events] == [
         "started",
