@@ -2937,3 +2937,54 @@ a {
   border-color: #a9cbd6;
   color: #356d7f;
 }
+
+
+.message-execution-details {
+  margin-top: 9px;
+  border-top: 1px dashed #dce4eb;
+  padding-top: 8px;
+}
+
+.message-execution-details summary {
+  width: fit-content;
+  color: #8290a2;
+  font-size: 9px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.message-execution-details__body {
+  margin-top: 8px;
+  display: grid;
+  gap: 6px;
+}
+
+.message-execution-worker {
+  padding: 7px 8px;
+  display: grid;
+  gap: 4px;
+  border: 1px solid #e4eaf0;
+  border-radius: 7px;
+  background: #fafcfd;
+}
+
+.message-execution-worker > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.message-execution-worker strong {
+  color: #4c5d70;
+  font-size: 9px;
+}
+
+.message-execution-worker span {
+  color: #2c7a61;
+  font-size: 8px;
+}
+
+.message-execution-worker small {
+  color: #8a96a7;
+  font-size: 8px;
+}
