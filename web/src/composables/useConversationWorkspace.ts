@@ -241,6 +241,33 @@ export function useConversationWorkspace() {
     ]);
   }
 
+  async function refreshConversationDetail(
+    conversationId: string,
+    attempts = 3,
+  ): Promise<ConversationDetail> {
+    let lastError: unknown = null;
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
+      try {
+        const loaded = await getConversation(conversationId);
+        if (activeConversationId.value === conversationId) {
+          detail.value = loaded;
+          if (loaded.conversation.agent_type === AUTO_AGENT_TYPE) {
+            restoreAutoTurn(loaded);
+          }
+        }
+        return loaded;
+      } catch (error) {
+        lastError = error;
+        if (attempt + 1 < attempts) {
+          await new Promise((resolve) =>
+            window.setTimeout(resolve, 180 * (attempt + 1)),
+          );
+        }
+      }
+    }
+    throw lastError;
+  }
+
   async function refreshConversations(): Promise<void> {
     loadingList.value = true;
     listError.value = "";
@@ -391,7 +418,9 @@ export function useConversationWorkspace() {
           ...latestAutoTurns.value,
           [result.conversation_id]: result,
         };
-        detail.value = await getConversation(result.conversation_id);
+        await refreshConversationDetail(
+          result.conversation_id,
+        );
       } else {
         const result = await sendChat({
           message,
@@ -416,7 +445,9 @@ export function useConversationWorkspace() {
             ...latestTurns.value,
             [result.conversation_id]: result,
           };
-          detail.value = await getConversation(result.conversation_id);
+          await refreshConversationDetail(
+            result.conversation_id,
+          );
         }
       }
 
@@ -457,7 +488,7 @@ export function useConversationWorkspace() {
         ...latestAutoTurns.value,
         [conversationId]: result,
       };
-      detail.value = await getConversation(conversationId);
+      await refreshConversationDetail(conversationId);
       await refreshConversations();
       return true;
     } catch (error) {
@@ -574,6 +605,7 @@ export function useConversationWorkspace() {
     initialize,
     refreshAgents,
     refreshConversations,
+    refreshConversationDetail,
     openConversation,
     startNewConversation,
     submitMessage,
