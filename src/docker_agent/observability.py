@@ -35,7 +35,7 @@ _conversation_id: ContextVar[str | None] = ContextVar(
     "docker_agent_conversation_id",
     default=None,
 )
-_stage_event_sink: ContextVar["StageEventSink | None"] = ContextVar(
+_stage_event_sink: ContextVar[StageEventSink | None] = ContextVar(
     "docker_agent_stage_event_sink",
     default=None,
 )
