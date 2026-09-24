@@ -53,11 +53,30 @@ def test_initial_lightweight_chat_skips_orchestration_model() -> None:
     assert fake.system_prompts == []
 
 
+def test_initial_docker_docs_request_skips_orchestration_model() -> None:
+    registry = build_agent_registry()
+    fake = SequenceModel([])
+    orchestrator = OrchestrationDecisionModel(
+        registry=registry,
+        model=fake,
+    )
+
+    decision = orchestrator.decide(
+        "Docker volume 和 bind mount 有什么区别？"
+    )
+
+    assert decision.action == "direct"
+    assert decision.target_agent_type == "docker_support"
+    assert decision.capability == "documentation_qa"
+    assert fake.user_prompts == []
+
+
 def test_initial_runtime_request_routes_directly_to_docker_support() -> None:
-    orchestrator, fake, _ = _model(
-        '{"action":"direct","reason":"needs runtime facts",'
-        '"target_agent_type":"Docker-Support",'
-        '"capability":"runtime-diagnostics","clarification":null}'
+    registry = build_agent_registry()
+    fake = SequenceModel([])
+    orchestrator = OrchestrationDecisionModel(
+        registry=registry,
+        model=fake,
     )
 
     decision = orchestrator.decide("web-1 当前 CPU 和内存是多少？")
@@ -68,15 +87,15 @@ def test_initial_runtime_request_routes_directly_to_docker_support() -> None:
     assert decision.capability == "runtime_diagnostics"
     assert decision.clarification is None
     assert decision.is_handoff is False
-    assert "runtime_diagnostics" in fake.user_prompts[0]
-    assert "docker_read_only" in fake.user_prompts[0]
+    assert fake.user_prompts == []
 
 
 def test_initial_incident_routes_directly_to_infrastructure_agent() -> None:
-    orchestrator, _, _ = _model(
-        '{"action":"direct","reason":"service incident",'
-        '"target_agent_type":"infrastructure_troubleshooter",'
-        '"capability":"incident_triage","clarification":null}'
+    registry = build_agent_registry()
+    fake = SequenceModel([])
+    orchestrator = OrchestrationDecisionModel(
+        registry=registry,
+        model=fake,
     )
 
     decision = orchestrator.decide(
@@ -88,6 +107,7 @@ def test_initial_incident_routes_directly_to_infrastructure_agent() -> None:
         "infrastructure_troubleshooter"
     )
     assert decision.capability == "incident_triage"
+    assert fake.user_prompts == []
 
 
 def test_orchestrator_can_request_user_clarification() -> None:
@@ -153,7 +173,7 @@ def test_code_fenced_json_is_accepted() -> None:
 ```"""
     )
 
-    decision = orchestrator.decide("web-1 当前内存是多少？")
+    decision = orchestrator.decide("检查 web-1 的资源问题")
 
     assert decision.target_agent_type == "docker_support"
     assert decision.capability == "runtime_diagnostics"
