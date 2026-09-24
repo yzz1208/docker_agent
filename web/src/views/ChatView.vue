@@ -499,19 +499,42 @@ onBeforeUnmount(() => {
               </span>
             </div>
 
-            <div
-              v-if="message.execution && workspace.activeMode.value === 'manual'"
-              class="message__execution"
+            <details
+              v-if="
+                message.execution &&
+                workspace.activeMode.value === 'manual' &&
+                workspace.messageWorkerTrace(message).length
+              "
+              class="message-execution-details"
             >
-              <span>
+              <summary>
                 执行链：
                 {{
                   message.execution.completed_workers
                     .map(workspace.workerDisplayName)
                     .join(" → ") || "无"
                 }}
-              </span>
-            </div>
+              </summary>
+              <div class="message-execution-details__body">
+                <div
+                  v-for="worker in workspace.messageWorkerTrace(message)"
+                  :key="message.id + '-worker-' + worker.index"
+                  class="message-execution-worker"
+                >
+                  <div>
+                    <strong>
+                      {{ worker.index }}. {{ workspace.workerDisplayName(worker.role) }}
+                    </strong>
+                    <span v-if="worker.answer_created">生成回答</span>
+                  </div>
+                  <small>
+                    证据 {{ worker.evidence_added }} ·
+                    工具结果 {{ worker.tool_results_added }} ·
+                    运行步骤 {{ worker.runtime_steps_added }}
+                  </small>
+                </div>
+              </div>
+            </details>
           </article>
 
           <article
