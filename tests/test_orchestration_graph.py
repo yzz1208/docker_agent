@@ -62,7 +62,7 @@ def test_decision_graph_routes_direct_to_terminal_without_execution() -> None:
     assert result.terminal_action == "direct"
     assert result.trace == ("decision", "direct")
     assert result.context.hop_count == 0
-    assert model.calls == 1
+    assert model.calls == 0
 
 
 def test_decision_graph_routes_clarification_to_terminal() -> None:
@@ -133,8 +133,8 @@ def test_decision_graph_matches_direct_decision_contract() -> None:
 
     assert actual.decision == expected
     assert actual.terminal_action == expected.action
-    assert direct_llm.calls == 1
-    assert graph_llm.calls == 1
+    assert direct_llm.calls == 0
+    assert graph_llm.calls == 0
 
 
 def test_decision_graph_preserves_policy_rejection() -> None:
