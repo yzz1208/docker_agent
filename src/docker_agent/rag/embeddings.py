@@ -31,6 +31,17 @@ class BgeM3Embedder:
         self._model = model
 
     @property
+    def is_loaded(self) -> bool:
+        """Whether the heavyweight embedding model is already resident."""
+
+        return self._model is not None
+
+    def warmup(self) -> None:
+        """Load the embedding model without running a user query."""
+
+        _ = self.model
+
+    @property
     def model(self) -> Any:
         if self._model is None:
             # SentenceTransformers imports torch, which loads native DLLs on
