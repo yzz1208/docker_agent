@@ -21,6 +21,7 @@
 - Upgrade Phase 7：Generic Multi-Agent Platform ✅
 - Upgrade Phase 8：Advanced Multi-Agent Orchestration ✅
 - Upgrade Phase 9：LangGraph Platform Orchestration（Step 1–6 已实现：Decision / Specialist / Synthesis / Durable Resume / Human Approval / Auto Product Cutover；待 Step 6B 本地产品 gate 后进入 Step 7）
+- Upgrade Phase 10：Product UX / Performance / Intelligence Polish（Step 1 核心交互恢复、中文化、轻量会话 fast path 已实现，待本地 gate）
 
 ## 本地环境
 
