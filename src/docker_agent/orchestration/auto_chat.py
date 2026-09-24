@@ -20,6 +20,9 @@ from docker_agent.orchestration.approval_graph import (
     resume_human_approval_orchestration,
     start_human_approval_orchestration,
 )
+from docker_agent.orchestration.checkpoint import (
+    orchestration_thread_config,
+)
 from docker_agent.orchestration.decision import (
     OrchestrationDecision,
     OrchestrationDecisionModel,
