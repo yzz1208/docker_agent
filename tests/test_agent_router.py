@@ -17,6 +17,19 @@ class FakeModel:
         return self.response
 
 
+def test_chat_route_carries_no_evidence_or_runtime_plan() -> None:
+    decision = parse_route_decision(
+        '{"route":"chat","reason":"light conversation",'
+        '"container_ref":null,"tools":[],"clarification":null,"use_docs":false}'
+    )
+
+    assert decision.route == "chat"
+    assert decision.tools == ()
+    assert decision.container_ref is None
+    assert decision.use_docs is False
+    assert decision.clarification is None
+
+
 def test_route_docs_only_question() -> None:
     decision = route_question(
         "Docker volume 和 bind mount 有什么区别？",
