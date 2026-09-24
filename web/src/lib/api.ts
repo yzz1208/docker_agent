@@ -65,6 +65,18 @@ async function request<T>(
     return undefined as T;
   }
 
+  const contentType = response.headers.get("Content-Type") ?? "";
+  if (!contentType.toLowerCase().includes("application/json")) {
+    const preview = (await response.text()).slice(0, 120).trim();
+    throw new ApiError(
+      502,
+      preview.toLowerCase().startsWith("<!doctype") ||
+        preview.toLowerCase().startsWith("<html")
+        ? "前端收到了 HTML 页面而不是 API JSON。请检查开发代理或反向代理是否把该接口转发到后端。"
+        : "服务端返回了非 JSON 响应。",
+    );
+  }
+
   return (await response.json()) as T;
 }
 
@@ -220,6 +232,17 @@ export async function sendAutoChatStream(
 
   if (!response.ok) {
     throw await streamHttpError(response);
+  }
+  const contentType = response.headers.get("Content-Type") ?? "";
+  if (!contentType.toLowerCase().includes("text/event-stream")) {
+    const preview = (await response.text()).slice(0, 120).trim();
+    throw new ApiError(
+      502,
+      preview.toLowerCase().startsWith("<!doctype") ||
+        preview.toLowerCase().startsWith("<html")
+        ? "流式聊天接口收到了前端 HTML 页面。请检查 /chat/auto/stream 的开发代理或反向代理配置。"
+        : "流式聊天接口返回了非 SSE 响应。",
+    );
   }
   if (!response.body) {
     throw new ApiError(
