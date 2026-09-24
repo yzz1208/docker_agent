@@ -40,6 +40,74 @@ def test_openai_compatible_client_sends_chat_completion_request() -> None:
     assert '"max_tokens":1536' in str(captured["body"])
 
 
+def test_openai_compatible_client_accepts_text_part_content() -> None:
+    transport = httpx.MockTransport(
+        lambda _request: httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "content": [
+                                {"type": "text", "text": "Structured "},
+                                {"type": "text", "text": "answer"},
+                            ]
+                        },
+                        "finish_reason": "stop",
+                    }
+                ]
+            },
+        )
+    )
+    with httpx.Client(transport=transport) as http_client:
+        client = OpenAICompatibleChatClient(
+            model="test-model",
+            base_url="https://example.test/v1",
+            client=http_client,
+        )
+
+        answer = client.complete(
+            system_prompt="system",
+            user_prompt="user",
+        )
+
+    assert answer == "Structured answer"
+
+
+def test_empty_reasoning_response_reports_finish_reason() -> None:
+    transport = httpx.MockTransport(
+        lambda _request: httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "content": "",
+                            "reasoning_content": "hidden reasoning",
+                        },
+                        "finish_reason": "length",
+                    }
+                ]
+            },
+        )
+    )
+    with httpx.Client(transport=transport) as http_client:
+        client = OpenAICompatibleChatClient(
+            model="test-model",
+            base_url="https://example.test/v1",
+            client=http_client,
+        )
+
+        with pytest.raises(
+            ModelResponseError,
+            match="finish_reason='length'.*reasoning_content_present=True",
+        ):
+            client.complete(
+                system_prompt="system",
+                user_prompt="user",
+            )
+
+
 def test_openai_compatible_client_rejects_malformed_response() -> None:
     transport = httpx.MockTransport(lambda _request: httpx.Response(200, json={"choices": []}))
     with httpx.Client(transport=transport) as http_client:
