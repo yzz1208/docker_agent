@@ -231,6 +231,9 @@ def _fast_conversation_turn(
         "who are you",
         "what can you do",
         "introduce yourself",
+        "介绍一下这个平台",
+        "介绍这个平台",
+        "这个平台能做什么",
     }
     help_inputs = {
         "帮助",
@@ -239,6 +242,8 @@ def _fast_conversation_turn(
         "如何使用",
         "help",
         "how to use",
+        "怎么使用这个平台",
+        "如何使用这个平台",
     }
 
     if lowered in greeting_inputs:
@@ -248,12 +253,20 @@ def _fast_conversation_turn(
             "服务级故障，建议使用“智能编排”模式让平台自动选择专家。"
         )
     elif lowered in intro_inputs:
-        text = (
-            "我是 Docker 支持专家，主要负责 Docker 文档问答、配置与使用说明，"
-            "以及安全的只读运行时诊断。对于当前容器状态、日志、资源占用等问题，"
-            "我会在信息充分时使用只读工具；跨服务或基础设施问题可以交给平台的"
-            "“智能编排”模式继续处理。"
-        )
+        if "平台" in lowered:
+            text = (
+                "这是一个 Docker 智能支持平台。它包含 Docker 支持与基础设施排障"
+                "专家，可以根据问题自动路由，结合 Docker 官方文档、只读运行时"
+                "诊断、跨专家转交和结果综合来协助排障。推荐新对话使用“智能编排”"
+                "模式；跨专家处理前会先请求你的批准。"
+            )
+        else:
+            text = (
+                "我是 Docker 支持专家，主要负责 Docker 文档问答、配置与使用说明，"
+                "以及安全的只读运行时诊断。对于当前容器状态、日志、资源占用等问题，"
+                "我会在信息充分时使用只读工具；跨服务或基础设施问题可以交给平台的"
+                "“智能编排”模式继续处理。"
+            )
     elif lowered in help_inputs:
         text = (
             "使用时直接描述现象即可。建议包含容器或服务名称、错误信息、发生时间"
