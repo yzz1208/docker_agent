@@ -1,5 +1,11 @@
 <script setup lang="ts">
-import { nextTick, onMounted, ref, watch } from "vue";
+import {
+  nextTick,
+  onBeforeUnmount,
+  onMounted,
+  ref,
+  watch,
+} from "vue";
 
 import AppDialog from "../components/AppDialog.vue";
 import MessageContent from "../components/MessageContent.vue";
@@ -8,6 +14,8 @@ import { useConversationWorkspace } from "../composables/useConversationWorkspac
 const workspace = useConversationWorkspace();
 
 const messageStream = ref<HTMLElement | null>(null);
+const elapsedSeconds = ref(0);
+let elapsedTimer: number | null = null;
 const renameDialogOpen = ref(false);
 const deleteDialogOpen = ref(false);
 const renameTitle = ref("");
@@ -67,6 +75,25 @@ async function scrollMessagesToBottom(): Promise<void> {
 }
 
 watch(
+  () => workspace.sending.value || workspace.approving.value,
+  (active) => {
+    if (elapsedTimer !== null) {
+      window.clearInterval(elapsedTimer);
+      elapsedTimer = null;
+    }
+    elapsedSeconds.value = 0;
+    if (active) {
+      const started = Date.now();
+      elapsedTimer = window.setInterval(() => {
+        elapsedSeconds.value = Math.floor(
+          (Date.now() - started) / 1000,
+        );
+      }, 1000);
+    }
+  },
+);
+
+watch(
   () => [
     workspace.detail.value?.messages.length ?? 0,
     workspace.sending.value,
@@ -81,6 +108,12 @@ watch(
 onMounted(async () => {
   await workspace.initialize();
   await scrollMessagesToBottom();
+});
+
+onBeforeUnmount(() => {
+  if (elapsedTimer !== null) {
+    window.clearInterval(elapsedTimer);
+  }
 });
 </script>
 
@@ -288,7 +321,13 @@ onMounted(async () => {
         <div class="auto-running__pulse"><span /><span /><span /></div>
         <div>
           <strong>正在智能编排</strong>
-          <p>快速判断问题类型并交给最合适的专家处理。</p>
+          <p>
+            {{
+              elapsedSeconds > 8
+                ? `已处理 ${elapsedSeconds} 秒。首次文档检索可能需要加载本地模型，后续请求会明显更快。`
+                : "快速判断问题类型并交给最合适的专家处理。"
+            }}
+          </p>
         </div>
       </div>
 
@@ -516,9 +555,11 @@ onMounted(async () => {
               workspace.pendingApproval.value
                 ? "等待审批"
                 : workspace.sending.value
-                  ? workspace.activeMode.value === "auto"
-                    ? "处理中…"
-                    : "执行中…"
+                  ? elapsedSeconds > 0
+                    ? `处理中 ${elapsedSeconds}s`
+                    : workspace.activeMode.value === "auto"
+                      ? "处理中…"
+                      : "执行中…"
                   : "发送"
             }}
           </button>
