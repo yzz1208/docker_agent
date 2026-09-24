@@ -4,6 +4,7 @@ from docker_agent.config import Settings
 from docker_agent.graph.service import (
     LangGraphAgentTurnResult,
     LangGraphDockerSupportAgent,
+    ProductConversationTurnResult,
 )
 from docker_agent.rag.context import RagContext
 from docker_agent.tools.docker_cli import DockerToolResult
@@ -242,3 +243,63 @@ def test_detailed_graph_turn_remains_chat_response_compatible() -> None:
     ]
     assert response.execution.worker_trace[0].tool_results_added == 1
     assert response.execution.worker_trace[1].answer_created is True
+
+
+
+def test_product_conversation_fast_path_skips_models_and_tools() -> None:
+    router = SequenceModel([])
+    planner = SequenceModel([])
+    answer = SequenceModel([])
+    tools = FakeDockerTools()
+
+    agent = LangGraphDockerSupportAgent(
+        settings=Settings(),
+        router_model=router,
+        planner_model=planner,
+        answer_model=answer,
+        docker_tools=tools,  # type: ignore[arg-type]
+        docs_retriever=lambda _question: (_ for _ in ()).throw(
+            AssertionError("unexpected docs retrieval")
+        ),
+    )
+
+    result = agent.handle("简单介绍自己")
+
+    assert isinstance(result, ProductConversationTurnResult)
+    assert result.needs_clarification is False
+    assert result.decision.route == "chat"
+    assert result.supervisor_plan.workers == ()
+    assert "Docker 支持专家" in result.answer.answer
+    assert router.user_prompts == []
+    assert planner.user_prompts == []
+    assert answer.user_prompts == []
+    assert tools.calls == []
+
+
+def test_product_greeting_remains_chat_response_compatible() -> None:
+    agent = LangGraphDockerSupportAgent(
+        settings=Settings(),
+        router_model=SequenceModel([]),
+        planner_model=SequenceModel([]),
+        answer_model=SequenceModel([]),
+        docker_tools=FakeDockerTools(),  # type: ignore[arg-type]
+        docs_retriever=lambda _question: (_ for _ in ()).throw(
+            AssertionError("unexpected docs retrieval")
+        ),
+    )
+
+    result = agent.handle("你好")
+    response = build_chat_response(
+        "session-fast",
+        False,
+        result,
+    )
+
+    assert response.route == "chat"
+    assert response.answer is not None
+    assert "Docker 支持专家" in response.answer
+    assert response.doc_sources == []
+    assert response.runtime_sources == []
+    assert response.execution is not None
+    assert response.execution.planned_workers == []
+    assert response.execution.completed_workers == []
