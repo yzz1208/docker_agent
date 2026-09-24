@@ -5,12 +5,12 @@ import { RouterLink } from "vue-router";
 <template>
   <section class="not-found panel">
     <p class="section-label">404</p>
-    <h2>Page not found</h2>
+    <h2>页面不存在</h2>
     <p>
-      This route is not part of the Docker Support Agent product shell.
+      这个地址不属于当前支持平台，可能是链接已失效或页面已经移动。
     </p>
     <RouterLink class="button button--primary" to="/">
-      Return to chat
+      返回聊天
     </RouterLink>
   </section>
 </template>
