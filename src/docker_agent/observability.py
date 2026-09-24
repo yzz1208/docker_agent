@@ -10,6 +10,7 @@ from contextvars import ContextVar, Token
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from threading import Lock
+from time import perf_counter
 from uuid import uuid4
 
 _REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
@@ -44,6 +45,38 @@ _RUN_DURATION_BUCKETS = (
     10.0,
     30.0,
     60.0,
+)
+_STAGE_DURATION_BUCKETS = (
+    0.01,
+    0.025,
+    0.05,
+    0.1,
+    0.25,
+    0.5,
+    1.0,
+    2.5,
+    5.0,
+    10.0,
+    30.0,
+    60.0,
+    120.0,
+)
+_LATENCY_STAGES = frozenset(
+    {
+        "decision",
+        "rag_database",
+        "embedding",
+        "dense_retrieval",
+        "keyword_retrieval",
+        "fusion",
+        "rerank",
+        "context_build",
+        "runtime",
+        "answer",
+        "synthesis",
+        "embedding_model_warmup",
+        "reranker_model_warmup",
+    }
 )
 
 
@@ -96,6 +129,8 @@ class JsonLogFormatter(logging.Formatter):
             "agent_route",
             "error_type",
             "worker_count",
+            "stage",
+            "stage_duration_ms",
         ):
             value = getattr(record, field_name, None)
             if value is not None:
@@ -204,6 +239,11 @@ class MetricsRegistry:
             self._run_duration_count = 0
             self._run_duration_sum = 0.0
             self._run_duration_buckets: Counter[float] = Counter()
+            self._stage_duration_count: Counter[str] = Counter()
+            self._stage_duration_sum: Counter[str] = Counter()
+            self._stage_duration_buckets: Counter[
+                tuple[str, float]
+            ] = Counter()
 
     def record_http_request(
         self,
@@ -245,6 +285,27 @@ class MetricsRegistry:
                 if duration_seconds <= bucket:
                     self._run_duration_buckets[bucket] += 1
 
+    def record_stage_duration(
+        self,
+        *,
+        stage: str,
+        duration_ms: int,
+    ) -> None:
+        """Record one bounded internal latency stage."""
+
+        if stage not in _LATENCY_STAGES:
+            raise ValueError(f"unsupported latency stage: {stage}")
+        if duration_ms < 0:
+            raise ValueError("duration_ms must not be negative")
+
+        duration_seconds = duration_ms / 1000
+        with self._lock:
+            self._stage_duration_count[stage] += 1
+            self._stage_duration_sum[stage] += duration_seconds
+            for bucket in _STAGE_DURATION_BUCKETS:
+                if duration_seconds <= bucket:
+                    self._stage_duration_buckets[(stage, bucket)] += 1
+
     def render_prometheus(self) -> str:
         with self._lock:
             http_requests = self._http_requests.copy()
@@ -255,6 +316,9 @@ class MetricsRegistry:
             duration_count = self._run_duration_count
             duration_sum = self._run_duration_sum
             duration_buckets = self._run_duration_buckets.copy()
+            stage_duration_count = self._stage_duration_count.copy()
+            stage_duration_sum = self._stage_duration_sum.copy()
+            stage_duration_buckets = self._stage_duration_buckets.copy()
 
         lines = [
             (
@@ -348,6 +412,39 @@ class MetricsRegistry:
             f"docker_agent_run_duration_seconds_count {duration_count}"
         )
 
+        lines.extend(
+            [
+                (
+                    "# HELP docker_agent_stage_duration_seconds "
+                    "Internal Agent stage duration by bounded stage name."
+                ),
+                "# TYPE docker_agent_stage_duration_seconds histogram",
+            ]
+        )
+        for stage in sorted(stage_duration_count):
+            escaped_stage = _escape_label(stage)
+            for bucket in _STAGE_DURATION_BUCKETS:
+                lines.append(
+                    "docker_agent_stage_duration_seconds_bucket"
+                    f'{{stage="{escaped_stage}",le="{bucket:g}"}} '
+                    f"{stage_duration_buckets[(stage, bucket)]}"
+                )
+            lines.append(
+                "docker_agent_stage_duration_seconds_bucket"
+                f'{{stage="{escaped_stage}",le="+Inf"}} '
+                f"{stage_duration_count[stage]}"
+            )
+            lines.append(
+                "docker_agent_stage_duration_seconds_sum"
+                f'{{stage="{escaped_stage}"}} '
+                f"{stage_duration_sum[stage]:.6f}"
+            )
+            lines.append(
+                "docker_agent_stage_duration_seconds_count"
+                f'{{stage="{escaped_stage}"}} '
+                f"{stage_duration_count[stage]}"
+            )
+
         return "\n".join(lines) + "\n"
 
 
@@ -370,6 +467,31 @@ def _escape_label(value: str) -> str:
         .replace("\n", "\\n")
         .replace('"', '\\"')
     )
+
+
+@contextmanager
+def stage_timer(stage: str) -> Iterator[None]:
+    """Measure one bounded latency stage and emit metrics plus structured logs."""
+
+    if stage not in _LATENCY_STAGES:
+        raise ValueError(f"unsupported latency stage: {stage}")
+
+    started = perf_counter()
+    try:
+        yield
+    finally:
+        duration_ms = max(0, round((perf_counter() - started) * 1000))
+        metrics.record_stage_duration(
+            stage=stage,
+            duration_ms=duration_ms,
+        )
+        logging.getLogger("docker_agent.performance").info(
+            "Agent stage completed",
+            extra={
+                "stage": stage,
+                "stage_duration_ms": duration_ms,
+            },
+        )
 
 
 metrics = MetricsRegistry()
