@@ -1346,16 +1346,18 @@ def auto_chat_stream(
 
     def run_turn() -> None:
         try:
-            with correlation_context(
-                request_id=correlation.request_id,
-                run_id=correlation.run_id,
-                conversation_id=correlation.conversation_id,
+            with (
+                correlation_context(
+                    request_id=correlation.request_id,
+                    run_id=correlation.run_id,
+                    conversation_id=correlation.conversation_id,
+                ),
+                stage_event_context(emit_stage),
             ):
-                with stage_event_context(emit_stage):
-                    turn = get_auto_orchestration_service().chat(
-                        message=request.message,
-                        conversation_id=request.conversation_id,
-                    )
+                turn = get_auto_orchestration_service().chat(
+                    message=request.message,
+                    conversation_id=request.conversation_id,
+                )
             response = build_auto_chat_response(turn)
             event_queue.put(
                 (
