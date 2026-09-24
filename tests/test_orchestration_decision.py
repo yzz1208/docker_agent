@@ -249,7 +249,7 @@ def test_decision_rejects_target_without_requested_capability() -> None:
         OrchestrationDecisionError,
         match="does not expose capability",
     ):
-        orchestrator.decide("检查 web-1 当前运行状态")
+        orchestrator.decide("检查 web-1 是否存在资源配置问题")
 
 
 def test_decision_rejects_unknown_target_agent() -> None:
