@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from "vue-router";
 
 import ChatView from "./views/ChatView.vue";
+import GuideView from "./views/GuideView.vue";
 import NotFoundView from "./views/NotFoundView.vue";
 import OperationsView from "./views/OperationsView.vue";
 import SettingsView from "./views/SettingsView.vue";
@@ -12,6 +13,11 @@ const router = createRouter({
       path: "/",
       name: "chat",
       component: ChatView,
+    },
+    {
+      path: "/guide",
+      name: "guide",
+      component: GuideView,
     },
     {
       path: "/operations",
