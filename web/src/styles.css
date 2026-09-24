@@ -2658,3 +2658,72 @@ a {
     grid-template-columns: 1fr;
   }
 }
+
+
+/* Structured chat message content */
+.message-content {
+  color: inherit;
+  font: inherit;
+}
+
+.message-content__paragraph {
+  margin: 0 0 12px;
+  line-height: 1.75;
+  white-space: normal;
+}
+
+.message-content__paragraph:last-child,
+.message-content__list:last-child,
+.message-content__code:last-child,
+.message-content__heading:last-child {
+  margin-bottom: 0;
+}
+
+.message-content__heading {
+  margin: 14px 0 8px;
+  color: #243349;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.message-content__list {
+  margin: 8px 0 14px;
+  padding-left: 22px;
+  display: grid;
+  gap: 7px;
+  line-height: 1.7;
+}
+
+.message-content__list li::marker {
+  color: #2d9dbc;
+}
+
+.message-content__code {
+  margin: 10px 0 14px;
+  padding: 12px 14px;
+  overflow-x: auto;
+  border: 1px solid #dce5eb;
+  border-radius: 10px;
+  background: #f7fafc;
+  color: #334155;
+  font-size: 11px;
+  line-height: 1.65;
+  white-space: pre;
+}
+
+.message-content strong {
+  color: #26364a;
+  font-weight: 750;
+}
+
+.message--user .message-content strong {
+  color: inherit;
+}
+
+.operations-auto-refresh {
+  align-self: flex-end;
+  padding-bottom: 9px;
+  color: #8b98aa;
+  font-size: 10px;
+  white-space: nowrap;
+}
