@@ -4,6 +4,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from threading import Lock
 
+from sqlalchemy.engine import Engine
+
 from docker_agent.agent.answer import AgentAnswer, generate_agent_answer
 from docker_agent.agent.evidence import RuntimeEvidenceContext, build_runtime_evidence
 from docker_agent.agent.router import AgentRouteDecision, route_question
@@ -23,8 +25,6 @@ from docker_agent.rag.store import (
     search_keyword_chunks,
     search_similar_chunks,
 )
-from sqlalchemy.engine import Engine
-
 from docker_agent.tools.docker_cli import (
     DockerReadOnlyTools,
     build_docker_tools,
