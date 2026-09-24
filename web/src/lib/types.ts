@@ -97,6 +97,13 @@ export type AutoChatResponse = {
   approval_request: AutoApprovalRequest | null;
 };
 
+
+export type AutoChatProgressEvent = {
+  stage: string;
+  status: "started" | "completed";
+  duration_ms: number | null;
+};
+
 export type ConversationSummary = {
   id: string;
   agent_type: string;
