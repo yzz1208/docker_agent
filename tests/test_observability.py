@@ -140,6 +140,7 @@ def test_metrics_registry_renders_bounded_prometheus_metrics() -> None:
         stage="rerank",
         duration_ms=900,
     )
+    registry.record_ttft(duration_ms=640)
 
     output = registry.render_prometheus()
 
@@ -170,5 +171,13 @@ def test_metrics_registry_renders_bounded_prometheus_metrics() -> None:
     )
     assert (
         'docker_agent_stage_duration_seconds_count{stage="rerank"} 1'
+        in output
+    )
+    assert (
+        "docker_agent_time_to_first_token_seconds_count 1"
+        in output
+    )
+    assert (
+        "docker_agent_time_to_first_token_seconds_sum 0.640000"
         in output
     )
