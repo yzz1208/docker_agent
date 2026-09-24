@@ -109,6 +109,7 @@ from docker_agent.observability import (
     correlation_context,
     current_correlation,
     metrics,
+    public_text_context,
     resolve_request_id,
     stage_event_context,
 )
@@ -1331,6 +1332,8 @@ def auto_chat_stream(
         )
     )
     correlation = current_correlation()
+    request_started = perf_counter()
+    first_public_delta = True
 
     def emit_stage(event: StageEvent) -> None:
         event_queue.put(
@@ -1344,6 +1347,26 @@ def auto_chat_stream(
             )
         )
 
+    def emit_public_text(delta: str) -> None:
+        nonlocal first_public_delta
+        if first_public_delta:
+            first_public_delta = False
+            ttft_ms = max(
+                0,
+                round((perf_counter() - request_started) * 1000),
+            )
+            metrics.record_ttft(duration_ms=ttft_ms)
+            logger.info(
+                "First public answer token emitted",
+                extra={"duration_ms": ttft_ms},
+            )
+        event_queue.put(
+            (
+                "delta",
+                {"text": delta},
+            )
+        )
+
     def run_turn() -> None:
         try:
             with (
@@ -1353,6 +1376,7 @@ def auto_chat_stream(
                     conversation_id=correlation.conversation_id,
                 ),
                 stage_event_context(emit_stage),
+                public_text_context(emit_public_text),
             ):
                 turn = get_auto_orchestration_service().chat(
                     message=request.message,
