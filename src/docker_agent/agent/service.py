@@ -100,7 +100,13 @@ class DockerSupportAgent:
         if not question:
             raise ValueError("question must not be empty")
 
+        fast_turn = _fast_conversation_turn(question)
+        if fast_turn is not None:
+            return fast_turn
+
         decision = route_question(question, self.router_model)
+        if decision.route == "chat":
+            return _conversation_turn(question, decision)
         if decision.route == "clarify":
             return AgentTurnResult(decision=decision, answer=None)
 
@@ -183,6 +189,96 @@ class DockerSupportAgent:
                 max_sources=self.settings.rerank_top_k,
                 max_chars=self.settings.rag_context_max_chars,
             )
+
+def _fast_conversation_turn(
+    question: str,
+) -> AgentTurnResult | None:
+    normalized = question.strip()
+    lowered = normalized.lower().strip(" .!?！？。")
+    greeting_inputs = {
+        "hi",
+        "hello",
+        "hey",
+        "你好",
+        "您好",
+        "嗨",
+    }
+    intro_inputs = {
+        "你是谁",
+        "介绍一下你自己",
+        "介绍一下自己",
+        "简单介绍自己",
+        "你能做什么",
+        "你可以做什么",
+        "who are you",
+        "what can you do",
+        "introduce yourself",
+    }
+    help_inputs = {
+        "帮助",
+        "使用方法",
+        "怎么使用",
+        "如何使用",
+        "help",
+        "how to use",
+    }
+
+    if lowered in greeting_inputs:
+        text = (
+            "你好，我是 Docker 支持专家。你可以直接描述 Docker 文档、"
+            "镜像/容器、Compose、运行状态或日志相关问题；如果问题涉及"
+            "服务级故障，建议使用“智能编排”模式让平台自动选择专家。"
+        )
+    elif lowered in intro_inputs:
+        text = (
+            "我是 Docker 支持专家，主要负责 Docker 文档问答、配置与使用说明，"
+            "以及安全的只读运行时诊断。对于当前容器状态、日志、资源占用等问题，"
+            "我会在信息充分时使用只读工具；跨服务或基础设施问题可以交给平台的"
+            "“智能编排”模式继续处理。"
+        )
+    elif lowered in help_inputs:
+        text = (
+            "使用时直接描述现象即可。建议包含容器或服务名称、错误信息、发生时间"
+            "和你已经确认的事实。普通 Docker 问题可以直接问我；不确定该找哪个"
+            "专家时，使用“智能编排”模式。页面顶部的“使用指南”还有完整说明。"
+        )
+    else:
+        return None
+
+    decision = AgentRouteDecision(
+        route="chat",
+        reason="轻量会话无需文档检索或运行时工具。",
+        container_ref=None,
+        tools=(),
+        clarification=None,
+        use_docs=False,
+    )
+    return _conversation_turn(normalized, decision, answer_text=text)
+
+
+def _conversation_turn(
+    question: str,
+    decision: AgentRouteDecision,
+    *,
+    answer_text: str | None = None,
+) -> AgentTurnResult:
+    text = answer_text or (
+        "我是 Docker 支持专家，可以帮助你处理 Docker 使用、文档说明和"
+        "只读运行时诊断。请直接描述你想解决的问题。"
+    )
+    answer = AgentAnswer(
+        answer=text,
+        doc_sources=(),
+        cited_doc_sources=(),
+        doc_citation_indices=(),
+        runtime_sources=(),
+        cited_runtime_sources=(),
+        runtime_citation_indices=(),
+        docs_context_truncated=False,
+        runtime_context_truncated=False,
+    )
+    return AgentTurnResult(decision=decision, answer=answer)
+
 
     @staticmethod
     def _validate_required_citations(
