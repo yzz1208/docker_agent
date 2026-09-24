@@ -50,7 +50,7 @@ function formatDate(value: string | null): string {
   }).format(new Date(value));
 }
 
-function format耗时(value: number | null): string {
+function formatDuration(value: number | null): string {
   if (value === null) {
     return "—";
   }
@@ -232,7 +232,7 @@ onMounted(dashboard.initialize);
           <span>P50 延迟</span>
           <strong>
             {{
-              format耗时(
+              formatDuration(
                 dashboard.summary.value?.duration_p50_ms ?? null,
               )
             }}
@@ -244,7 +244,7 @@ onMounted(dashboard.initialize);
           <span>P95 延迟</span>
           <strong>
             {{
-              format耗时(
+              formatDuration(
                 dashboard.summary.value?.duration_p95_ms ?? null,
               )
             }}
@@ -386,9 +386,9 @@ onMounted(dashboard.initialize);
               </small>
             </span>
             <span class="status-pill" :data-status="run.status">
-              {{ statusLabel(run.status) }}
+              {{ statusLabel(run.status) }}}
             </span>
-            <span>{{ format耗时(run.duration_ms) }}</span>
+            <span>{{ formatDuration(run.duration_ms) }}</span>
             <span>{{ formatDate(run.started_at) }}</span>
           </button>
         </div>
@@ -435,9 +435,9 @@ onMounted(dashboard.initialize);
                 </small>
               </span>
               <span class="status-pill" :data-status="run.status">
-                {{ statusLabel(run.status) }}
+                {{ statusLabel(run.status) }}}
               </span>
-              <span>{{ format耗时(run.duration_ms) }}</span>
+              <span>{{ formatDuration(run.duration_ms) }}</span>
               <span>{{ formatDate(run.started_at) }}</span>
             </button>
           </div>
@@ -479,7 +479,7 @@ onMounted(dashboard.initialize);
                     class="status-pill"
                     :data-status="activeRun.status"
                   >
-                    {{ statusLabel(activeRun.status) }
+                    {{ statusLabel(activeRun.status) }}
                   </span>
                 </dd>
               </div>
@@ -502,7 +502,7 @@ onMounted(dashboard.initialize);
               <div>
                 <dt>耗时</dt>
                 <dd>
-                  {{ format耗时(activeRun.duration_ms) }}
+                  {{ formatDuration(activeRun.duration_ms) }}
                 </dd>
               </div>
               <div>
@@ -585,7 +585,7 @@ onMounted(dashboard.initialize);
                   </small>
                 </span>
                 <span class="status-pill" :data-status="evaluation.status">
-                  {{ statusLabel(evaluation.status) }
+                  {{ statusLabel(evaluation.status) }}
                 </span>
                 <span>
                   {{ evaluation.passed_count }}/{{ evaluation.case_count }}
@@ -597,7 +597,7 @@ onMounted(dashboard.initialize);
               <div class="evaluation-card__actions">
                 <button
                   type="button"
-                  @click="dashboard.useAs设为基线(evaluation.id)"
+                  @click="dashboard.useAsBaseline(evaluation.id)"
                 >
                   设为基线
                 </button>
@@ -756,7 +756,7 @@ onMounted(dashboard.initialize);
                 class="verdict-badge"
                 :data-verdict="comparison.verdict"
               >
-                {{ comparison.verdict === "pass" ? "通过" : comparison.verdict === "regression" ? "存在回归" : "不完整" }}
+                {{ comparison.verdict === "pass" ? "通过" : comparison.verdict === "regression" ? "存在回归" : "不完整" }}}
               </strong>
             </div>
             <div>
