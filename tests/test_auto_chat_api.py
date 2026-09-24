@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from fastapi.testclient import TestClient
 
 from docker_agent.main import app
+from docker_agent.observability import stage_timer
 from docker_agent.orchestration import (
     AutoOrchestrationTurn,
     AutoTraceStep,
@@ -105,6 +106,59 @@ def _turn() -> AutoOrchestrationTurn:
         specialist_results=(specialist,),
         synthesized=True,
     )
+
+
+def test_auto_chat_stream_emits_real_progress_and_final_result(
+    monkeypatch,
+) -> None:
+    class ProgressAutoService(FakeAutoService):
+        def chat(
+            self,
+            *,
+            message: str,
+            conversation_id: str | None = None,
+        ) -> AutoOrchestrationTurn:
+            with stage_timer("orchestration_decision"):
+                pass
+            with stage_timer("answer"):
+                pass
+            return super().chat(
+                message=message,
+                conversation_id=conversation_id,
+            )
+
+    service = ProgressAutoService(_turn())
+    monkeypatch.setattr(
+        "docker_agent.main.get_auto_orchestration_service",
+        lambda: service,
+    )
+    client = TestClient(app)
+
+    response = client.post(
+        "/chat/auto/stream",
+        json={
+            "message": "继续排查 checkout-api",
+            "conversation_id": "auto-conversation",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith(
+        "text/event-stream"
+    )
+    body = response.text
+    assert "event: progress" in body
+    assert '"stage":"request","status":"started"' in body
+    assert (
+        '"stage":"orchestration_decision","status":"started"'
+        in body
+    )
+    assert '"stage":"answer","status":"completed"' in body
+    assert "event: result" in body
+    assert '"conversation_id":"auto-conversation"' in body
+    assert service.calls == [
+        ("继续排查 checkout-api", "auto-conversation")
+    ]
 
 
 def test_auto_chat_endpoint_returns_trace_and_owner(monkeypatch) -> None:
