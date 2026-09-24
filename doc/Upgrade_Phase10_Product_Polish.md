@@ -23,11 +23,11 @@ Phase 10 treats those findings as first-class engineering work rather than cosme
 
 ~~~text
 Step 1  Core interaction recovery + Chinese localization + fast chat path   ✅ implemented
-Step 2  Latency profiling + RAG warmup/caching + progress feedback          🚧 in progress
-Step 3  Chat reading/interaction polish + sources + execution detail         ⏳
-Step 4  Operations / Settings UX refinement                                  ⏳
-Step 5  Intelligence / routing / follow-up quality evaluation                ⏳
-Step 6  Product regression gate + Phase 9/10 closeout                        ⏳
+Step 2  Latency profiling + RAG warmup + SSE progress + token streaming      ✅ implemented
+Step 3  Chat reading/interaction polish + sources + execution detail         ✅ implemented
+Step 4  Operations / Settings UX refinement                                  ✅ implemented
+Step 5  Intelligence / routing / follow-up quality evaluation                ✅ implemented
+Step 6  Product regression gate + Phase 9/10 closeout                        🚧 final gate
 ~~~
 
 ## Step 1 — Core interaction recovery
@@ -234,21 +234,153 @@ of starting a competing load.
 Warmup duration is also included in the stage metrics using
 `embedding_model_warmup` and `reranker_model_warmup`.
 
-### Remaining Step 2 work
+### 2C. Backend-driven progress, token streaming and TTFT
 
-The next Step 2 slice should use these measurements to tune the largest real bottleneck, then add
-true workflow progress delivery to the chat UI. Progress must be driven by backend execution events
-rather than guessed timers. Token streaming/TTFT measurement should be added with that transport so
-the UI can distinguish:
+The default intelligent-orchestration path now uses:
 
 ~~~text
-正在判断问题
-正在检索文档
-正在重排序
-正在运行诊断
-正在生成回答
-正在综合结果
+POST /chat/auto/stream
 ~~~
 
-Step 2 is not considered complete until the progress transport and measured latency regression gate
-are implemented.
+The stream emits real backend execution events rather than frontend timers. Supported product
+states include orchestration decision, Agent decision, knowledge retrieval, reranking, runtime
+diagnostics, answer generation and cross-Agent synthesis.
+
+Only public answer text is allowed into the token stream. Internal decision JSON, tool payloads,
+evidence bundles and hidden orchestration state remain outside the public delta channel.
+
+The OpenAI-compatible model client uses `stream=true` when a public stream is active. The backend
+records request-to-first-public-token latency as:
+
+~~~text
+docker_agent_time_to_first_token_seconds
+~~~
+
+The frontend renders deltas immediately and replaces them with the final persisted answer after the
+turn completes. The original non-streaming `POST /chat/auto` contract remains available for
+compatibility.
+
+### 2D. Product-visible performance telemetry
+
+Operations now reads a bounded in-process performance snapshot from:
+
+~~~text
+GET /operations/performance
+~~~
+
+The overview shows:
+
+- average TTFT;
+- TTFT P95 histogram upper bound;
+- slowest execution stages;
+- stage sample count;
+- average, P50 and P95-upper-bound stage latency.
+
+This complements the persistent Agent-run P50/P95 metrics and raw Prometheus endpoint. The snapshot
+is intentionally process-local and resets when the backend process restarts.
+
+## Step 3 — Chat reading, sources and execution detail
+
+Step 3 makes the chat usable as an inspectable technical-support product rather than a plain text
+box.
+
+Implemented:
+
+- assistant answer token streaming;
+- Markdown/code-friendly answer rendering;
+- cited Docker documentation sources alongside completed answers;
+- cited runtime-tool sources alongside completed answers;
+- source metadata persisted into execution traces so reopening history keeps traceability;
+- source metadata carried through specialist result envelopes in intelligent orchestration;
+- expandable Worker execution detail instead of exposing all engineering metadata by default;
+- optimistic completed answers are replaced by the persisted conversation without flicker;
+- approval-pending turns remain visually distinct from completed turns.
+
+The default view keeps the answer primary. Detailed execution metadata remains progressively
+disclosed for debugging and technical inspection.
+
+## Step 4 — Operations and Settings refinement
+
+Operations is now organized around three product tasks:
+
+~~~text
+Overview
+Runs
+Evaluations
+~~~
+
+The overview includes success/failure state, run latency, TTFT, live stage performance and recent
+activity. Run detail exposes route, workers, duration and bounded error information. Evaluation
+history supports persisted baseline/candidate comparison.
+
+Settings now:
+
+- separates editable Agent configuration from environment-managed infrastructure values;
+- shows whether each effective value came from a persisted override, environment value or default;
+- hides secure values while still indicating whether they are configured;
+- describes Agent capabilities, toolsets and worker roles;
+- keeps unsafe infrastructure and secret fields read-only;
+- validates editable ranges before persistence.
+
+## Step 5 — Intelligence and follow-up quality
+
+The orchestration evaluation dataset now explicitly covers product behaviors discovered during real
+usage:
+
+- greetings use the deterministic chat fast path;
+- platform introduction/help does not enter RAG;
+- broad but answerable Docker questions should select a useful specialist instead of clarifying;
+- Docker runtime follow-ups keep the current Docker specialist;
+- infrastructure incident follow-ups keep the infrastructure specialist;
+- cross-Agent delegation still requires the capability/policy checks;
+- synthesis preserves uncertainty and specialist provenance.
+
+The GitHub Evaluation Regression Gate now supports the `orchestration` suite in addition to the
+existing router/workflow suites.
+
+A live model gate still requires the repository's evaluation model/database secrets and a persisted
+baseline run. Code-level coverage is part of normal CI; live-model quality should be run before the
+Phase 10 branch is merged into the release line.
+
+## Step 6 — Final regression gate and closeout
+
+Normal CI is the required code gate:
+
+~~~powershell
+uv run ruff check .
+uv run pytest -v
+
+cd web
+npm run typecheck
+npm test
+npm run build
+cd ..
+~~~
+
+Production configuration remains part of GitHub CI through Compose validation.
+
+For a real local product gate, run the backend/Web stack and verify:
+
+1. a greeting answers without loading RAG;
+2. a documentation question shows real progress and begins rendering text before completion;
+3. cited documentation sources are visible and survive history reopen;
+4. a runtime question shows runtime evidence without exposing raw unsafe internals;
+5. a same-specialist follow-up continues naturally;
+6. a cross-specialist handoff pauses for approval and resumes from the durable checkpoint;
+7. the composer unlocks after completed turns;
+8. Operations shows TTFT/stage data after streamed turns;
+9. Settings clearly distinguishes overrides from inherited/environment values;
+10. conversation rename/delete/history continue to work after streamed turns.
+
+Live orchestration quality gate:
+
+~~~powershell
+uv run python scripts/eval_orchestration.py --repeats 3 --persist
+~~~
+
+Then compare that persisted candidate to the accepted baseline through Operations or
+`scripts/compare_evaluations.py`.
+
+Phase 10 is considered code-complete after normal CI is green. The final local product gate remains
+the place to discover environment-specific latency, model-provider behavior, proxy buffering,
+Docker Desktop behavior and other issues that cannot be proven by repository unit tests alone.
