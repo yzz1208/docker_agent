@@ -203,6 +203,7 @@ export async function sendAutoChatStream(
     conversationId?: string | null;
   },
   onProgress?: (event: AutoChatProgressEvent) => void,
+  onDelta?: (delta: string) => void,
 ): Promise<AutoChatResponse> {
   const response = await fetch("/chat/auto/stream", {
     method: "POST",
@@ -256,6 +257,13 @@ export async function sendAutoChatStream(
                 ? payload.duration_ms
                 : null,
           });
+        }
+      } else if (parsed?.event === "delta") {
+        const payload = parsed.data as {
+          text?: unknown;
+        };
+        if (typeof payload.text === "string" && payload.text) {
+          onDelta?.(payload.text);
         }
       } else if (parsed?.event === "result") {
         finalResult = parsed.data as AutoChatResponse;
