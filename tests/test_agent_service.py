@@ -57,6 +57,54 @@ def _docs_context() -> RagContext:
     )
 
 
+def test_greeting_fast_path_skips_router_rag_and_runtime() -> None:
+    docs_calls: list[str] = []
+    docker_tools = FakeDockerTools()
+
+    class UnexpectedModel:
+        def complete(self, *, system_prompt: str, user_prompt: str) -> str:
+            raise AssertionError("greeting fast path must not call the model")
+
+    agent = DockerSupportAgent(
+        settings=Settings(),
+        router_model=UnexpectedModel(),
+        answer_model=UnexpectedModel(),
+        docker_tools=docker_tools,  # type: ignore[arg-type]
+        docs_retriever=lambda question: docs_calls.append(question) or _docs_context(),
+    )
+
+    result = agent.handle("你好")
+
+    assert result.decision.route == "chat"
+    assert result.answer is not None
+    assert "Docker 支持专家" in result.answer.answer
+    assert docs_calls == []
+    assert docker_tools.calls == []
+
+
+def test_self_introduction_fast_path_skips_heavy_retrieval() -> None:
+    docs_calls: list[str] = []
+
+    class UnexpectedModel:
+        def complete(self, *, system_prompt: str, user_prompt: str) -> str:
+            raise AssertionError("self introduction must not call the model")
+
+    agent = DockerSupportAgent(
+        settings=Settings(),
+        router_model=UnexpectedModel(),
+        answer_model=UnexpectedModel(),
+        docker_tools=FakeDockerTools(),  # type: ignore[arg-type]
+        docs_retriever=lambda question: docs_calls.append(question) or _docs_context(),
+    )
+
+    result = agent.handle("简单介绍自己")
+
+    assert result.decision.route == "chat"
+    assert result.answer is not None
+    assert "只读运行时诊断" in result.answer.answer
+    assert docs_calls == []
+
+
 def test_runtime_only_route_skips_docs_retrieval() -> None:
     docs_calls: list[str] = []
     docker_tools = FakeDockerTools()
