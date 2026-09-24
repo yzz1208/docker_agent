@@ -1,12 +1,15 @@
+import json
 import logging
+from collections.abc import Iterator
 from contextlib import asynccontextmanager
 from functools import lru_cache
+from queue import Empty, Queue
 from threading import Thread
 from time import perf_counter
 from typing import Annotated
 
 from fastapi import FastAPI, HTTPException, Query, Request, Response, status
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from psycopg import Error as PsycopgError
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import SQLAlchemyError
@@ -101,10 +104,13 @@ from docker_agent.evaluation_comparison import (
 )
 from docker_agent.graph.service import LangGraphDockerSupportAgent
 from docker_agent.observability import (
+    StageEvent,
     configure_structured_logging,
     correlation_context,
+    current_correlation,
     metrics,
     resolve_request_id,
+    stage_event_context,
 )
 from docker_agent.orchestration import (
     AutoOrchestrationError,
@@ -1246,6 +1252,148 @@ def _resolve_chat_agent_type(
         )
 
     return descriptor.agent_type
+
+
+def _auto_stream_error_message(error: BaseException) -> str:
+    if isinstance(error, ConversationNotFound):
+        return "对话不存在。"
+    if isinstance(error, AgentDisabledError):
+        return str(error)
+    if isinstance(
+        error,
+        (
+            AutoOrchestrationError,
+            OrchestrationDecisionError,
+            OrchestrationExecutionError,
+            OrchestrationSynthesisError,
+            AgentRegistryError,
+        ),
+    ):
+        return str(error)
+    if isinstance(error, (ModelRequestError, ModelResponseError)):
+        return "编排模型请求失败，请稍后重试。"
+    if isinstance(error, (SQLAlchemyError, PsycopgError)):
+        return "PostgreSQL 暂时不可用。"
+    if isinstance(error, ValueError):
+        return str(error)
+    return "智能编排执行失败，请稍后重试。"
+
+
+def _encode_sse_event(
+    event_name: str,
+    payload: dict[str, object],
+) -> str:
+    encoded = json.dumps(
+        payload,
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+    return f"event: {event_name}\ndata: {encoded}\n\n"
+
+
+def _auto_stream_events(
+    event_queue: Queue[tuple[str, dict[str, object]] | None],
+) -> Iterator[str]:
+    while True:
+        try:
+            item = event_queue.get(timeout=15)
+        except Empty:
+            yield ": keep-alive\n\n"
+            continue
+
+        if item is None:
+            return
+        event_name, payload = item
+        yield _encode_sse_event(event_name, payload)
+
+
+@app.post(
+    "/chat/auto/stream",
+    response_class=StreamingResponse,
+    tags=["agent"],
+)
+def auto_chat_stream(
+    request: AutoChatRequest,
+) -> StreamingResponse:
+    """Stream real execution progress followed by one final auto-chat result."""
+
+    event_queue: Queue[
+        tuple[str, dict[str, object]] | None
+    ] = Queue()
+    event_queue.put(
+        (
+            "progress",
+            {
+                "stage": "request",
+                "status": "started",
+                "duration_ms": None,
+            },
+        )
+    )
+    correlation = current_correlation()
+
+    def emit_stage(event: StageEvent) -> None:
+        event_queue.put(
+            (
+                "progress",
+                {
+                    "stage": event.stage,
+                    "status": event.status,
+                    "duration_ms": event.duration_ms,
+                },
+            )
+        )
+
+    def run_turn() -> None:
+        try:
+            with correlation_context(
+                request_id=correlation.request_id,
+                run_id=correlation.run_id,
+                conversation_id=correlation.conversation_id,
+            ):
+                with stage_event_context(emit_stage):
+                    turn = get_auto_orchestration_service().chat(
+                        message=request.message,
+                        conversation_id=request.conversation_id,
+                    )
+            response = build_auto_chat_response(turn)
+            event_queue.put(
+                (
+                    "result",
+                    response.model_dump(mode="json"),
+                )
+            )
+        except Exception as exc:
+            logger.exception(
+                "Auto chat stream failed",
+                extra={"error_type": type(exc).__name__},
+            )
+            event_queue.put(
+                (
+                    "error",
+                    {
+                        "message": _auto_stream_error_message(exc),
+                        "error_type": type(exc).__name__,
+                    },
+                )
+            )
+        finally:
+            event_queue.put(None)
+
+    Thread(
+        target=run_turn,
+        name="docker-agent-auto-stream",
+        daemon=True,
+    ).start()
+
+    return StreamingResponse(
+        _auto_stream_events(event_queue),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @app.post(
