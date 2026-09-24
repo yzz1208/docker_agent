@@ -341,9 +341,9 @@ onBeforeUnmount(() => {
           <strong>正在智能编排</strong>
           <p>
             {{
-              elapsedSeconds > 8
-                ? `已处理 ${elapsedSeconds} 秒。首次文档检索可能需要加载本地模型，后续请求会明显更快。`
-                : "快速判断问题类型并交给最合适的专家处理。"
+              elapsedSeconds > 0
+                ? `${workspace.autoProgressText.value} · 已处理 ${elapsedSeconds}s`
+                : workspace.autoProgressText.value
             }}
           </p>
         </div>
@@ -505,9 +505,13 @@ onBeforeUnmount(() => {
               <span /><span /><span />
               <strong>
                 {{
-                  elapsedSeconds > 0
-                    ? `正在处理 · ${elapsedSeconds}s`
-                    : "正在处理"
+                  workspace.activeMode.value === "auto"
+                    ? elapsedSeconds > 0
+                      ? `${workspace.autoProgressText.value} · ${elapsedSeconds}s`
+                      : workspace.autoProgressText.value
+                    : elapsedSeconds > 0
+                      ? `正在处理 · ${elapsedSeconds}s`
+                      : "正在处理"
                 }}
               </strong>
             </div>
@@ -531,9 +535,13 @@ onBeforeUnmount(() => {
               <span /><span /><span />
               <strong>
                 {{
-                  elapsedSeconds > 0
-                    ? `正在处理 · ${elapsedSeconds}s`
-                    : "正在处理"
+                  workspace.activeMode.value === "auto"
+                    ? elapsedSeconds > 0
+                      ? `${workspace.autoProgressText.value} · ${elapsedSeconds}s`
+                      : workspace.autoProgressText.value
+                    : elapsedSeconds > 0
+                      ? `正在处理 · ${elapsedSeconds}s`
+                      : "正在处理"
                 }}
               </strong>
             </div>
