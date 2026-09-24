@@ -62,6 +62,8 @@ export type AutoSpecialistResult = {
   needs_clarification: boolean;
   clarification: string | null;
   summary: string | null;
+  doc_sources: DocSource[];
+  runtime_sources: RuntimeSource[];
 };
 
 export type AutoApprovalRequest = {
