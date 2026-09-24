@@ -95,7 +95,7 @@ watch(
 
 watch(
   () => [
-    workspace.detail.value?.messages.length ?? 0,
+    workspace.displayMessages.value.length,
     workspace.sending.value,
     workspace.approving.value,
     Boolean(workspace.pendingApproval.value),
@@ -127,7 +127,10 @@ onBeforeUnmount(() => {
         </div>
         <button
           class="button button--primary"
-          :disabled="workspace.sending.value"
+          :disabled="
+            workspace.sending.value ||
+            workspace.approving.value
+          "
           @click="workspace.startNewConversation"
         >
           新建
@@ -157,7 +160,10 @@ onBeforeUnmount(() => {
             'conversation-item--active':
               conversation.id === workspace.activeConversationId.value,
           }"
-          :disabled="workspace.sending.value"
+          :disabled="
+            workspace.sending.value ||
+            workspace.approving.value
+          "
           @click="workspace.openConversation(conversation.id)"
         >
           <strong>{{ conversation.title || "未命名对话" }}</strong>
