@@ -159,12 +159,29 @@ class DockerSupportAgent:
                     check_database(self._docs_engine)
                 self._docs_database_checked = True
 
-            if not self._embedder.is_loaded:
+            embedder_warmup = getattr(
+                self._embedder,
+                "warmup",
+                None,
+            )
+            if (
+                not bool(getattr(self._embedder, "is_loaded", True))
+                and callable(embedder_warmup)
+            ):
                 with stage_timer("embedding_model_warmup"):
-                    self._embedder.warmup()
-            if not self._reranker.is_loaded:
+                    embedder_warmup()
+
+            reranker_warmup = getattr(
+                self._reranker,
+                "warmup",
+                None,
+            )
+            if (
+                not bool(getattr(self._reranker, "is_loaded", True))
+                and callable(reranker_warmup)
+            ):
                 with stage_timer("reranker_model_warmup"):
-                    self._reranker.warmup()
+                    reranker_warmup()
 
     def _retrieve_docs(self, question: str) -> RagContext:
         # Embedding and reranker models are intentionally reused for the
