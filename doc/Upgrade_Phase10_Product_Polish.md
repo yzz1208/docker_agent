@@ -23,7 +23,7 @@ Phase 10 treats those findings as first-class engineering work rather than cosme
 
 ~~~text
 Step 1  Core interaction recovery + Chinese localization + fast chat path   ✅ implemented
-Step 2  Latency profiling + RAG warmup/caching + progress feedback          ⏳
+Step 2  Latency profiling + RAG warmup/caching + progress feedback          🚧 in progress
 Step 3  Chat reading/interaction polish + sources + execution detail         ⏳
 Step 4  Operations / Settings UX refinement                                  ⏳
 Step 5  Intelligence / routing / follow-up quality evaluation                ⏳
@@ -182,3 +182,71 @@ Important UX checks:
 
 After Step 1 is locally accepted, Step 2 will focus on measured latency rather than perceived
 latency: cold RAG model loading, warmup strategy, model-call budgets, and per-stage progress timing.
+
+
+## Step 2 — Latency profiling, warmup and progress feedback
+
+### 2A. Per-stage latency profiling
+
+The backend now records bounded Prometheus histograms for the expensive internal stages instead of
+only exposing whole-request latency.
+
+Current stage labels include:
+
+~~~text
+orchestration_decision
+decision
+rag_database
+embedding
+dense_retrieval
+keyword_retrieval
+fusion
+rerank
+runtime
+answer
+synthesis
+context_build
+~~~
+
+The metrics are emitted as `docker_agent_stage_duration_seconds` histograms and structured
+`Agent stage completed` logs. This makes it possible to identify whether slow requests are caused
+by orchestration, local BGE models, retrieval/database work, Docker runtime inspection, or LLM
+generation before changing model budgets or architecture.
+
+### 2B. Explicit RAG model warmup
+
+BGE-M3 and the reranker remain lazy by default, but they now expose explicit warmup state and
+warmup methods. Docker Support can preload the document database, embedding model and reranker
+before the first documentation request.
+
+A new setting controls startup behavior:
+
+~~~dotenv
+RAG_WARMUP_ON_STARTUP=false
+~~~
+
+Development and test examples keep warmup disabled so lightweight commands and tests do not
+unnecessarily load PyTorch/model weights. The production example enables warmup so cold model
+loading happens during application startup rather than inside the first real user request.
+
+Warmup duration is also included in the stage metrics using
+`embedding_model_warmup` and `reranker_model_warmup`.
+
+### Remaining Step 2 work
+
+The next Step 2 slice should use these measurements to tune the largest real bottleneck, then add
+true workflow progress delivery to the chat UI. Progress must be driven by backend execution events
+rather than guessed timers. Token streaming/TTFT measurement should be added with that transport so
+the UI can distinguish:
+
+~~~text
+正在判断问题
+正在检索文档
+正在重排序
+正在运行诊断
+正在生成回答
+正在综合结果
+~~~
+
+Step 2 is not considered complete until the progress transport and measured latency regression gate
+are implemented.
