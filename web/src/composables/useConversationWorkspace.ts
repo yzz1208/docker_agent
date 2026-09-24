@@ -20,6 +20,8 @@ import type {
   ConversationDetail,
   ConversationMessage,
   ConversationSummary,
+  DocSource,
+  RuntimeSource,
 } from "../lib/types";
 
 type ChatMode = "manual" | "auto";
@@ -542,6 +544,105 @@ export function useConversationWorkspace() {
     loadingConversation.value = false;
   }
 
+  function traceDocSources(
+    trace: Record<string, unknown>[],
+  ): DocSource[] {
+    const direct = trace
+      .filter((item) => item.kind === "doc_source")
+      .map((item) => ({
+        index: Number(item.index ?? 0),
+        title: String(item.title ?? ""),
+        section: String(item.section ?? ""),
+        source_url: String(item.source_url ?? ""),
+      }))
+      .filter(
+        (source) =>
+          source.index > 0 &&
+          Boolean(source.title) &&
+          Boolean(source.source_url),
+      );
+
+    for (const item of trace) {
+      if (item.kind !== "auto_state") continue;
+      const nested = item.result_doc_sources;
+      if (!Array.isArray(nested)) continue;
+      for (const source of nested) {
+        if (!source || typeof source !== "object") continue;
+        const value = source as Record<string, unknown>;
+        const normalized = {
+          index: Number(value.index ?? 0),
+          title: String(value.title ?? ""),
+          section: String(value.section ?? ""),
+          source_url: String(value.source_url ?? ""),
+        };
+        if (
+          normalized.index > 0 &&
+          normalized.title &&
+          normalized.source_url
+        ) {
+          direct.push(normalized);
+        }
+      }
+    }
+    return direct;
+  }
+
+  function traceRuntimeSources(
+    trace: Record<string, unknown>[],
+  ): RuntimeSource[] {
+    const direct = trace
+      .filter((item) => item.kind === "runtime_source")
+      .map((item) => ({
+        index: Number(item.index ?? 0),
+        tool: String(item.tool ?? ""),
+        command: Array.isArray(item.command)
+          ? item.command.map(String)
+          : [],
+        ok: item.ok === true,
+      }))
+      .filter(
+        (source) => source.index > 0 && Boolean(source.tool),
+      );
+
+    for (const item of trace) {
+      if (item.kind !== "auto_state") continue;
+      const nested = item.result_runtime_sources;
+      if (!Array.isArray(nested)) continue;
+      for (const source of nested) {
+        if (!source || typeof source !== "object") continue;
+        const value = source as Record<string, unknown>;
+        const normalized = {
+          index: Number(value.index ?? 0),
+          tool: String(value.tool ?? ""),
+          command: Array.isArray(value.command)
+            ? value.command.map(String)
+            : [],
+          ok: value.ok === true,
+        };
+        if (normalized.index > 0 && normalized.tool) {
+          direct.push(normalized);
+        }
+      }
+    }
+    return direct;
+  }
+
+  function messageDocSources(
+    message: ConversationMessage,
+  ): DocSource[] {
+    return traceDocSources(
+      message.execution?.worker_trace ?? [],
+    );
+  }
+
+  function messageRuntimeSources(
+    message: ConversationMessage,
+  ): RuntimeSource[] {
+    return traceRuntimeSources(
+      message.execution?.worker_trace ?? [],
+    );
+  }
+
   function restoreManualTurn(
     loaded: ConversationDetail,
   ): void {
@@ -570,8 +671,12 @@ export function useConversationWorkspace() {
         answer: assistant.clarification
           ? null
           : assistant.content,
-        runtime_sources: [],
-        doc_sources: [],
+        runtime_sources: traceRuntimeSources(
+          assistant.execution?.worker_trace ?? [],
+        ),
+        doc_sources: traceDocSources(
+          assistant.execution?.worker_trace ?? [],
+        ),
         execution: assistant.execution
           ? {
               planned_workers:
@@ -642,6 +747,40 @@ export function useConversationWorkspace() {
       state.current_agent_type
         ? state.current_agent_type
         : null;
+    const restoredSpecialistResults =
+      state &&
+      typeof state.result_agent_type === "string" &&
+      state.result_agent_type &&
+      typeof state.result_route === "string" &&
+      state.result_route &&
+      typeof state.result_reason === "string" &&
+      state.result_reason
+        ? [
+            {
+              agent_type: state.result_agent_type,
+              route: state.result_route,
+              reason: state.result_reason,
+              needs_clarification:
+                state.result_needs_clarification === true,
+              clarification:
+                typeof state.result_clarification === "string" &&
+                state.result_clarification
+                  ? state.result_clarification
+                  : null,
+              summary:
+                typeof state.result_summary === "string" &&
+                state.result_summary
+                  ? state.result_summary
+                  : null,
+              doc_sources: traceDocSources(
+                state ? [state] : [],
+              ),
+              runtime_sources: traceRuntimeSources(
+                state ? [state] : [],
+              ),
+            },
+          ]
+        : [];
 
     latestAutoTurns.value = {
       ...latestAutoTurns.value,
@@ -655,7 +794,7 @@ export function useConversationWorkspace() {
         needs_clarification: Boolean(assistant.clarification),
         synthesized: trace.some((item) => item.stage === "synthesis"),
         trace,
-        specialist_results: [],
+        specialist_results: restoredSpecialistResults,
         approval_status: null,
         needs_approval: false,
         approval_request: null,
@@ -974,6 +1113,8 @@ export function useConversationWorkspace() {
     autoProgressStageDisplayName,
     workerDisplayName,
     routeDisplayName,
+    messageDocSources,
+    messageRuntimeSources,
     agentDescription,
     traceStageDisplayName,
     initialize,
