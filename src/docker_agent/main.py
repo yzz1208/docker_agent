@@ -439,7 +439,7 @@ def get_auto_orchestration_service() -> LangGraphProductAutoOrchestrationService
         registry=agent_registry,
         model=_orchestration_model(
             temperature=0.0,
-            max_tokens=320,
+            max_tokens=1024,
         ),
         max_hops=2,
     )
