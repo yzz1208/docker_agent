@@ -22,6 +22,7 @@ import type {
   ConversationSummary,
   DocSource,
   RuntimeSource,
+  WorkerExecution,
 } from "../lib/types";
 
 type ChatMode = "manual" | "auto";
@@ -627,6 +628,25 @@ export function useConversationWorkspace() {
     return direct;
   }
 
+  function messageWorkerTrace(
+    message: ConversationMessage,
+  ): WorkerExecution[] {
+    return (message.execution?.worker_trace ?? [])
+      .filter(
+        (item) =>
+          typeof item.index === "number" &&
+          typeof item.role === "string",
+      )
+      .map((item) => ({
+        index: Number(item.index),
+        role: String(item.role),
+        tool_results_added: Number(item.tool_results_added ?? 0),
+        evidence_added: Number(item.evidence_added ?? 0),
+        runtime_steps_added: Number(item.runtime_steps_added ?? 0),
+        answer_created: Boolean(item.answer_created),
+      }));
+  }
+
   function messageDocSources(
     message: ConversationMessage,
   ): DocSource[] {
@@ -1113,6 +1133,7 @@ export function useConversationWorkspace() {
     autoProgressStageDisplayName,
     workerDisplayName,
     routeDisplayName,
+    messageWorkerTrace,
     messageDocSources,
     messageRuntimeSources,
     agentDescription,
