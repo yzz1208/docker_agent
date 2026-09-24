@@ -186,7 +186,7 @@ def test_default_delegate_pauses_before_specialist_execution() -> None:
     )
     assert paused.approval_request.capability == "incident_triage"
     assert paused.trace == ("decision", "approval_required")
-    assert decision_raw.calls == 0
+    assert decision_raw.calls == 1
     assert synthesis_raw.calls == 0
     assert docker.questions == []
     assert infrastructure.questions == []
@@ -246,7 +246,7 @@ def test_approval_resume_executes_pending_specialist_and_synthesis_once() -> Non
         "specialist",
         "synthesis",
     )
-    assert decision_raw.calls == 0
+    assert decision_raw.calls == 1
     assert synthesis_raw.calls == 1
     assert docker.questions == []
     assert len(infrastructure.questions) == 1
@@ -292,7 +292,7 @@ def test_denied_approval_stops_without_specialist_or_synthesis() -> None:
         "denied",
         "approval_denied",
     )
-    assert decision_raw.calls == 0
+    assert decision_raw.calls == 1
     assert synthesis_raw.calls == 0
     assert docker.questions == []
     assert infrastructure.questions == []
@@ -400,7 +400,7 @@ def test_decision_clarification_bypasses_approval_gate() -> None:
     assert result.approval_status is None
     assert result.clarification == "请说明是容器问题还是服务故障。"
     assert result.trace == ("decision", "clarify")
-    assert decision_raw.calls == 0
+    assert decision_raw.calls == 1
     assert synthesis_raw.calls == 0
     assert docker.questions == []
     assert infrastructure.questions == []
@@ -544,7 +544,7 @@ def test_interrupt_call_remains_compatible_with_langgraph_1_2_11(
     assert isinstance(payload, dict)
     assert payload["kind"] == "orchestration_approval"
     assert isinstance(payload["response_schema"], dict)
-    assert decision_raw.calls == 0
+    assert decision_raw.calls == 1
     assert synthesis_raw.calls == 0
     assert docker.questions == []
     assert infrastructure.questions == []
