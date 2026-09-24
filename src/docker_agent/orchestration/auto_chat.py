@@ -792,6 +792,11 @@ class LangGraphProductAutoOrchestrationService(
                 checkpointer=checkpointer,
                 approval_policy=self._approval_policy,
             )
+            _clear_orphaned_approval_thread(
+                graph=graph,
+                checkpointer=checkpointer,
+                thread_id=thread_id,
+            )
             result = start_human_approval_orchestration(
                 graph,
                 thread_id=thread_id,
@@ -1498,6 +1503,25 @@ def _restore_runtime_sources(
             )
         )
     return tuple(sources)
+
+
+def _clear_orphaned_approval_thread(
+    *,
+    graph,
+    checkpointer: BaseCheckpointSaver,
+    thread_id: str,
+) -> None:
+    """Remove checkpoint state left by a failed, non-persisted turn."""
+
+    config = orchestration_thread_config(thread_id)
+    if not graph.get_state(config).values:
+        return
+
+    checkpointer.delete_thread(thread_id)
+    if graph.get_state(config).values:
+        raise AutoOrchestrationError(
+            "failed to clear orphaned approval thread"
+        )
 
 
 def _next_auto_turn_index(
