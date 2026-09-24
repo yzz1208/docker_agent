@@ -8,6 +8,7 @@ import type {
   AgentRunRecord,
   AgentRunStatus,
   AgentRunSummary,
+  PerformanceSnapshot,
   ChatResponse,
   ConversationDetail,
   ConversationSummary,
@@ -426,6 +427,10 @@ export function getAgentRun(
   return request<AgentRunRecord>(
     `/operations/runs/${encodeURIComponent(runId)}`,
   );
+}
+
+export function getOperationsPerformance(): Promise<PerformanceSnapshot> {
+  return request<PerformanceSnapshot>("/operations/performance");
 }
 
 export function getOperationsSummary(
