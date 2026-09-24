@@ -22,15 +22,15 @@ from docker_agent.orchestration.checkpoint import (
     orchestration_thread_config,
     postgres_checkpoint_uri,
 )
-from docker_agent.orchestration.envelope import (
-    SpecialistDocSource,
-    SpecialistRuntimeSource,
-)
 from docker_agent.orchestration.checkpoint_graph import (
     build_checkpointed_orchestration_graph,
     read_checkpointed_orchestration,
     resume_checkpointed_orchestration,
     start_checkpointed_orchestration,
+)
+from docker_agent.orchestration.envelope import (
+    SpecialistDocSource,
+    SpecialistRuntimeSource,
 )
 
 
