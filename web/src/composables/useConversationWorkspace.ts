@@ -36,6 +36,7 @@ export function useConversationWorkspace() {
   const draft = ref("");
   const pendingUserMessage = ref<string | null>(null);
   const optimisticMessages = ref<ConversationMessage[]>([]);
+  const optimisticConversationId = ref<string | null>(null);
   const syncingConversation = ref(false);
 
   const latestTurns = ref<Record<string, ChatResponse>>({});
@@ -55,6 +56,7 @@ export function useConversationWorkspace() {
   const actionError = ref("");
 
   let conversationRequestVersion = 0;
+  let activeSyncRequests = 0;
 
   const activeTitle = computed(() => {
     if (detail.value?.conversation.title) {
@@ -134,7 +136,11 @@ export function useConversationWorkspace() {
 
   const displayMessages = computed(() => [
     ...(detail.value?.messages ?? []),
-    ...optimisticMessages.value,
+    ...(
+      optimisticConversationId.value === activeConversationId.value
+        ? optimisticMessages.value
+        : []
+    ),
   ]);
 
   function errorText(error: unknown): string {
@@ -296,16 +302,25 @@ export function useConversationWorkspace() {
       useDocs?: boolean | null;
     },
   ): void {
+    optimisticConversationId.value = activeConversationId.value;
     optimisticMessages.value = [
-      ...optimisticMessages.value,
+      ...(
+        optimisticConversationId.value === activeConversationId.value
+          ? optimisticMessages.value
+          : []
+      ),
       optimisticMessage("user", userMessage),
       optimisticMessage("assistant", assistantContent, options),
     ];
   }
 
   function reconcileOptimisticMessages(
+    conversationId: string,
     persisted: ConversationMessage[],
   ): void {
+    if (optimisticConversationId.value !== conversationId) {
+      return;
+    }
     const counts = new Map<string, number>();
     for (const message of persisted) {
       const key = `${message.role}\u0000${message.content}`;
@@ -332,6 +347,7 @@ export function useConversationWorkspace() {
       content: string;
     },
   ): Promise<void> {
+    activeSyncRequests += 1;
     syncingConversation.value = true;
     let lastError: unknown = null;
 
@@ -342,7 +358,10 @@ export function useConversationWorkspace() {
             conversationId,
             1,
           );
-          reconcileOptimisticMessages(loaded.messages);
+          reconcileOptimisticMessages(
+            conversationId,
+            loaded.messages,
+          );
 
           if (
             loaded.messages.some(
@@ -372,7 +391,8 @@ export function useConversationWorkspace() {
       actionError.value =
         "回答已经完成，但对话记录暂时没有同步成功。你可以继续提问，系统会稍后重新加载记录。";
     } finally {
-      syncingConversation.value = false;
+      activeSyncRequests = Math.max(0, activeSyncRequests - 1);
+      syncingConversation.value = activeSyncRequests > 0;
     }
   }
 
@@ -422,6 +442,8 @@ export function useConversationWorkspace() {
     loadingConversation.value = true;
     activeSessionId.value = null;
     activeConversationId.value = id;
+    optimisticConversationId.value = null;
+    optimisticMessages.value = [];
 
     try {
       const loaded = await getConversation(id);
@@ -472,6 +494,8 @@ export function useConversationWorkspace() {
     detail.value = null;
     draft.value = "";
     optimisticMessages.value = [];
+    optimisticConversationId.value = null;
+    selectedMode.value = "auto";
     conversationError.value = "";
     actionError.value = "";
     loadingConversation.value = false;
@@ -623,6 +647,8 @@ export function useConversationWorkspace() {
         };
 
         if (result.needs_approval) {
+          optimisticConversationId.value =
+            result.conversation_id;
           optimisticMessages.value = [
             ...optimisticMessages.value,
             optimisticMessage("user", message),
@@ -694,8 +720,16 @@ export function useConversationWorkspace() {
             );
           }
 
-          await syncConversationAfterTurn(
+          pendingUserMessage.value = null;
+          void syncConversationAfterTurn(
             result.conversation_id,
+            {
+              role: "assistant",
+              content:
+                result.answer ??
+                result.clarification ??
+                "",
+            },
           );
         }
       }
@@ -741,6 +775,7 @@ export function useConversationWorkspace() {
       const assistantContent =
         result.answer ?? result.clarification;
       if (assistantContent) {
+        optimisticConversationId.value = conversationId;
         optimisticMessages.value = [
           ...optimisticMessages.value,
           optimisticMessage(
