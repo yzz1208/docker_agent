@@ -232,6 +232,36 @@ async def app_lifespan(_app: FastAPI):
                 ),
             },
         )
+
+        if settings.rag_warmup_on_startup:
+            warmup_started = perf_counter()
+            docker_support = get_agent(
+                DOCKER_SUPPORT_DESCRIPTOR.agent_type
+            )
+            warmup = getattr(
+                docker_support,
+                "warmup_retrieval",
+                None,
+            )
+            if not callable(warmup):
+                raise RuntimeError(
+                    "Docker support Agent does not expose retrieval warmup"
+                )
+            logger.info("RAG model warmup started")
+            warmup()
+            logger.info(
+                "RAG model warmup completed",
+                extra={
+                    "duration_ms": max(
+                        0,
+                        round(
+                            (perf_counter() - warmup_started)
+                            * 1000
+                        ),
+                    ),
+                },
+            )
+
         yield
     finally:
         get_chat_coordinator.cache_clear()
