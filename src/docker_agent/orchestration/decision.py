@@ -429,8 +429,6 @@ def _is_initial_infrastructure_incident_request(
 def _is_initial_runtime_request(question: str) -> bool:
     lowered = question.lower()
     current_state_signals = (
-        "当前",
-        "现在",
         "最近日志",
         "查看日志",
         "看一下日志",
