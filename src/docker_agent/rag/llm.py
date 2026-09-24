@@ -1,13 +1,29 @@
 from __future__ import annotations
 
+import json
 import time
+from collections.abc import Iterator
 from typing import Any, Protocol
 
 import httpx
 
+from docker_agent.observability import (
+    emit_public_text_delta,
+    public_text_stream_available,
+)
+
 
 class ChatModel(Protocol):
     def complete(self, *, system_prompt: str, user_prompt: str) -> str: ...
+
+
+class StreamingChatModel(ChatModel, Protocol):
+    def stream_complete(
+        self,
+        *,
+        system_prompt: str,
+        user_prompt: str,
+    ) -> Iterator[str]: ...
 
 
 class ModelResponseError(RuntimeError):
@@ -74,16 +90,10 @@ class OpenAICompatibleChatClient:
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
 
-        payload: dict[str, Any] = {
-            "model": self.model,
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-            "temperature": self.temperature,
-        }
-        if self.max_tokens is not None:
-            payload["max_tokens"] = self.max_tokens
+        payload = self._build_payload(
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+        )
 
         response = self._post_with_retry(headers=headers, payload=payload)
         data = response.json()
@@ -97,6 +107,149 @@ class OpenAICompatibleChatClient:
         if not isinstance(content, str) or not content.strip():
             raise ModelResponseError("Model returned an empty message")
         return content.strip()
+
+    def stream_complete(
+        self,
+        *,
+        system_prompt: str,
+        user_prompt: str,
+    ) -> Iterator[str]:
+        """Yield public answer deltas from an OpenAI-compatible stream."""
+
+        if not system_prompt.strip():
+            raise ValueError("system_prompt must not be empty")
+        if not user_prompt.strip():
+            raise ValueError("user_prompt must not be empty")
+
+        headers = {"Content-Type": "application/json"}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+        payload = self._build_payload(
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+        )
+        payload["stream"] = True
+
+        attempts = self.max_retries + 1
+        for attempt in range(attempts):
+            emitted = False
+            try:
+                with self._stream_once(
+                    headers=headers,
+                    payload=payload,
+                ) as response:
+                    response.raise_for_status()
+                    content_type = response.headers.get(
+                        "content-type",
+                        "",
+                    )
+                    if "text/event-stream" not in content_type:
+                        response.read()
+                        content = _message_content(response.json())
+                        emitted = True
+                        yield content
+                        return
+
+                    for line in response.iter_lines():
+                        if not line.startswith("data:"):
+                            continue
+                        data = line[len("data:") :].strip()
+                        if not data:
+                            continue
+                        if data == "[DONE]":
+                            return
+                        try:
+                            event = json.loads(data)
+                            delta = event["choices"][0]["delta"].get(
+                                "content"
+                            )
+                        except (
+                            json.JSONDecodeError,
+                            KeyError,
+                            IndexError,
+                            TypeError,
+                            AttributeError,
+                        ) as exc:
+                            raise ModelResponseError(
+                                "Streaming model response is malformed"
+                            ) from exc
+                        if isinstance(delta, str) and delta:
+                            emitted = True
+                            yield delta
+                    if emitted:
+                        return
+                    raise ModelResponseError(
+                        "Streaming model returned no public text"
+                    )
+            except httpx.HTTPStatusError as exc:
+                if emitted:
+                    raise ModelRequestError(
+                        "Streaming model request failed after output began"
+                    ) from exc
+                if not _is_retryable_status(exc.response.status_code):
+                    raise ModelRequestError(
+                        "Model request failed with HTTP "
+                        f"{exc.response.status_code}: {exc}"
+                    ) from exc
+                last_error: Exception = exc
+            except httpx.TransportError as exc:
+                if emitted:
+                    raise ModelRequestError(
+                        "Streaming model transport failed after output began"
+                    ) from exc
+                last_error = exc
+
+            if attempt + 1 < attempts:
+                delay = self.retry_backoff_seconds * (2**attempt)
+                if delay > 0:
+                    time.sleep(delay)
+                continue
+            raise ModelRequestError(
+                f"Streaming model request failed after {attempts} attempts: "
+                f"{last_error}"
+            ) from last_error
+
+    def _build_payload(
+        self,
+        *,
+        system_prompt: str,
+        user_prompt: str,
+    ) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "model": self.model,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            "temperature": self.temperature,
+        }
+        if self.max_tokens is not None:
+            payload["max_tokens"] = self.max_tokens
+        return payload
+
+    def _stream_once(
+        self,
+        *,
+        headers: dict[str, str],
+        payload: dict[str, Any],
+    ):
+        if self._client is not None:
+            return self._client.stream(
+                "POST",
+                self.endpoint,
+                headers=headers,
+                json=payload,
+            )
+        client = httpx.Client(timeout=self.timeout_seconds)
+        return _OwnedStreamContext(
+            client,
+            client.stream(
+                "POST",
+                self.endpoint,
+                headers=headers,
+                json=payload,
+            ),
+        )
 
     def _post_with_retry(
         self,
@@ -143,6 +296,73 @@ class OpenAICompatibleChatClient:
 
         with httpx.Client(timeout=self.timeout_seconds) as client:
             return client.post(self.endpoint, headers=headers, json=payload)
+
+
+class _OwnedStreamContext:
+    """Close a temporary httpx client together with its response stream."""
+
+    def __init__(self, client: httpx.Client, stream_context: Any) -> None:
+        self._client = client
+        self._stream_context = stream_context
+
+    def __enter__(self) -> httpx.Response:
+        try:
+            return self._stream_context.__enter__()
+        except Exception:
+            self._client.close()
+            raise
+
+    def __exit__(self, exc_type: Any, exc: Any, traceback: Any) -> bool | None:
+        try:
+            return self._stream_context.__exit__(
+                exc_type,
+                exc,
+                traceback,
+            )
+        finally:
+            self._client.close()
+
+
+def _message_content(data: object) -> str:
+    try:
+        content = data["choices"][0]["message"]["content"]  # type: ignore[index]
+    except (KeyError, IndexError, TypeError) as exc:
+        raise ModelResponseError(
+            "Model response does not contain choices[0].message.content"
+        ) from exc
+    if not isinstance(content, str) or not content.strip():
+        raise ModelResponseError("Model returned an empty message")
+    return content
+
+
+def complete_public_response(
+    model: ChatModel,
+    *,
+    system_prompt: str,
+    user_prompt: str,
+) -> str:
+    """Stream only explicitly public model output when a sink is active."""
+
+    stream_complete = getattr(model, "stream_complete", None)
+    if public_text_stream_available() and callable(stream_complete):
+        chunks: list[str] = []
+        for delta in stream_complete(
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+        ):
+            if not delta:
+                continue
+            chunks.append(delta)
+            emit_public_text_delta(delta)
+        answer = "".join(chunks).strip()
+        if not answer:
+            raise ModelResponseError("Model returned an empty message")
+        return answer
+
+    return model.complete(
+        system_prompt=system_prompt,
+        user_prompt=user_prompt,
+    )
 
 
 def _is_retryable_status(status_code: int) -> bool:
