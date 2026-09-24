@@ -151,15 +151,33 @@ def _product_conversation_reply(question: str) -> str | None:
         "你会什么",
         "怎么使用你",
         "如何使用你",
+        "介绍一下这个平台",
+        "介绍这个平台",
+        "这个平台能做什么",
+        "怎么使用这个平台",
+        "如何使用这个平台",
         "帮助",
         "help",
         "whatareyou",
         "whatcanyoudo",
+        "howtousethisplatform",
     }
     if compact not in meta_queries:
         return None
 
     if any("\u4e00" <= char <= "\u9fff" for char in normalized):
+        if "平台" in normalized:
+            return (
+                "这是一个 Docker 智能支持平台，当前由 Docker 支持和基础设施排障"
+                "专家协作完成问题处理。\n\n"
+                "- **智能编排**：自动判断问题类型并选择合适专家。\n"
+                "- **Docker 支持**：处理文档、配置、命令和只读运行时诊断。\n"
+                "- **基础设施排障**：处理服务级故障、依赖异常和事件分诊。\n"
+                "- **人工审批**：跨专家转交前会先暂停，由你确认是否继续。\n"
+                "- **运行观测**：可以查看路由、耗时、执行记录和评测结果。\n\n"
+                "推荐新对话直接使用“智能编排”。描述现象、对象名称、错误信息和"
+                "你已经确认的事实即可；页面顶部的“使用指南”有更完整的说明。"
+            )
         return (
             "我是 Docker 支持专家，主要负责三类任务：\n\n"
             "- **Docker 文档问答**：概念、配置、命令和最佳实践。\n"
