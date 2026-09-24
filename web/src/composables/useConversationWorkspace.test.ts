@@ -135,6 +135,8 @@ function autoTurn(
         needs_clarification: false,
         clarification: null,
         summary: "容器运行正常。",
+        doc_sources: [],
+        runtime_sources: [],
       },
     ],
     ...overrides,
