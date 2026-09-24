@@ -118,23 +118,29 @@ class OrchestrationDecisionModel:
         active_context = context or DelegationContext(original_query=normalized)
         source = self._resolve_source(active_context, source_agent_type)
 
-        if source is None and _is_initial_lightweight_request(normalized):
-            try:
-                target = self._registry.get("docker_support").agent_type
-            except AgentRegistryError:
-                target = None
-            if (
-                target is not None
-                and self._capabilities.supports(target, "chat")
-            ):
-                return OrchestrationDecision(
-                    action="direct",
-                    reason="轻量平台会话无需模型编排，直接交给 Docker 支持。",
-                    source_agent_type=None,
-                    target_agent_type=target,
-                    capability="chat",
-                    clarification=None,
-                )
+        if source is None:
+            fast_path = _initial_fast_path(normalized)
+            if fast_path is not None:
+                agent_type, capability, reason = fast_path
+                try:
+                    target = self._registry.get(agent_type).agent_type
+                except AgentRegistryError:
+                    target = None
+                if (
+                    target is not None
+                    and self._capabilities.supports(
+                        target,
+                        capability,
+                    )
+                ):
+                    return OrchestrationDecision(
+                        action="direct",
+                        reason=reason,
+                        source_agent_type=None,
+                        target_agent_type=target,
+                        capability=capability,
+                        clarification=None,
+                    )
 
         with stage_timer("orchestration_decision"):
             raw = self._model.complete(
@@ -268,6 +274,107 @@ class OrchestrationDecisionModel:
                 f"source Agent must match current context owner {current!r}"
             )
         return source
+
+
+def _initial_fast_path(
+    question: str,
+) -> tuple[str, str, str] | None:
+    if _is_initial_lightweight_request(question):
+        return (
+            "docker_support",
+            "chat",
+            "轻量平台会话无需模型编排，直接交给 Docker 支持。",
+        )
+    if _is_initial_infrastructure_incident_request(question):
+        return (
+            "infrastructure_troubleshooter",
+            "incident_triage",
+            "明确的服务级故障信号直接进入基础设施排障。",
+        )
+    if _is_initial_runtime_request(question):
+        return (
+            "docker_support",
+            "runtime_diagnostics",
+            "明确的当前 Docker 运行时问题直接进入只读诊断。",
+        )
+    if _is_initial_docker_docs_request(question):
+        return (
+            "docker_support",
+            "documentation_qa",
+            "明确的 Docker 文档问题直接进入文档问答。",
+        )
+    return None
+
+
+def _is_initial_infrastructure_incident_request(
+    question: str,
+) -> bool:
+    lowered = question.lower()
+    incident_signals = (
+        " 503",
+        "503 ",
+        "502 ",
+        "504 ",
+        "5xx",
+        "依赖超时",
+        "dependency timeout",
+        "service outage",
+        "服务不可用",
+    )
+    service_signals = (
+        "api",
+        "服务",
+        "service",
+        "依赖",
+        "dependency",
+        "checkout",
+    )
+    return any(
+        signal in f" {lowered} "
+        for signal in incident_signals
+    ) and any(signal in lowered for signal in service_signals)
+
+
+def _is_initial_runtime_request(question: str) -> bool:
+    lowered = question.lower()
+    current_state_signals = (
+        "当前",
+        "现在",
+        "最近日志",
+        "查看日志",
+        "看一下日志",
+        "运行状态",
+        "是否运行",
+        "还在运行",
+        "cpu 和内存",
+        "cpu和内存",
+        "memory usage",
+        "current status",
+        "recent logs",
+        "docker ps",
+        "docker logs",
+        "docker inspect",
+    )
+    return any(signal in lowered for signal in current_state_signals)
+
+
+def _is_initial_docker_docs_request(question: str) -> bool:
+    lowered = question.lower()
+    docs_signals = (
+        "docker volume",
+        "bind mount",
+        "docker compose",
+        "dockerfile",
+        "docker daemon",
+        "docker image",
+        "docker network",
+        "docker registry",
+        "存储卷",
+        "绑定挂载",
+        "镜像",
+        "容器网络",
+    )
+    return any(signal in lowered for signal in docs_signals)
 
 
 def _is_initial_lightweight_request(question: str) -> bool:
