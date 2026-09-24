@@ -17,6 +17,7 @@ import type {
   AutoChatResponse,
   ChatResponse,
   ConversationDetail,
+  ConversationMessage,
   ConversationSummary,
 } from "../lib/types";
 
@@ -34,6 +35,8 @@ export function useConversationWorkspace() {
   const activeSessionId = ref<string | null>(null);
   const draft = ref("");
   const pendingUserMessage = ref<string | null>(null);
+  const optimisticMessages = ref<ConversationMessage[]>([]);
+  const syncingConversation = ref(false);
 
   const latestTurns = ref<Record<string, ChatResponse>>({});
   const latestAutoTurns = ref<Record<string, AutoChatResponse>>({});
@@ -128,6 +131,11 @@ export function useConversationWorkspace() {
       !approving.value &&
       !pendingApproval.value,
   );
+
+  const displayMessages = computed(() => [
+    ...(detail.value?.messages ?? []),
+    ...optimisticMessages.value,
+  ]);
 
   function errorText(error: unknown): string {
     if (error instanceof ApiError) {
@@ -253,6 +261,59 @@ export function useConversationWorkspace() {
     ]);
   }
 
+  function optimisticMessage(
+    role: "user" | "assistant",
+    content: string,
+    *,
+    route: string | null = null,
+    clarification: string | null = null,
+    useDocs: boolean | null = null,
+  ): ConversationMessage {
+    return {
+      id: `optimistic-${role}-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      role,
+      content,
+      route,
+      use_docs: useDocs,
+      clarification,
+      created_at: new Date().toISOString(),
+      execution: null,
+    };
+  }
+
+  function showOptimisticCompletedTurn(
+    userMessage: string,
+    assistantContent: string,
+    *,
+    route: string | null,
+    clarification: string | null = null,
+    useDocs: boolean | null = null,
+  ): void {
+    optimisticMessages.value = [
+      optimisticMessage("user", userMessage),
+      optimisticMessage("assistant", assistantContent, {
+        route,
+        clarification,
+        useDocs,
+      }),
+    ];
+  }
+
+  async function syncConversationAfterTurn(
+    conversationId: string,
+  ): Promise<void> {
+    syncingConversation.value = true;
+    try {
+      await refreshConversationDetail(conversationId, 5);
+      optimisticMessages.value = [];
+    } catch (error) {
+      actionError.value =
+        "回答已经完成，但对话记录暂时没有同步成功。你可以继续提问，系统会稍后重新加载记录。";
+    } finally {
+      syncingConversation.value = false;
+    }
+  }
+
   async function refreshConversationDetail(
     conversationId: string,
     attempts = 3,
@@ -348,6 +409,7 @@ export function useConversationWorkspace() {
     activeSessionId.value = null;
     detail.value = null;
     draft.value = "";
+    optimisticMessages.value = [];
     conversationError.value = "";
     actionError.value = "";
     loadingConversation.value = false;
@@ -497,7 +559,23 @@ export function useConversationWorkspace() {
           ...latestAutoTurns.value,
           [result.conversation_id]: result,
         };
-        await refreshConversationDetail(
+
+        if (!result.needs_approval) {
+          const assistantContent =
+            result.answer ?? result.clarification;
+          if (assistantContent) {
+            showOptimisticCompletedTurn(
+              message,
+              assistantContent,
+              {
+                route: result.route,
+                clarification: result.clarification,
+              },
+            );
+          }
+        }
+
+        await syncConversationAfterTurn(
           result.conversation_id,
         );
       } else {
@@ -524,7 +602,22 @@ export function useConversationWorkspace() {
             ...latestTurns.value,
             [result.conversation_id]: result,
           };
-          await refreshConversationDetail(
+
+          const assistantContent =
+            result.answer ?? result.clarification;
+          if (assistantContent) {
+            showOptimisticCompletedTurn(
+              message,
+              assistantContent,
+              {
+                route: result.route,
+                clarification: result.clarification,
+                useDocs: result.use_docs,
+              },
+            );
+          }
+
+          await syncConversationAfterTurn(
             result.conversation_id,
           );
         }
@@ -568,7 +661,21 @@ export function useConversationWorkspace() {
         ...latestAutoTurns.value,
         [conversationId]: result,
       };
-      await refreshConversationDetail(conversationId);
+      const assistantContent =
+        result.answer ?? result.clarification;
+      if (assistantContent) {
+        optimisticMessages.value = [
+          optimisticMessage(
+            "assistant",
+            assistantContent,
+            {
+              route: result.route,
+              clarification: result.clarification,
+            },
+          ),
+        ];
+      }
+      await syncConversationAfterTurn(conversationId);
       await refreshConversations();
       return true;
     } catch (error) {
@@ -657,6 +764,8 @@ export function useConversationWorkspace() {
     activeSessionId,
     draft,
     pendingUserMessage,
+    optimisticMessages,
+    displayMessages,
     activeMode,
     activeAgentType,
     activeAgent,
@@ -668,6 +777,7 @@ export function useConversationWorkspace() {
     loadingConversation,
     sending,
     approving,
+    syncingConversation,
     renaming,
     deleting,
     agentError,
