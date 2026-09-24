@@ -9,6 +9,7 @@ from docker_agent.agent.registry import (
     AgentRegistry,
     AgentRegistryError,
 )
+from docker_agent.observability import stage_timer
 from docker_agent.orchestration.delegation import (
     AgentCapabilityIndex,
     DelegationContext,
@@ -135,15 +136,16 @@ class OrchestrationDecisionModel:
                     clarification=None,
                 )
 
-        raw = self._model.complete(
-            system_prompt=ORCHESTRATION_SYSTEM_PROMPT,
-            user_prompt=_build_decision_prompt(
-                registry=self._registry,
-                question=normalized,
-                context=active_context,
-                source_agent_type=source,
-            ),
-        )
+        with stage_timer("orchestration_decision"):
+            raw = self._model.complete(
+                system_prompt=ORCHESTRATION_SYSTEM_PROMPT,
+                user_prompt=_build_decision_prompt(
+                    registry=self._registry,
+                    question=normalized,
+                    context=active_context,
+                    source_agent_type=source,
+                ),
+            )
         return self.validate(
             raw,
             context=active_context,
