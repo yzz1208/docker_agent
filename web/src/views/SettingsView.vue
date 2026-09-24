@@ -31,6 +31,43 @@ const environmentFields = computed(
   () => settings.configuration.value?.environment_settings ?? {},
 );
 
+function agentDisplayName(agentType: string): string {
+  const labels: Record<string, string> = {
+    docker_support: "Docker 支持",
+    infrastructure_troubleshooter: "基础设施排障",
+    auto_orchestration: "智能编排",
+  };
+  return (
+    labels[agentType] ??
+    agents.value.find((agent) => agent.agent_type === agentType)
+      ?.display_name ??
+    agentType
+  );
+}
+
+function agentDescription(agentType: string): string {
+  const descriptions: Record<string, string> = {
+    docker_support:
+      "负责 Docker 文档问答、配置说明和安全的只读运行时诊断。",
+    infrastructure_troubleshooter:
+      "负责服务级故障分诊，区分已知事实、可能原因和下一步检查。",
+  };
+  return (
+    descriptions[agentType] ??
+    settings.descriptor.value?.description ??
+    ""
+  );
+}
+
+function sourceLabel(source: string): string {
+  const labels: Record<string, string> = {
+    persisted: "自定义覆盖",
+    environment: "环境变量",
+    default: "应用默认",
+  };
+  return labels[source] ?? source;
+}
+
 function formatValue(value: unknown): string {
   if (value === null || value === undefined || value === "") {
     return "未设置";
@@ -117,15 +154,14 @@ onMounted(loadPage);
         <p class="section-label">专家配置</p>
         <h2>
           {{
-            settings.descriptor.value?.display_name ??
-            "Agent"
+            settings.descriptor.value
+              ? agentDisplayName(settings.descriptor.value.agent_type)
+              : "专家"
           }}
           设置
         </h2>
         <p>
-          Persist only the preferences you want to override. Fields without
-          an override continue to inherit their environment or application
-          default value.
+          只保存你确实希望覆盖的配置。未启用“覆盖默认值”的字段会继续继承环境变量或应用默认值。
         </p>
       </div>
 
@@ -147,7 +183,7 @@ onMounted(loadPage);
               :key="agent.agent_type"
               :value="agent.agent_type"
             >
-              {{ agent.display_name }}
+              {{ agentDisplayName(agent.agent_type) }}
             </option>
           </select>
         </label>
@@ -158,7 +194,7 @@ onMounted(loadPage);
           :disabled="settings.loading.value || settings.saving.value"
           @click="settings.load()"
         >
-          {{ settings.dirty.value ? "放弃修改" : "Refresh" }}
+          {{ settings.dirty.value ? "放弃修改" : "刷新" }}
         </button>
         <button
           class="button button--primary"
@@ -170,7 +206,7 @@ onMounted(loadPage);
           "
           @click="settings.save"
         >
-          {{ settings.saving.value ? "保存中…" : "Save 设置" }}
+          {{ settings.saving.value ? "保存中…" : "保存设置" }}
         </button>
       </div>
     </div>
@@ -282,8 +318,8 @@ onMounted(loadPage);
       >
         <div>
           <p class="section-label">能力</p>
-          <h2>{{ settings.descriptor.value.display_name }}</h2>
-          <p>{{ settings.descriptor.value.description }}</p>
+          <h2>{{ agentDisplayName(settings.descriptor.value.agent_type) }}</h2>
+          <p>{{ agentDescription(settings.descriptor.value.agent_type) }}</p>
         </div>
         <div class="agent-capability-groups">
           <div>
@@ -312,7 +348,7 @@ onMounted(loadPage);
                 v-if="settings.descriptor.value.toolsets.length === 0"
                 class="muted"
               >
-                None
+                暂无
               </span>
             </div>
           </div>
@@ -374,7 +410,7 @@ onMounted(loadPage);
                   class="source-badge"
                   :data-source="field.effective.source"
                 >
-                  当前来源： {{ field.effective.source }}
+                  当前来源： {{ sourceLabel(field.effective.source) }}
                 </span>
                 <span>
                   生效值：
@@ -442,7 +478,7 @@ onMounted(loadPage);
               class="source-badge"
               :data-source="field.source"
             >
-              {{ field.source }}
+              {{ sourceLabel(field.source) }}
             </span>
             <span>
               {{
