@@ -115,11 +115,12 @@ class OrchestrationDecisionModel:
         normalized = question.strip()
         if not normalized:
             raise ValueError("question must not be empty")
-        active_context = context or DelegationContext(original_query=normalized)
+        routing_question = _current_user_request(normalized)
+        active_context = context or DelegationContext(original_query=routing_question)
         source = self._resolve_source(active_context, source_agent_type)
 
         if source is None:
-            fast_path = _initial_fast_path(normalized)
+            fast_path = _initial_fast_path(routing_question)
             if fast_path is not None:
                 agent_type, capability, reason = fast_path
                 try:
@@ -144,7 +145,7 @@ class OrchestrationDecisionModel:
         else:
             capability = _current_specialist_fast_path(
                 source,
-                normalized,
+                routing_question,
                 original_query=active_context.original_query,
             )
             if (
@@ -292,6 +293,16 @@ class OrchestrationDecisionModel:
                 f"source Agent must match current context owner {current!r}"
             )
         return source
+
+
+def _current_user_request(question: str) -> str:
+    """Extract the live user turn from the bounded conversation wrapper."""
+
+    marker = "当前用户消息：\n"
+    if marker not in question:
+        return question
+    current = question.rsplit(marker, 1)[1].strip()
+    return current or question
 
 
 def _current_specialist_fast_path(
