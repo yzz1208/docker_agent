@@ -730,6 +730,10 @@ a {
 }
 
 @media (max-width: 820px) {
+  .quick-prompt-list {
+    grid-template-columns: 1fr;
+  }
+
   .topbar {
     height: auto;
     min-height: 72px;
@@ -2644,6 +2648,49 @@ a {
   grid-template-columns: minmax(240px, 0.45fr) minmax(0, 1fr);
   gap: 24px;
   align-items: center;
+}
+
+.quick-prompt-list {
+  width: min(720px, 100%);
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.quick-prompt-list button {
+  min-width: 0;
+  padding: 11px 12px;
+  display: grid;
+  gap: 4px;
+  text-align: left;
+  border: 1px solid #dbe7ec;
+  border-radius: 10px;
+  background: #fbfdfe;
+  color: #344a58;
+  cursor: pointer;
+  transition:
+    border-color 0.16s ease,
+    background 0.16s ease,
+    transform 0.16s ease;
+}
+
+.quick-prompt-list button:hover {
+  border-color: #9bc7d4;
+  background: #f3fafc;
+  transform: translateY(-1px);
+}
+
+.quick-prompt-list span {
+  color: #78909d;
+  font-size: 9px;
+}
+
+.quick-prompt-list strong {
+  overflow: hidden;
+  font-size: 11px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .chat-guide-link {
