@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { nextTick, onMounted, ref, watch } from "vue";
 
 import AppDialog from "../components/AppDialog.vue";
 import { useConversationWorkspace } from "../composables/useConversationWorkspace";
 
 const workspace = useConversationWorkspace();
 
+const messageStream = ref<HTMLElement | null>(null);
 const renameDialogOpen = ref(false);
 const deleteDialogOpen = ref(false);
 const renameTitle = ref("");
@@ -54,7 +55,32 @@ async function confirmDelete(): Promise<void> {
   if (deleted) deleteDialogOpen.value = false;
 }
 
-onMounted(workspace.initialize);
+async function scrollMessagesToBottom(): Promise<void> {
+  await nextTick();
+  const element = messageStream.value;
+  if (!element) return;
+  element.scrollTo({
+    top: element.scrollHeight,
+    behavior: "smooth",
+  });
+}
+
+watch(
+  () => [
+    workspace.detail.value?.messages.length ?? 0,
+    workspace.sending.value,
+    workspace.approving.value,
+    Boolean(workspace.pendingApproval.value),
+  ],
+  () => {
+    void scrollMessagesToBottom();
+  },
+);
+
+onMounted(async () => {
+  await workspace.initialize();
+  await scrollMessagesToBottom();
+});
 </script>
 
 <template>
@@ -349,7 +375,7 @@ onMounted(workspace.initialize);
         </div>
       </section>
 
-      <div class="message-stream">
+      <div ref="messageStream" class="message-stream">
         <div v-if="workspace.loadingConversation.value" class="empty-state">
           正在加载对话…
         </div>
@@ -414,6 +440,9 @@ onMounted(workspace.initialize);
               <div><strong>受控转交</strong><span>每回合最多执行一个专家</span></div>
               <div><strong>清晰结果</strong><span>事实、推测与不确定性分开</span></div>
             </div>
+            <RouterLink class="button button--ghost chat-guide-link" to="/guide">
+              不知道怎么用？查看使用指南
+            </RouterLink>
           </template>
 
           <template v-else>
@@ -514,8 +543,10 @@ onMounted(workspace.initialize);
       </div>
 
       <template v-if="workspace.activeMode.value === 'auto'">
-        <div v-if="!workspace.latestAutoTurn.value" class="empty-state compact">
-          发送一条消息后，这里会显示专家选择与转交流程。
+        <div v-if="!workspace.latestAutoTurn.value" class="empty-state compact trace-empty-guide">
+          <strong>这里会显示处理过程</strong>
+          <span>包括智能判断、专家处理、跨专家转交和综合结论。</span>
+          <span>普通问题会走快速路径，不会额外增加审批步骤。</span>
         </div>
 
         <template v-else>
