@@ -555,9 +555,32 @@ onBeforeUnmount(() => {
             <h3>直接描述问题，剩下的交给智能编排</h3>
             <p>系统会快速判断问题类型，选择合适专家，并在需要时安全转交与综合结果。</p>
             <div class="auto-feature-grid">
-              <div><strong>快速判断</strong><span>一次短路由决策</span></div>
-              <div><strong>受控转交</strong><span>每回合最多执行一个专家</span></div>
-              <div><strong>清晰结果</strong><span>事实、推测与不确定性分开</span></div>
+              <div><strong>快速判断</strong><span>自动选择合适专家</span></div>
+              <div><strong>受控转交</strong><span>跨专家前先请求批准</span></div>
+              <div><strong>清晰结果</strong><span>保留来源与处理过程</span></div>
+            </div>
+            <div class="quick-prompt-list" aria-label="示例问题">
+              <button
+                type="button"
+                @click="workspace.draft.value = '介绍一下这个平台'"
+              >
+                <span>了解平台</span>
+                <strong>介绍一下这个平台</strong>
+              </button>
+              <button
+                type="button"
+                @click="workspace.draft.value = 'Docker daemon 连不上，帮我排查一下'"
+              >
+                <span>Docker 问题</span>
+                <strong>Docker daemon 连不上</strong>
+              </button>
+              <button
+                type="button"
+                @click="workspace.draft.value = '容器正常，但 checkout-api 持续返回 503，继续帮我排查'"
+              >
+                <span>跨专家排障</span>
+                <strong>容器正常但服务持续 503</strong>
+              </button>
             </div>
             <RouterLink class="button button--ghost chat-guide-link" to="/guide">
               不知道怎么用？查看使用指南
