@@ -390,6 +390,9 @@ describe("conversation workspace", () => {
     });
     expect(workspace.pendingApproval.value).toBeNull();
     expect(workspace.latestAutoTurn.value?.synthesized).toBe(true);
+
+    workspace.draft.value = "继续追问";
+    expect(workspace.canSend.value).toBe(true);
   });
 
   it("recovers pending auto approval when reopening history", async () => {
@@ -427,6 +430,64 @@ describe("conversation workspace", () => {
       "infrastructure_troubleshooter",
     );
     expect(workspace.canSend.value).toBe(false);
+  });
+
+  it("restores persisted manual execution details when opening history", async () => {
+    const manualDetail: ConversationDetail = {
+      conversation: {
+        ...conversation,
+        id: "manual-history",
+        agent_type: "docker_support",
+        title: "历史 Docker 问题",
+      },
+      messages: [
+        {
+          id: "assistant-manual",
+          role: "assistant",
+          content: "Volume 由 Docker 管理。[1]",
+          route: "docs_only",
+          use_docs: true,
+          clarification: null,
+          created_at: "2026-09-21T00:00:02Z",
+          execution: {
+            id: "exec-manual",
+            planned_workers: ["knowledge", "diagnosis"],
+            completed_workers: ["knowledge", "diagnosis"],
+            worker_trace: [
+              {
+                index: 1,
+                role: "knowledge",
+                tool_results_added: 0,
+                evidence_added: 1,
+                runtime_steps_added: 0,
+                answer_created: false,
+              },
+              {
+                index: 2,
+                role: "diagnosis",
+                tool_results_added: 0,
+                evidence_added: 0,
+                runtime_steps_added: 0,
+                answer_created: true,
+              },
+            ],
+            created_at: "2026-09-21T00:00:02Z",
+          },
+        },
+      ],
+    };
+    vi.mocked(getConversation).mockResolvedValueOnce(manualDetail);
+
+    const workspace = useConversationWorkspace();
+    await workspace.openConversation("manual-history");
+
+    expect(workspace.latestTurn.value?.route).toBe("docs_only");
+    expect(workspace.latestTurn.value?.use_docs).toBe(true);
+    expect(
+      workspace.latestTurn.value?.execution?.completed_workers,
+    ).toEqual(["knowledge", "diagnosis"]);
+    workspace.draft.value = "继续追问";
+    expect(workspace.canSend.value).toBe(true);
   });
 
   it("restores persisted auto trace when opening history", async () => {
