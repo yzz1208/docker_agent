@@ -276,6 +276,35 @@ def test_product_conversation_fast_path_skips_models_and_tools() -> None:
     assert tools.calls == []
 
 
+def test_product_platform_help_fast_path_skips_models_and_retrieval() -> None:
+    router = SequenceModel([])
+    planner = SequenceModel([])
+    answer = SequenceModel([])
+    tools = FakeDockerTools()
+
+    agent = LangGraphDockerSupportAgent(
+        settings=Settings(),
+        router_model=router,
+        planner_model=planner,
+        answer_model=answer,
+        docker_tools=tools,  # type: ignore[arg-type]
+        docs_retriever=lambda _question: (_ for _ in ()).throw(
+            AssertionError("unexpected docs retrieval")
+        ),
+    )
+
+    result = agent.handle("介绍一下这个平台")
+
+    assert isinstance(result, ProductConversationTurnResult)
+    assert result.decision.route == "chat"
+    assert "智能编排" in result.answer.answer
+    assert "人工审批" in result.answer.answer
+    assert router.user_prompts == []
+    assert planner.user_prompts == []
+    assert answer.user_prompts == []
+    assert tools.calls == []
+
+
 def test_product_greeting_remains_chat_response_compatible() -> None:
     agent = LangGraphDockerSupportAgent(
         settings=Settings(),
