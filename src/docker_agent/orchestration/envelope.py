@@ -219,7 +219,11 @@ def build_specialist_result_envelope(
                 section=source.section,
                 source_url=source.source_url,
             )
-            for source in turn.answer.cited_doc_sources
+            for source in getattr(
+                turn.answer,
+                "cited_doc_sources",
+                (),
+            )
         ),
         runtime_sources=tuple(
             SpecialistRuntimeSource(
@@ -228,7 +232,11 @@ def build_specialist_result_envelope(
                 command=tuple(source.command),
                 ok=source.ok,
             )
-            for source in turn.answer.cited_runtime_sources
+            for source in getattr(
+                turn.answer,
+                "cited_runtime_sources",
+                (),
+            )
         ),
     )
 
