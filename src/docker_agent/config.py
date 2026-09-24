@@ -87,6 +87,7 @@ class Settings(BaseSettings):
     retrieval_keyword_weight: float = 1.0
     rerank_top_k: int = 5
     rag_context_max_chars: int = 14_000
+    rag_warmup_on_startup: bool = False
 
     model_config = SettingsConfigDict(
         env_file=None,
