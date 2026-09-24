@@ -7,7 +7,7 @@ from docker_agent.agent.evidence import RuntimeEvidenceContext, RuntimeEvidenceS
 from docker_agent.core.evidence import EvidenceBundle, EvidenceKind
 from docker_agent.rag.answer import CitationValidationError, select_cited_sources
 from docker_agent.rag.context import CitationSource, RagContext
-from docker_agent.rag.llm import ChatModel
+from docker_agent.rag.llm import ChatModel, complete_public_response
 
 _RUNTIME_CITATION_RE = re.compile(r"\[R(\d+)\]")
 
@@ -244,7 +244,11 @@ def generate_agent_answer_from_evidence(
         docs_evidence,
         runtime_evidence,
     )
-    answer = model.complete(system_prompt=AGENT_SYSTEM_PROMPT, user_prompt=prompt)
+    answer = complete_public_response(
+        model,
+        system_prompt=AGENT_SYSTEM_PROMPT,
+        user_prompt=prompt,
+    )
 
     try:
         doc_indices, cited_docs = select_cited_sources(answer, doc_sources)
