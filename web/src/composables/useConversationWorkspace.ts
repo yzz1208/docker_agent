@@ -30,7 +30,7 @@ export function useConversationWorkspace() {
   const conversations = ref<ConversationSummary[]>([]);
   const detail = ref<ConversationDetail | null>(null);
   const selectedAgentType = ref("docker_support");
-  const selectedMode = ref<ChatMode>("manual");
+  const selectedMode = ref<ChatMode>("auto");
   const activeConversationId = ref<string | null>(null);
   const activeSessionId = ref<string | null>(null);
   const draft = ref("");
@@ -560,7 +560,11 @@ export function useConversationWorkspace() {
           [result.conversation_id]: result,
         };
 
-        if (!result.needs_approval) {
+        if (result.needs_approval) {
+          optimisticMessages.value = [
+            optimisticMessage("user", message),
+          ];
+        } else {
           const assistantContent =
             result.answer ?? result.clarification;
           if (assistantContent) {
