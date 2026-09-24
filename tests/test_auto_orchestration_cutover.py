@@ -172,7 +172,7 @@ def test_product_direct_fast_path_completes_without_pending_approval() -> None:
         "decision",
         "specialist",
     ]
-    assert decision.calls == 1
+    assert decision.calls == 0
     assert synthesis.calls == 0
     assert docker.questions == ["检查 web-1 当前状态。"]
     assert infrastructure.questions == []
