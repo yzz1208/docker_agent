@@ -33,6 +33,7 @@ export function useConversationWorkspace() {
   const activeConversationId = ref<string | null>(null);
   const activeSessionId = ref<string | null>(null);
   const draft = ref("");
+  const pendingUserMessage = ref<string | null>(null);
 
   const latestTurns = ref<Record<string, ChatResponse>>({});
   const latestAutoTurns = ref<Record<string, AutoChatResponse>>({});
@@ -161,6 +162,16 @@ export function useConversationWorkspace() {
       incident_triage: "故障分诊",
     };
     return localized[capability] ?? capability;
+  }
+
+  function workerDisplayName(worker: string): string {
+    const localized: Record<string, string> = {
+      knowledge: "知识检索",
+      runtime: "运行时检查",
+      diagnosis: "诊断回答",
+      synthesis: "结果综合",
+    };
+    return localized[worker] ?? worker;
   }
 
   function routeDisplayName(route: string): string {
@@ -470,6 +481,7 @@ export function useConversationWorkspace() {
     }
 
     sending.value = true;
+    pendingUserMessage.value = message;
     actionError.value = "";
 
     try {
@@ -525,6 +537,7 @@ export function useConversationWorkspace() {
       return false;
     } finally {
       sending.value = false;
+      pendingUserMessage.value = null;
     }
   }
 
@@ -643,6 +656,7 @@ export function useConversationWorkspace() {
     activeConversationId,
     activeSessionId,
     draft,
+    pendingUserMessage,
     activeMode,
     activeAgentType,
     activeAgent,
@@ -666,6 +680,7 @@ export function useConversationWorkspace() {
     canSend,
     agentDisplayName,
     capabilityDisplayName,
+    workerDisplayName,
     routeDisplayName,
     agentDescription,
     traceStageDisplayName,
