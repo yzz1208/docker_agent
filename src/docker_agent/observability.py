@@ -108,6 +108,24 @@ StageEventSink = Callable[[StageEvent], None]
 PublicTextSink = Callable[[str], None]
 
 
+@dataclass(frozen=True, slots=True)
+class StagePerformanceSnapshot:
+    stage: str
+    count: int
+    average_ms: float
+    p50_upper_ms: int | None
+    p95_upper_ms: int | None
+
+
+@dataclass(frozen=True, slots=True)
+class PerformanceSnapshot:
+    ttft_count: int
+    ttft_average_ms: float | None
+    ttft_p50_upper_ms: int | None
+    ttft_p95_upper_ms: int | None
+    stages: tuple[StagePerformanceSnapshot, ...]
+
+
 class JsonLogFormatter(logging.Formatter):
     """Emit compact JSON logs with correlation identifiers."""
 
@@ -403,6 +421,65 @@ class MetricsRegistry:
                 if duration_seconds <= bucket:
                     self._ttft_buckets[bucket] += 1
 
+    def snapshot_performance(self) -> PerformanceSnapshot:
+        """Return a bounded in-process latency snapshot for the product UI."""
+
+        with self._lock:
+            stage_count = self._stage_duration_count.copy()
+            stage_sum = self._stage_duration_sum.copy()
+            stage_buckets = self._stage_duration_buckets.copy()
+            ttft_count = self._ttft_count
+            ttft_sum = self._ttft_sum
+            ttft_buckets = self._ttft_buckets.copy()
+
+        stages = tuple(
+            StagePerformanceSnapshot(
+                stage=stage,
+                count=count,
+                average_ms=round(
+                    (stage_sum[stage] / count) * 1000,
+                    1,
+                ),
+                p50_upper_ms=_histogram_quantile_upper_ms(
+                    count=count,
+                    buckets={
+                        bucket: stage_buckets[(stage, bucket)]
+                        for bucket in _STAGE_DURATION_BUCKETS
+                    },
+                    quantile=0.50,
+                ),
+                p95_upper_ms=_histogram_quantile_upper_ms(
+                    count=count,
+                    buckets={
+                        bucket: stage_buckets[(stage, bucket)]
+                        for bucket in _STAGE_DURATION_BUCKETS
+                    },
+                    quantile=0.95,
+                ),
+            )
+            for stage, count in sorted(stage_count.items())
+            if count > 0
+        )
+        return PerformanceSnapshot(
+            ttft_count=ttft_count,
+            ttft_average_ms=(
+                round((ttft_sum / ttft_count) * 1000, 1)
+                if ttft_count > 0
+                else None
+            ),
+            ttft_p50_upper_ms=_histogram_quantile_upper_ms(
+                count=ttft_count,
+                buckets=ttft_buckets,
+                quantile=0.50,
+            ),
+            ttft_p95_upper_ms=_histogram_quantile_upper_ms(
+                count=ttft_count,
+                buckets=ttft_buckets,
+                quantile=0.95,
+            ),
+            stages=stages,
+        )
+
     def render_prometheus(self) -> str:
         with self._lock:
             http_requests = self._http_requests.copy()
@@ -573,6 +650,21 @@ class MetricsRegistry:
         )
 
         return "\n".join(lines) + "\n"
+
+
+def _histogram_quantile_upper_ms(
+    *,
+    count: int,
+    buckets: Counter[float] | dict[float, int],
+    quantile: float,
+) -> int | None:
+    if count <= 0:
+        return None
+    target = max(1, int((count * quantile) + 0.999999))
+    for bucket in _STAGE_DURATION_BUCKETS:
+        if buckets.get(bucket, 0) >= target:
+            return round(bucket * 1000)
+    return None
 
 
 def _append_counter(
