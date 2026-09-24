@@ -228,6 +228,22 @@ export type AgentRunRecord = {
   completed_at: string | null;
 };
 
+export type StagePerformanceSnapshot = {
+  stage: string;
+  count: number;
+  average_ms: number;
+  p50_upper_ms: number | null;
+  p95_upper_ms: number | null;
+};
+
+export type PerformanceSnapshot = {
+  ttft_count: number;
+  ttft_average_ms: number | null;
+  ttft_p50_upper_ms: number | null;
+  ttft_p95_upper_ms: number | null;
+  stages: StagePerformanceSnapshot[];
+};
+
 export type AgentRunSummary = {
   window_started_at: string;
   window_ended_at: string;
