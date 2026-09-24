@@ -9,11 +9,12 @@ import {
   listConversations,
   renameConversation,
   resolveAutoApproval,
-  sendAutoChat,
+  sendAutoChatStream,
   sendChat,
 } from "../lib/api";
 import type {
   AgentDescriptor,
+  AutoChatProgressEvent,
   AutoChatResponse,
   ChatResponse,
   ConversationDetail,
@@ -38,6 +39,7 @@ export function useConversationWorkspace() {
   const optimisticMessages = ref<ConversationMessage[]>([]);
   const optimisticConversationId = ref<string | null>(null);
   const syncingConversation = ref(false);
+  const autoProgress = ref<AutoChatProgressEvent | null>(null);
 
   const latestTurns = ref<Record<string, ChatResponse>>({});
   const latestAutoTurns = ref<Record<string, AutoChatResponse>>({});
@@ -166,6 +168,44 @@ export function useConversationWorkspace() {
       agentType
     );
   }
+
+  function autoProgressStageDisplayName(stage: string): string {
+    const localized: Record<string, string> = {
+      request: "正在理解问题",
+      orchestration_decision: "正在选择合适专家",
+      decision: "正在判断处理方式",
+      rag_database: "正在检查文档知识库",
+      embedding: "正在理解检索问题",
+      dense_retrieval: "正在进行语义检索",
+      keyword_retrieval: "正在匹配关键技术词",
+      fusion: "正在合并检索结果",
+      rerank: "正在筛选最相关文档",
+      context_build: "正在整理文档证据",
+      runtime: "正在运行只读诊断",
+      answer: "正在生成回答",
+      synthesis: "正在综合专家结果",
+    };
+    return localized[stage] ?? "正在处理";
+  }
+
+  const autoProgressText = computed(() => {
+    const progress = autoProgress.value;
+    if (!progress) return "正在准备智能编排";
+
+    const label = autoProgressStageDisplayName(progress.stage);
+    if (
+      progress.status === "completed" &&
+      progress.duration_ms !== null
+    ) {
+      const completedLabel = label.startsWith("正在")
+        ? label.slice(2)
+        : label;
+      return `${completedLabel}完成 · ${(
+        progress.duration_ms / 1000
+      ).toFixed(1)}s`;
+    }
+    return label;
+  });
 
   function capabilityDisplayName(capability: string): string {
     const localized: Record<string, string> = {
@@ -634,10 +674,20 @@ export function useConversationWorkspace() {
 
     try {
       if (activeMode.value === "auto") {
-        const result = await sendAutoChat({
-          message,
-          conversationId: activeConversationId.value,
-        });
+        autoProgress.value = {
+          stage: "request",
+          status: "started",
+          duration_ms: null,
+        };
+        const result = await sendAutoChatStream(
+          {
+            message,
+            conversationId: activeConversationId.value,
+          },
+          (progress) => {
+            autoProgress.value = progress;
+          },
+        );
         activeConversationId.value = result.conversation_id;
         activeSessionId.value = null;
         draft.value = "";
@@ -742,6 +792,7 @@ export function useConversationWorkspace() {
     } finally {
       sending.value = false;
       pendingUserMessage.value = null;
+      autoProgress.value = null;
     }
   }
 
@@ -899,6 +950,8 @@ export function useConversationWorkspace() {
     sending,
     approving,
     syncingConversation,
+    autoProgress,
+    autoProgressText,
     renaming,
     deleting,
     agentError,
@@ -911,6 +964,7 @@ export function useConversationWorkspace() {
     canSend,
     agentDisplayName,
     capabilityDisplayName,
+    autoProgressStageDisplayName,
     workerDisplayName,
     routeDisplayName,
     agentDescription,
