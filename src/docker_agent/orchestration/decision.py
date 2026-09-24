@@ -314,21 +314,22 @@ def _current_specialist_fast_path(
                 return "runtime_diagnostics"
             if _is_initial_docker_docs_request(original_query):
                 return "documentation_qa"
-            return "chat"
+            return None
 
     if source_agent_type == "infrastructure_troubleshooter":
         if _is_initial_runtime_request(question):
             return None
+        if _is_initial_lightweight_request(question):
+            return "chat"
+        if _is_initial_infrastructure_incident_request(question):
+            return "incident_triage"
         if (
-            _is_initial_infrastructure_incident_request(question)
-            or _is_short_followup(question)
-            or _is_initial_lightweight_request(question)
-        ):
-            return (
-                "incident_triage"
-                if not _is_initial_lightweight_request(question)
-                else "chat"
+            _is_short_followup(question)
+            and _is_initial_infrastructure_incident_request(
+                original_query
             )
+        ):
+            return "incident_triage"
 
     return None
 
