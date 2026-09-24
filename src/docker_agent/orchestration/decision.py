@@ -116,6 +116,25 @@ class OrchestrationDecisionModel:
             raise ValueError("question must not be empty")
         active_context = context or DelegationContext(original_query=normalized)
         source = self._resolve_source(active_context, source_agent_type)
+
+        if source is None and _is_initial_lightweight_request(normalized):
+            try:
+                target = self._registry.get("docker_support").agent_type
+            except AgentRegistryError:
+                target = None
+            if (
+                target is not None
+                and self._capabilities.supports(target, "chat")
+            ):
+                return OrchestrationDecision(
+                    action="direct",
+                    reason="轻量平台会话无需模型编排，直接交给 Docker 支持。",
+                    source_agent_type=None,
+                    target_agent_type=target,
+                    capability="chat",
+                    clarification=None,
+                )
+
         raw = self._model.complete(
             system_prompt=ORCHESTRATION_SYSTEM_PROMPT,
             user_prompt=_build_decision_prompt(
@@ -247,6 +266,38 @@ class OrchestrationDecisionModel:
                 f"source Agent must match current context owner {current!r}"
             )
         return source
+
+
+def _is_initial_lightweight_request(question: str) -> bool:
+    normalized = " ".join(question.strip().split())
+    lowered = normalized.lower().strip(" .!?！？。")
+    compact = lowered.replace(" ", "")
+    return lowered in {
+        "hi",
+        "hello",
+        "hey",
+        "你好",
+        "您好",
+        "嗨",
+        "哈喽",
+    } or compact in {
+        "介绍自己",
+        "简单介绍自己",
+        "介绍一下自己",
+        "你是谁",
+        "你能做什么",
+        "你可以做什么",
+        "介绍一下这个平台",
+        "介绍这个平台",
+        "这个平台能做什么",
+        "怎么使用这个平台",
+        "如何使用这个平台",
+        "帮助",
+        "help",
+        "whatareyou",
+        "whatcanyoudo",
+        "howtousethisplatform",
+    }
 
 
 def _build_decision_prompt(
