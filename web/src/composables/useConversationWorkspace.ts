@@ -297,19 +297,78 @@ export function useConversationWorkspace() {
     },
   ): void {
     optimisticMessages.value = [
+      ...optimisticMessages.value,
       optimisticMessage("user", userMessage),
       optimisticMessage("assistant", assistantContent, options),
     ];
   }
 
+  function reconcileOptimisticMessages(
+    persisted: ConversationMessage[],
+  ): void {
+    const counts = new Map<string, number>();
+    for (const message of persisted) {
+      const key = `${message.role}\u0000${message.content}`;
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+
+    optimisticMessages.value = optimisticMessages.value.filter(
+      (message) => {
+        const key = `${message.role}\u0000${message.content}`;
+        const count = counts.get(key) ?? 0;
+        if (count <= 0) {
+          return true;
+        }
+        counts.set(key, count - 1);
+        return false;
+      },
+    );
+  }
+
   async function syncConversationAfterTurn(
     conversationId: string,
+    expected: {
+      role: "user" | "assistant";
+      content: string;
+    },
   ): Promise<void> {
     syncingConversation.value = true;
+    let lastError: unknown = null;
+
     try {
-      await refreshConversationDetail(conversationId, 5);
-      optimisticMessages.value = [];
-    } catch (error) {
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        try {
+          const loaded = await refreshConversationDetail(
+            conversationId,
+            1,
+          );
+          reconcileOptimisticMessages(loaded.messages);
+
+          if (
+            loaded.messages.some(
+              (message) =>
+                message.role === expected.role &&
+                message.content === expected.content,
+            )
+          ) {
+            return;
+          }
+          lastError = new Error(
+            "completed message is not visible in persistence yet",
+          );
+        } catch (error) {
+          lastError = error;
+        }
+
+        if (attempt < 4) {
+          await new Promise((resolve) =>
+            window.setTimeout(resolve, 180 * (attempt + 1)),
+          );
+        }
+      }
+
+      throw lastError ?? new Error("conversation sync failed");
+    } catch {
       actionError.value =
         "回答已经完成，但对话记录暂时没有同步成功。你可以继续提问，系统会稍后重新加载记录。";
     } finally {
@@ -565,6 +624,7 @@ export function useConversationWorkspace() {
 
         if (result.needs_approval) {
           optimisticMessages.value = [
+            ...optimisticMessages.value,
             optimisticMessage("user", message),
           ];
         } else {
@@ -585,6 +645,15 @@ export function useConversationWorkspace() {
         pendingUserMessage.value = null;
         void syncConversationAfterTurn(
           result.conversation_id,
+          result.needs_approval
+            ? { role: "user", content: message }
+            : {
+                role: "assistant",
+                content:
+                  result.answer ??
+                  result.clarification ??
+                  "",
+              },
         );
       } else {
         const result = await sendChat({
@@ -673,6 +742,7 @@ export function useConversationWorkspace() {
         result.answer ?? result.clarification;
       if (assistantContent) {
         optimisticMessages.value = [
+          ...optimisticMessages.value,
           optimisticMessage(
             "assistant",
             assistantContent,
@@ -683,7 +753,15 @@ export function useConversationWorkspace() {
           ),
         ];
       }
-      void syncConversationAfterTurn(conversationId);
+      if (assistantContent) {
+        void syncConversationAfterTurn(
+          conversationId,
+          {
+            role: "assistant",
+            content: assistantContent,
+          },
+        );
+      }
       void refreshConversations();
       return true;
     } catch (error) {
