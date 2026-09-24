@@ -38,6 +38,7 @@ onBeforeUnmount(() => {
 
         <nav class="topbar__nav" aria-label="主导航">
           <RouterLink to="/">聊天</RouterLink>
+          <RouterLink to="/guide">使用指南</RouterLink>
           <RouterLink to="/operations">运行观测</RouterLink>
           <RouterLink to="/settings">设置</RouterLink>
         </nav>
