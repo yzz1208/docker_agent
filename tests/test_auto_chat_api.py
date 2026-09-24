@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 from fastapi.testclient import TestClient
 
 from docker_agent.main import app
-from docker_agent.observability import stage_timer
+from docker_agent.observability import emit_public_text_delta, stage_timer
 from docker_agent.orchestration import (
     AutoOrchestrationTurn,
     AutoTraceStep,
@@ -121,7 +121,8 @@ def test_auto_chat_stream_emits_real_progress_and_final_result(
             with stage_timer("orchestration_decision"):
                 pass
             with stage_timer("answer"):
-                pass
+                emit_public_text_delta("流式")
+                emit_public_text_delta("回答")
             return super().chat(
                 message=message,
                 conversation_id=conversation_id,
@@ -154,6 +155,9 @@ def test_auto_chat_stream_emits_real_progress_and_final_result(
         in body
     )
     assert '"stage":"answer","status":"completed"' in body
+    assert "event: delta" in body
+    assert '"text":"流式"' in body
+    assert '"text":"回答"' in body
     assert "event: result" in body
     assert '"conversation_id":"auto-conversation"' in body
     assert service.calls == [
