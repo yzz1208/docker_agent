@@ -186,7 +186,7 @@ def test_synthesis_graph_direct_uses_fast_path_without_synthesis() -> None:
         "specialist",
         "complete",
     )
-    assert decision_raw.calls == 1
+    assert decision_raw.calls == 0
     assert synthesis_raw.calls == 0
     assert docker.questions == ["web-1 当前是否还在运行？"]
     assert infrastructure.questions == []
