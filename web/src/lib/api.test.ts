@@ -195,6 +195,44 @@ describe("API client", () => {
     expect(result.answer).toBe("你好");
   });
 
+  it("reports an HTML proxy fallback instead of parsing it as JSON", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response("<!doctype html><html></html>", {
+          status: 200,
+          headers: { "Content-Type": "text/html" },
+        }),
+      ),
+    );
+
+    await expect(listAgents()).rejects.toMatchObject({
+      status: 502,
+      detail: expect.stringContaining("HTML 页面而不是 API JSON"),
+    } satisfies Partial<ApiError>);
+  });
+
+  it("reports an HTML fallback for the streaming endpoint", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response("<!doctype html><html></html>", {
+          status: 200,
+          headers: { "Content-Type": "text/html" },
+        }),
+      ),
+    );
+
+    await expect(
+      sendAutoChatStream({
+        message: "Docker volume 和 bind mount 有什么区别？",
+      }),
+    ).rejects.toMatchObject({
+      status: 502,
+      detail: expect.stringContaining("/chat/auto/stream"),
+    } satisfies Partial<ApiError>);
+  });
+
   it("loads and resolves durable auto approval", async () => {
     const pending = {
       mode: "auto",
