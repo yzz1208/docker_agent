@@ -21,7 +21,7 @@
 - Upgrade Phase 7：Generic Multi-Agent Platform ✅
 - Upgrade Phase 8：Advanced Multi-Agent Orchestration ✅
 - Upgrade Phase 9：LangGraph Platform Orchestration（Step 1–6 已实现：Decision / Specialist / Synthesis / Durable Resume / Human Approval / Auto Product Cutover；待 Step 6B 本地产品 gate 后进入 Step 7）
-- Upgrade Phase 10：Product UX / Performance / Intelligence Polish（Step 1 核心交互恢复、中文化、轻量会话 fast path 已实现，待本地 gate）
+- Upgrade Phase 10：Product UX / Performance / Intelligence Polish（Step 1–5 已实现：交互恢复、中文化、RAG warmup、真实 SSE 进度、回答 token streaming、TTFT/阶段耗时、来源追溯、执行详情、Operations/Settings 优化、编排质量回归集；Step 6 进入最终产品 gate）
 
 ## 本地环境
 
@@ -202,6 +202,22 @@ npm run build
 
 ```powershell
 npm run smoke
+```
+
+智能编排默认使用流式接口：
+
+```text
+POST /chat/auto/stream
+```
+
+该接口会先推送真实工作流阶段（判断、检索、重排、运行时诊断、回答、综合），随后推送公开回答
+token delta，最后返回完整持久化结果。Operations 页面会同时展示 TTFT 和各阶段耗时快照。
+
+性能接口：
+
+```text
+GET /operations/performance
+GET /metrics
 ```
 
 
