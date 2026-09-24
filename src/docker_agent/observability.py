@@ -39,6 +39,10 @@ _stage_event_sink: ContextVar[StageEventSink | None] = ContextVar(
     "docker_agent_stage_event_sink",
     default=None,
 )
+_public_text_sink: ContextVar[PublicTextSink | None] = ContextVar(
+    "docker_agent_public_text_sink",
+    default=None,
+)
 
 _RUN_DURATION_BUCKETS = (
     0.1,
@@ -101,6 +105,7 @@ class StageEvent:
 
 
 StageEventSink = Callable[[StageEvent], None]
+PublicTextSink = Callable[[str], None]
 
 
 class JsonLogFormatter(logging.Formatter):
@@ -249,6 +254,41 @@ def stage_event_context(
         _stage_event_sink.reset(token)
 
 
+@contextmanager
+def public_text_context(
+    sink: PublicTextSink,
+) -> Iterator[None]:
+    """Expose public answer deltas to one synchronous execution context."""
+
+    token = _public_text_sink.set(sink)
+    try:
+        yield
+    finally:
+        _public_text_sink.reset(token)
+
+
+def public_text_stream_available() -> bool:
+    """Whether the current execution can deliver public answer deltas."""
+
+    return _public_text_sink.get() is not None
+
+
+def emit_public_text_delta(delta: str) -> None:
+    """Deliver one non-empty public answer delta to the active stream."""
+
+    if not delta:
+        return
+    sink = _public_text_sink.get()
+    if sink is None:
+        return
+    try:
+        sink(delta)
+    except Exception:
+        logging.getLogger("docker_agent.performance").exception(
+            "Public text event sink failed"
+        )
+
+
 def _emit_stage_event(event: StageEvent) -> None:
     sink = _stage_event_sink.get()
     if sink is None:
@@ -285,6 +325,9 @@ class MetricsRegistry:
             self._stage_duration_buckets: Counter[
                 tuple[str, float]
             ] = Counter()
+            self._ttft_count = 0
+            self._ttft_sum = 0.0
+            self._ttft_buckets: Counter[float] = Counter()
 
     def record_http_request(
         self,
@@ -347,6 +390,19 @@ class MetricsRegistry:
                 if duration_seconds <= bucket:
                     self._stage_duration_buckets[(stage, bucket)] += 1
 
+    def record_ttft(self, *, duration_ms: int) -> None:
+        """Record request-to-first-public-token latency."""
+
+        if duration_ms < 0:
+            raise ValueError("duration_ms must not be negative")
+        duration_seconds = duration_ms / 1000
+        with self._lock:
+            self._ttft_count += 1
+            self._ttft_sum += duration_seconds
+            for bucket in _STAGE_DURATION_BUCKETS:
+                if duration_seconds <= bucket:
+                    self._ttft_buckets[bucket] += 1
+
     def render_prometheus(self) -> str:
         with self._lock:
             http_requests = self._http_requests.copy()
@@ -360,6 +416,9 @@ class MetricsRegistry:
             stage_duration_count = self._stage_duration_count.copy()
             stage_duration_sum = self._stage_duration_sum.copy()
             stage_duration_buckets = self._stage_duration_buckets.copy()
+            ttft_count = self._ttft_count
+            ttft_sum = self._ttft_sum
+            ttft_buckets = self._ttft_buckets.copy()
 
         lines = [
             (
@@ -485,6 +544,33 @@ class MetricsRegistry:
                 f'{{stage="{escaped_stage}"}} '
                 f"{stage_duration_count[stage]}"
             )
+
+        lines.extend(
+            [
+                (
+                    "# HELP docker_agent_time_to_first_token_seconds "
+                    "Request latency until the first public answer token."
+                ),
+                "# TYPE docker_agent_time_to_first_token_seconds histogram",
+            ]
+        )
+        for bucket in _STAGE_DURATION_BUCKETS:
+            lines.append(
+                "docker_agent_time_to_first_token_seconds_bucket"
+                f'{{le="{bucket:g}"}} {ttft_buckets[bucket]}'
+            )
+        lines.append(
+            "docker_agent_time_to_first_token_seconds_bucket"
+            f'{{le="+Inf"}} {ttft_count}'
+        )
+        lines.append(
+            "docker_agent_time_to_first_token_seconds_sum "
+            f"{ttft_sum:.6f}"
+        )
+        lines.append(
+            "docker_agent_time_to_first_token_seconds_count "
+            f"{ttft_count}"
+        )
 
         return "\n".join(lines) + "\n"
 
