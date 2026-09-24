@@ -24,6 +24,9 @@ class SpecialistRuntimeSource:
     command: tuple[str, ...]
     ok: bool
 
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "command", tuple(self.command))
+
 
 @dataclass(frozen=True, slots=True)
 class SpecialistResultEnvelope:
@@ -39,6 +42,12 @@ class SpecialistResultEnvelope:
     runtime_sources: tuple[SpecialistRuntimeSource, ...] = ()
 
     def __post_init__(self) -> None:
+        object.__setattr__(self, "doc_sources", tuple(self.doc_sources))
+        object.__setattr__(
+            self,
+            "runtime_sources",
+            tuple(self.runtime_sources),
+        )
         if _canonical_label(
             self.agent_type,
             field="agent_type",
