@@ -575,7 +575,8 @@ export function useConversationWorkspace() {
           }
         }
 
-        await syncConversationAfterTurn(
+        pendingUserMessage.value = null;
+        void syncConversationAfterTurn(
           result.conversation_id,
         );
       } else {
@@ -623,7 +624,7 @@ export function useConversationWorkspace() {
         }
       }
 
-      await refreshConversations();
+      void refreshConversations();
       return true;
     } catch (error) {
       actionError.value = errorText(error);
@@ -675,8 +676,8 @@ export function useConversationWorkspace() {
           ),
         ];
       }
-      await syncConversationAfterTurn(conversationId);
-      await refreshConversations();
+      void syncConversationAfterTurn(conversationId);
+      void refreshConversations();
       return true;
     } catch (error) {
       actionError.value = errorText(error);
