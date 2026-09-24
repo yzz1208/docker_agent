@@ -501,7 +501,14 @@ onBeforeUnmount(() => {
               <span>助手</span>
               <span>处理中</span>
             </div>
-            <div class="thinking-indicator">
+            <MessageContent
+              v-if="
+                workspace.activeMode.value === 'auto' &&
+                workspace.streamingAssistantText.value
+              "
+              :content="workspace.streamingAssistantText.value"
+            />
+            <div v-else class="thinking-indicator">
               <span /><span /><span />
               <strong>
                 {{
@@ -531,7 +538,14 @@ onBeforeUnmount(() => {
               <span>助手</span>
               <span>处理中</span>
             </div>
-            <div class="thinking-indicator">
+            <MessageContent
+              v-if="
+                workspace.activeMode.value === 'auto' &&
+                workspace.streamingAssistantText.value
+              "
+              :content="workspace.streamingAssistantText.value"
+            />
+            <div v-else class="thinking-indicator">
               <span /><span /><span />
               <strong>
                 {{
