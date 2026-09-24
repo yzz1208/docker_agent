@@ -18,13 +18,13 @@ from docker_agent.core.tool_result import from_docker_tool_result
 from docker_agent.graph.runtime_loop import run_runtime_loop_graph
 from docker_agent.graph.state import GraphState
 from docker_agent.multi_agent.execution import build_worker_execution_record
-from docker_agent.observability import stage_timer
 from docker_agent.multi_agent.supervisor import WorkerRole, plan_workers
 from docker_agent.multi_agent.workers import (
     DiagnosisWorker,
     KnowledgeWorker,
     RuntimeWorker,
 )
+from docker_agent.observability import stage_timer
 from docker_agent.rag.context import RagContext
 from docker_agent.rag.llm import ChatModel
 from docker_agent.tools.docker_cli import DockerReadOnlyTools
