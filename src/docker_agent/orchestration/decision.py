@@ -141,6 +141,24 @@ class OrchestrationDecisionModel:
                         capability=capability,
                         clarification=None,
                     )
+        else:
+            capability = _current_specialist_fast_path(
+                source,
+                normalized,
+                original_query=active_context.original_query,
+            )
+            if (
+                capability is not None
+                and self._capabilities.supports(source, capability)
+            ):
+                return OrchestrationDecision(
+                    action="direct",
+                    reason="当前问题仍属于现有专家能力范围，继续由当前专家处理。",
+                    source_agent_type=source,
+                    target_agent_type=source,
+                    capability=capability,
+                    clarification=None,
+                )
 
         with stage_timer("orchestration_decision"):
             raw = self._model.complete(
@@ -274,6 +292,67 @@ class OrchestrationDecisionModel:
                 f"source Agent must match current context owner {current!r}"
             )
         return source
+
+
+def _current_specialist_fast_path(
+    source_agent_type: str,
+    question: str,
+    *,
+    original_query: str,
+) -> str | None:
+    if source_agent_type == "docker_support":
+        if _is_initial_infrastructure_incident_request(question):
+            return None
+        if _is_initial_runtime_request(question):
+            return "runtime_diagnostics"
+        if _is_initial_docker_docs_request(question):
+            return "documentation_qa"
+        if _is_initial_lightweight_request(question):
+            return "chat"
+        if _is_short_followup(question):
+            if _is_initial_runtime_request(original_query):
+                return "runtime_diagnostics"
+            if _is_initial_docker_docs_request(original_query):
+                return "documentation_qa"
+            return "chat"
+
+    if source_agent_type == "infrastructure_troubleshooter":
+        if _is_initial_runtime_request(question):
+            return None
+        if (
+            _is_initial_infrastructure_incident_request(question)
+            or _is_short_followup(question)
+            or _is_initial_lightweight_request(question)
+        ):
+            return (
+                "incident_triage"
+                if not _is_initial_lightweight_request(question)
+                else "chat"
+            )
+
+    return None
+
+
+def _is_short_followup(question: str) -> bool:
+    normalized = " ".join(question.strip().split())
+    lowered = normalized.lower()
+    followup_signals = (
+        "继续",
+        "下一步",
+        "然后呢",
+        "那",
+        "还有",
+        "再看",
+        "再查",
+        "what next",
+        "continue",
+        "then",
+        "still",
+    )
+    return len(normalized) <= 80 and any(
+        lowered.startswith(signal)
+        for signal in followup_signals
+    )
 
 
 def _initial_fast_path(
