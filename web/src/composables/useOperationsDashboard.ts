@@ -27,7 +27,7 @@ function errorText(error: unknown): string {
   if (error instanceof Error) {
     return error.message;
   }
-  return "Something went wrong.";
+  return "发生了未知错误，请稍后重试。";
 }
 
 export function useOperationsDashboard() {
@@ -64,11 +64,18 @@ export function useOperationsDashboard() {
 
   function agentDisplayName(value: string | null): string {
     if (!value) {
-      return "Platform-wide";
+      return "全平台";
     }
+    const localized: Record<string, string> = {
+      auto_orchestration: "智能编排",
+      docker_support: "Docker 支持",
+      infrastructure_troubleshooter: "基础设施排障",
+    };
     return (
+      localized[value] ??
       agents.value.find((agent) => agent.agent_type === value)
-        ?.display_name ?? value
+        ?.display_name ??
+      value
     );
   }
 
