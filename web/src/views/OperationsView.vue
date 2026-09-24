@@ -414,7 +414,7 @@ onBeforeUnmount(() => {
               </small>
             </span>
             <span class="status-pill" :data-status="run.status">
-              {{ statusLabel(run.status) }}}
+              {{ statusLabel(run.status) }}
             </span>
             <span>{{ formatDuration(run.duration_ms) }}</span>
             <span>{{ formatDate(run.started_at) }}</span>
@@ -463,7 +463,7 @@ onBeforeUnmount(() => {
                 </small>
               </span>
               <span class="status-pill" :data-status="run.status">
-                {{ statusLabel(run.status) }}}
+                {{ statusLabel(run.status) }}
               </span>
               <span>{{ formatDuration(run.duration_ms) }}</span>
               <span>{{ formatDate(run.started_at) }}</span>
@@ -784,7 +784,7 @@ onBeforeUnmount(() => {
                 class="verdict-badge"
                 :data-verdict="comparison.verdict"
               >
-                {{ comparison.verdict === "pass" ? "通过" : comparison.verdict === "regression" ? "存在回归" : "不完整" }}}
+                {{ comparison.verdict === "pass" ? "通过" : comparison.verdict === "regression" ? "存在回归" : "不完整" }}
               </strong>
             </div>
             <div>
