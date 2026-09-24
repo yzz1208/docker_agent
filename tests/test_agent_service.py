@@ -1,3 +1,4 @@
+import docker_agent.agent.service as service_module
 from docker_agent.agent.service import DockerSupportAgent
 from docker_agent.config import Settings
 from docker_agent.rag.context import CitationSource, RagContext
@@ -105,3 +106,84 @@ def test_docs_only_route_uses_docs_and_no_runtime_tools() -> None:
     assert docker_tools.calls == []
     assert result.answer is not None
     assert result.answer.doc_citation_indices == (1,)
+
+
+class FakeEmbedder:
+    def __init__(self) -> None:
+        self.calls: list[str] = []
+
+    def embed_query(self, text: str) -> list[float]:
+        self.calls.append(text)
+        return [0.1, 0.2]
+
+
+class FakeReranker:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, int]] = []
+
+    def score(self, query: str, passages) -> list[float]:
+        self.calls.append((query, len(passages)))
+        return [1.0 for _ in passages]
+
+
+def test_default_docs_retriever_reuses_heavy_models_and_database_check(
+    monkeypatch,
+) -> None:
+    embedder = FakeEmbedder()
+    reranker = FakeReranker()
+    engine = object()
+    database_checks: list[object] = []
+
+    monkeypatch.setattr(
+        service_module,
+        "check_database",
+        lambda value: database_checks.append(value) or True,
+    )
+    monkeypatch.setattr(
+        service_module,
+        "search_similar_chunks",
+        lambda *args, **kwargs: [],
+    )
+    monkeypatch.setattr(
+        service_module,
+        "search_keyword_chunks",
+        lambda *args, **kwargs: [],
+    )
+    monkeypatch.setattr(
+        service_module,
+        "reciprocal_rank_fusion",
+        lambda *args, **kwargs: [],
+    )
+    monkeypatch.setattr(
+        service_module,
+        "rerank_candidates",
+        lambda query, candidates, scorer, **kwargs: (
+            scorer.score(query, []) and []
+        ),
+    )
+    monkeypatch.setattr(
+        service_module,
+        "build_rag_context",
+        lambda *args, **kwargs: _docs_context(),
+    )
+
+    agent = DockerSupportAgent(
+        settings=Settings(),
+        router_model=FixedModel("{}"),
+        answer_model=FixedModel(""),
+        docker_tools=FakeDockerTools(),  # type: ignore[arg-type]
+        embedder=embedder,  # type: ignore[arg-type]
+        reranker=reranker,
+        docs_engine=engine,  # type: ignore[arg-type]
+    )
+
+    first = agent._retrieve_docs("第一个问题")
+    second = agent._retrieve_docs("第二个问题")
+
+    assert first == second == _docs_context()
+    assert database_checks == [engine]
+    assert embedder.calls == ["第一个问题", "第二个问题"]
+    assert reranker.calls == [
+        ("第一个问题", 0),
+        ("第二个问题", 0),
+    ]
