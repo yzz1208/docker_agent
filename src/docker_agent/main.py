@@ -1287,7 +1287,7 @@ def _auto_stream_error_message(error: BaseException) -> str:
     ):
         return str(error)
     if isinstance(error, (ModelRequestError, ModelResponseError)):
-        return "编排模型请求失败，请稍后重试。"
+        return "模型请求失败，请稍后重试。"
     if isinstance(error, (SQLAlchemyError, PsycopgError)):
         return "PostgreSQL 暂时不可用。"
     if isinstance(error, ValueError):
