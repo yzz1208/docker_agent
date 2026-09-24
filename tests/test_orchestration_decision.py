@@ -148,6 +148,46 @@ def test_existing_specialist_can_choose_validated_delegation() -> None:
     assert '"current_agent_type": "docker_support"' in fake.user_prompts[0]
 
 
+def test_current_docker_specialist_docs_followup_skips_model() -> None:
+    registry = build_agent_registry()
+    fake = SequenceModel([])
+    orchestrator = OrchestrationDecisionModel(
+        registry=registry,
+        model=fake,
+    )
+
+    decision = orchestrator.decide(
+        "Docker volume 和 bind mount 有什么区别？",
+        source_agent_type="docker_support",
+    )
+
+    assert decision.action == "direct"
+    assert decision.source_agent_type == "docker_support"
+    assert decision.target_agent_type == "docker_support"
+    assert decision.capability == "documentation_qa"
+    assert fake.user_prompts == []
+
+
+def test_current_docker_specialist_incident_can_still_delegate() -> None:
+    orchestrator, fake, _ = _model(
+        '{"action":"delegate","reason":"service incident",'
+        '"target_agent_type":"infrastructure_troubleshooter",'
+        '"capability":"incident_triage","clarification":null}'
+    )
+
+    decision = orchestrator.decide(
+        "容器正常，但 checkout-api 持续 503，依赖超时增加。",
+        source_agent_type="docker_support",
+    )
+
+    assert decision.action == "delegate"
+    assert decision.target_agent_type == (
+        "infrastructure_troubleshooter"
+    )
+    assert decision.capability == "incident_triage"
+    assert len(fake.user_prompts) == 1
+
+
 def test_direct_action_can_keep_current_specialist() -> None:
     orchestrator, _, _ = _model(
         '{"action":"direct","reason":"current specialist owns capability",'
