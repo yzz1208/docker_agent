@@ -245,14 +245,16 @@ class OpenAICompatibleChatClient:
                 yield response
             return
 
-        with httpx.Client(timeout=self.timeout_seconds) as client:
-            with client.stream(
+        with (
+            httpx.Client(timeout=self.timeout_seconds) as client,
+            client.stream(
                 "POST",
                 self.endpoint,
                 headers=headers,
                 json=payload,
-            ) as response:
-                yield response
+            ) as response,
+        ):
+            yield response
 
     def _post_with_retry(
         self,
