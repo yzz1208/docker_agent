@@ -317,6 +317,7 @@ export function useConversationWorkspace() {
         } else {
           selectedMode.value = "manual";
           selectedAgentType.value = loaded.conversation.agent_type;
+          restoreManualTurn(loaded);
         }
       }
     } catch (error) {
@@ -339,6 +340,71 @@ export function useConversationWorkspace() {
     conversationError.value = "";
     actionError.value = "";
     loadingConversation.value = false;
+  }
+
+  function restoreManualTurn(
+    loaded: ConversationDetail,
+  ): void {
+    if (loaded.conversation.agent_type === AUTO_AGENT_TYPE) {
+      return;
+    }
+
+    const assistant = [...loaded.messages]
+      .reverse()
+      .find((message) => message.role === "assistant");
+    if (!assistant) {
+      return;
+    }
+
+    latestTurns.value = {
+      ...latestTurns.value,
+      [loaded.conversation.id]: {
+        agent_type: loaded.conversation.agent_type,
+        conversation_id: loaded.conversation.id,
+        session_id: "",
+        session_active: false,
+        route: assistant.route ?? "chat",
+        reason: "已从该对话最近一次持久化执行中恢复。",
+        use_docs: Boolean(assistant.use_docs),
+        clarification: assistant.clarification,
+        answer: assistant.clarification
+          ? null
+          : assistant.content,
+        runtime_sources: [],
+        doc_sources: [],
+        execution: assistant.execution
+          ? {
+              planned_workers:
+                assistant.execution.planned_workers,
+              completed_workers:
+                assistant.execution.completed_workers,
+              worker_trace:
+                assistant.execution.worker_trace
+                  .filter(
+                    (item) =>
+                      typeof item.index === "number" &&
+                      typeof item.role === "string",
+                  )
+                  .map((item) => ({
+                    index: Number(item.index),
+                    role: String(item.role),
+                    tool_results_added: Number(
+                      item.tool_results_added ?? 0,
+                    ),
+                    evidence_added: Number(
+                      item.evidence_added ?? 0,
+                    ),
+                    runtime_steps_added: Number(
+                      item.runtime_steps_added ?? 0,
+                    ),
+                    answer_created: Boolean(
+                      item.answer_created,
+                    ),
+                  })),
+            }
+          : null,
+      },
+    };
   }
 
   function restoreAutoTurn(loaded: ConversationDetail): void {
