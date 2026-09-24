@@ -22,6 +22,10 @@ from docker_agent.orchestration.checkpoint import (
     orchestration_thread_config,
     postgres_checkpoint_uri,
 )
+from docker_agent.orchestration.envelope import (
+    SpecialistDocSource,
+    SpecialistRuntimeSource,
+)
 from docker_agent.orchestration.checkpoint_graph import (
     build_checkpointed_orchestration_graph,
     read_checkpointed_orchestration,
@@ -452,6 +456,22 @@ def test_checkpoint_serializer_round_trips_allowlisted_public_types() -> None:
         needs_clarification=False,
         clarification=None,
         summary="容器运行正常。",
+        doc_sources=(
+            SpecialistDocSource(
+                index=1,
+                title="Docker docs",
+                section="Run containers",
+                source_url="https://docs.docker.com/example/",
+            ),
+        ),
+        runtime_sources=(
+            SpecialistRuntimeSource(
+                index=1,
+                tool="docker_ps",
+                command=("docker", "ps"),
+                ok=True,
+            ),
+        ),
     )
 
     encoded = serializer.dumps_typed(value)
