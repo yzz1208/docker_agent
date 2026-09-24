@@ -1,6 +1,7 @@
 import logging
 from contextlib import asynccontextmanager
 from functools import lru_cache
+from threading import Thread
 from time import perf_counter
 from typing import Annotated
 
@@ -215,6 +216,35 @@ validate_factory_registration(
 )
 
 
+def _warm_rag_models(agent: AgentProtocol) -> None:
+    """Preload heavyweight retrieval models without blocking app startup."""
+
+    warmup = getattr(agent, "warmup_retrieval", None)
+    if not callable(warmup):
+        logger.warning(
+            "RAG model warmup skipped because the Agent has no warmup hook"
+        )
+        return
+
+    started = perf_counter()
+    logger.info("RAG model warmup started")
+    try:
+        warmup()
+    except Exception:
+        logger.exception("RAG model warmup failed")
+        return
+
+    logger.info(
+        "RAG model warmup completed",
+        extra={
+            "duration_ms": max(
+                0,
+                round((perf_counter() - started) * 1000),
+            ),
+        },
+    )
+
+
 @asynccontextmanager
 async def app_lifespan(_app: FastAPI):
     """Own runtime validation, database readiness, and engine disposal."""
@@ -234,33 +264,15 @@ async def app_lifespan(_app: FastAPI):
         )
 
         if settings.rag_warmup_on_startup:
-            warmup_started = perf_counter()
             docker_support = get_agent(
                 DOCKER_SUPPORT_DESCRIPTOR.agent_type
             )
-            warmup = getattr(
-                docker_support,
-                "warmup_retrieval",
-                None,
-            )
-            if not callable(warmup):
-                raise RuntimeError(
-                    "Docker support Agent does not expose retrieval warmup"
-                )
-            logger.info("RAG model warmup started")
-            warmup()
-            logger.info(
-                "RAG model warmup completed",
-                extra={
-                    "duration_ms": max(
-                        0,
-                        round(
-                            (perf_counter() - warmup_started)
-                            * 1000
-                        ),
-                    ),
-                },
-            )
+            Thread(
+                target=_warm_rag_models,
+                args=(docker_support,),
+                name="docker-agent-rag-warmup",
+                daemon=True,
+            ).start()
 
         yield
     finally:
