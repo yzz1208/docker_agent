@@ -315,6 +315,18 @@ onBeforeUnmount(() => {
       </div>
 
       <div
+        v-if="
+          workspace.syncingConversation.value &&
+          !workspace.sending.value
+        "
+        class="conversation-sync-note"
+        aria-live="polite"
+      >
+        <span class="conversation-sync-note__dot" />
+        回答已完成，正在同步对话记录…
+      </div>
+
+      <div
         v-if="workspace.sending.value && workspace.activeMode.value === 'auto'"
         class="auto-running"
       >
@@ -436,9 +448,9 @@ onBeforeUnmount(() => {
           </button>
         </div>
 
-        <template v-else-if="workspace.detail.value?.messages.length">
+        <template v-else-if="workspace.displayMessages.value.length">
           <article
-            v-for="message in workspace.detail.value.messages"
+            v-for="message in workspace.displayMessages.value"
             :key="message.id"
             class="message"
             :class="'message--' + message.role"
