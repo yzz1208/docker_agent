@@ -14,9 +14,11 @@ from docker_agent.orchestration import (
     DelegationExecutionService,
     LangGraphProductAutoOrchestrationService,
     OrchestratedSynthesisService,
+    OrchestrationDecisionError,
     OrchestrationDecisionModel,
 )
 from docker_agent.persistence import (
+    create_conversation,
     init_persistence_store,
     load_conversation,
 )
@@ -179,6 +181,64 @@ def test_product_direct_fast_path_completes_without_pending_approval() -> None:
 
     snapshot = load_conversation(engine, turn.conversation.id)
     assert [item.role for item in snapshot.messages] == [
+        "user",
+        "assistant",
+    ]
+
+
+def test_failed_turn_retry_clears_orphaned_approval_checkpoint() -> None:
+    build_service, engine, docker, infrastructure, decision, synthesis = (
+        _runtime(
+            decisions=[
+                "not-json",
+                (
+                    '{"action":"direct","reason":"docker support",'
+                    '"target_agent_type":"docker_support",'
+                    '"capability":"documentation_qa",'
+                    '"clarification":null}'
+                ),
+            ]
+        )
+    )
+    conversation = create_conversation(
+        engine,
+        agent_type="auto_orchestration",
+        title="retry orphaned approval checkpoint",
+    )
+    service = build_service()
+
+    with pytest.raises(
+        OrchestrationDecisionError,
+        match="invalid JSON",
+    ):
+        service.chat(
+            message="帮我看看这个 Docker 问题。",
+            conversation_id=conversation.id,
+        )
+
+    failed_snapshot = load_conversation(
+        engine,
+        conversation.id,
+    )
+    assert failed_snapshot.messages == ()
+
+    completed = service.chat(
+        message="帮我看看这个 Docker 问题。",
+        conversation_id=conversation.id,
+    )
+
+    assert completed.route == "auto_direct"
+    assert completed.answer == "容器运行正常。"
+    assert decision.calls == 2
+    assert synthesis.calls == 0
+    assert docker.questions == ["帮我看看这个 Docker 问题。"]
+    assert infrastructure.questions == []
+
+    completed_snapshot = load_conversation(
+        engine,
+        conversation.id,
+    )
+    assert [item.role for item in completed_snapshot.messages] == [
         "user",
         "assistant",
     ]
