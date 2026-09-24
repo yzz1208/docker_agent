@@ -186,6 +186,7 @@ describe("conversation workspace", () => {
     );
 
     const workspace = useConversationWorkspace();
+    workspace.selectedMode.value = "manual";
     workspace.draft.value = "The container stopped";
 
     expect(await workspace.submitMessage()).toBe(true);
@@ -230,6 +231,7 @@ describe("conversation workspace", () => {
     );
 
     const workspace = useConversationWorkspace();
+    workspace.selectedMode.value = "manual";
     await workspace.refreshAgents();
     workspace.selectedAgentType.value =
       "infrastructure_troubleshooter";
@@ -258,6 +260,7 @@ describe("conversation workspace", () => {
       .mockResolvedValueOnce(detailFor("conversation-1"));
 
     const workspace = useConversationWorkspace();
+    workspace.selectedMode.value = "manual";
     workspace.draft.value = "Inspect Docker";
 
     await workspace.submitMessage();
@@ -330,6 +333,86 @@ describe("conversation workspace", () => {
     expect(workspace.agentDisplayName("docker_support")).toBe(
       "Docker 支持",
     );
+  });
+
+  it("defaults new conversations to intelligent orchestration", () => {
+    const workspace = useConversationWorkspace();
+
+    expect(workspace.selectedMode.value).toBe("auto");
+    expect(workspace.activeMode.value).toBe("auto");
+  });
+
+  it("renders a completed reply before background history sync finishes", async () => {
+    let resolveDetail:
+      | ((value: ConversationDetail) => void)
+      | undefined;
+    const delayedDetail = new Promise<ConversationDetail>((resolve) => {
+      resolveDetail = resolve;
+    });
+
+    vi.mocked(sendAutoChat).mockResolvedValue(
+      autoTurn({
+        answer: "即时回答",
+      }),
+    );
+    vi.mocked(getConversation).mockReturnValueOnce(delayedDetail);
+
+    const workspace = useConversationWorkspace();
+    workspace.draft.value = "检查状态";
+
+    expect(await workspace.submitMessage()).toBe(true);
+    expect(workspace.sending.value).toBe(false);
+    expect(workspace.syncingConversation.value).toBe(true);
+    expect(
+      workspace.displayMessages.value.map((message) => [
+        message.role,
+        message.content,
+      ]),
+    ).toEqual([
+      ["user", "检查状态"],
+      ["assistant", "即时回答"],
+    ]);
+
+    workspace.draft.value = "继续追问";
+    expect(workspace.canSend.value).toBe(true);
+
+    resolveDetail?.(
+      detailFor(
+        "auto-conversation",
+        "Auto issue",
+        "auto_orchestration",
+      ),
+    );
+    await vi.waitFor(() => {
+      expect(workspace.syncingConversation.value).toBe(false);
+    });
+  });
+
+  it("keeps the completed reply usable when background sync fails", async () => {
+    vi.mocked(sendAutoChat).mockResolvedValue(
+      autoTurn({ answer: "已经完成的回答" }),
+    );
+    vi.mocked(getConversation).mockRejectedValue(
+      new Error("temporary sync failure"),
+    );
+
+    const workspace = useConversationWorkspace();
+    workspace.draft.value = "检查状态";
+
+    expect(await workspace.submitMessage()).toBe(true);
+    expect(workspace.displayMessages.value.at(-1)?.content).toBe(
+      "已经完成的回答",
+    );
+
+    await vi.waitFor(() => {
+      expect(workspace.syncingConversation.value).toBe(false);
+    });
+    expect(workspace.actionError.value).toContain(
+      "回答已经完成",
+    );
+
+    workspace.draft.value = "继续";
+    expect(workspace.canSend.value).toBe(true);
   });
 
   it("locks sending while auto approval is pending and resolves it", async () => {
