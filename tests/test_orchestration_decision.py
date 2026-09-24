@@ -197,6 +197,25 @@ def test_wrapped_history_does_not_force_current_specialist_fast_path() -> None:
     assert len(fake.user_prompts) == 1
 
 
+def test_generic_current_word_does_not_trigger_runtime_fast_path() -> None:
+    orchestrator, fake, _ = _model(
+        '{"action":"delegate","reason":"needs service triage",'
+        '"target_agent_type":"infrastructure_troubleshooter",'
+        '"capability":"incident_triage","clarification":null}'
+    )
+
+    decision = orchestrator.decide(
+        "这是当前 follow-up 消息",
+        context=DelegationContext(
+            original_query="这是原始用户问题"
+        ),
+        source_agent_type="docker_support",
+    )
+
+    assert decision.action == "delegate"
+    assert len(fake.user_prompts) == 1
+
+
 def test_current_docker_specialist_docs_followup_skips_model() -> None:
     registry = build_agent_registry()
     fake = SequenceModel([])
