@@ -79,8 +79,10 @@ from docker_agent.api.operations import (
     AgentRunResponse,
     AgentRunStatusQuery,
     AgentRunSummaryResponse,
+    PerformanceSnapshotResponse,
     build_agent_run_response,
     build_agent_run_summary_response,
+    build_performance_snapshot_response,
 )
 from docker_agent.api.orchestration import (
     AutoApprovalDecisionRequest,
@@ -1057,6 +1059,19 @@ def operation_run_detail(run_id: str) -> AgentRunResponse:
         ) from exc
 
     return build_agent_run_response(record)
+
+
+@app.get(
+    "/operations/performance",
+    response_model=PerformanceSnapshotResponse,
+    tags=["operations"],
+)
+def operations_performance() -> PerformanceSnapshotResponse:
+    """Return bounded in-process stage and time-to-first-token latency."""
+
+    return build_performance_snapshot_response(
+        metrics.snapshot_performance()
+    )
 
 
 @app.get(
