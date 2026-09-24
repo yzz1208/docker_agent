@@ -8,6 +8,8 @@ from docker_agent.observability import (
     current_correlation,
     redact_log_text,
     resolve_request_id,
+    stage_event_context,
+    stage_timer,
 )
 
 
@@ -87,6 +89,25 @@ def test_redact_log_text_covers_common_secret_forms() -> None:
     assert redacted.count("[REDACTED]") == 3
 
 
+def test_stage_timer_emits_started_and_completed_events() -> None:
+    events = []
+
+    with stage_event_context(events.append), stage_timer("decision"):
+        pass
+
+    assert [event.status for event in events] == [
+        "started",
+        "completed",
+    ]
+    assert [event.stage for event in events] == [
+        "decision",
+        "decision",
+    ]
+    assert events[0].duration_ms is None
+    assert events[1].duration_ms is not None
+    assert events[1].duration_ms >= 0
+
+
 def test_metrics_registry_renders_bounded_prometheus_metrics() -> None:
     registry = MetricsRegistry()
     registry.record_http_request(
@@ -107,6 +128,19 @@ def test_metrics_registry_renders_bounded_prometheus_metrics() -> None:
         workers=("knowledge",),
         error_type="RuntimeError",
     )
+    registry.record_stage_duration(
+        stage="embedding",
+        duration_ms=125,
+    )
+    registry.record_stage_duration(
+        stage="embedding",
+        duration_ms=375,
+    )
+    registry.record_stage_duration(
+        stage="rerank",
+        duration_ms=900,
+    )
+    registry.record_ttft(duration_ms=640)
 
     output = registry.render_prometheus()
 
@@ -127,3 +161,23 @@ def test_metrics_registry_renders_bounded_prometheus_metrics() -> None:
     )
     assert "docker_agent_run_duration_seconds_count 2" in output
     assert "docker_agent_run_duration_seconds_sum 1.750000" in output
+    assert (
+        'docker_agent_stage_duration_seconds_count{stage="embedding"} 2'
+        in output
+    )
+    assert (
+        'docker_agent_stage_duration_seconds_sum{stage="embedding"} 0.500000'
+        in output
+    )
+    assert (
+        'docker_agent_stage_duration_seconds_count{stage="rerank"} 1'
+        in output
+    )
+    assert (
+        "docker_agent_time_to_first_token_seconds_count 1"
+        in output
+    )
+    assert (
+        "docker_agent_time_to_first_token_seconds_sum 0.640000"
+        in output
+    )

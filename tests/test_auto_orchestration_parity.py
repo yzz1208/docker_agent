@@ -207,7 +207,7 @@ def test_langgraph_auto_direct_matches_phase8_product_contract() -> None:
     assert report.gate_passed is True
     assert report.mismatches == ()
     assert legacy_turn.answer == graph_turn.answer == "容器运行正常。"
-    assert baseline[3].calls == candidate[3].calls == 1
+    assert baseline[3].calls == candidate[3].calls == 0
     assert baseline[4].calls == candidate[4].calls == 0
     assert len(baseline[1].questions) == len(candidate[1].questions) == 1
     assert baseline[2].questions == candidate[2].questions == []

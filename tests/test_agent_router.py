@@ -10,10 +10,12 @@ from docker_agent.agent.router import (
 class FakeModel:
     def __init__(self, response: str) -> None:
         self.response = response
+        self.calls = 0
 
     def complete(self, *, system_prompt: str, user_prompt: str) -> str:
         assert "Return JSON only" in system_prompt
         assert "User question" in user_prompt
+        self.calls += 1
         return self.response
 
 
@@ -31,17 +33,35 @@ def test_chat_route_carries_no_evidence_or_runtime_plan() -> None:
 
 
 def test_route_docs_only_question() -> None:
+    model = FakeModel("not-json")
+
     decision = route_question(
         "Docker volume 和 bind mount 有什么区别？",
-        FakeModel(
-            '{"route":"docs_only","reason":"concept question",'
-            '"container_ref":null,"tools":[],"clarification":null,"use_docs":true}'
-        ),
+        model,
     )
 
     assert decision.route == "docs_only"
     assert decision.tools == ()
     assert decision.container_ref is None
+    assert decision.use_docs is True
+    assert model.calls == 0
+
+
+def test_runtime_word_prevents_docs_fast_path() -> None:
+    model = FakeModel(
+        '{"route":"runtime_tools","reason":"current runtime",'
+        '"container_ref":null,"tools":["docker_info"],'
+        '"clarification":null,"use_docs":false}'
+    )
+
+    decision = route_question(
+        "Docker daemon 现在状态怎么样？",
+        model,
+    )
+
+    assert decision.route == "runtime_tools"
+    assert decision.tools == ("docker_info",)
+    assert model.calls == 1
 
 
 def test_route_named_container_memory_to_stats() -> None:

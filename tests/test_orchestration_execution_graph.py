@@ -138,7 +138,7 @@ def test_execution_graph_direct_runs_exactly_one_specialist() -> None:
         "public specialist answer"
     )
     assert result.context.hop_count == 0
-    assert model.calls == 1
+    assert model.calls == 0
     assert docker.questions == ["web-1 当前内存是多少？"]
     assert infrastructure.questions == []
 

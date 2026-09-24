@@ -325,7 +325,7 @@ def test_default_direct_read_path_skips_approval_fast_path() -> None:
         "specialist",
         "complete",
     )
-    assert decision_raw.calls == 1
+    assert decision_raw.calls == 0
     assert synthesis_raw.calls == 0
     assert docker.questions == ["检查 web-1 当前状态。"]
     assert infrastructure.questions == []
@@ -374,7 +374,7 @@ def test_capability_policy_can_gate_direct_runtime_diagnostics() -> None:
         "specialist",
         "complete",
     )
-    assert decision_raw.calls == 1
+    assert decision_raw.calls == 0
     assert synthesis_raw.calls == 0
     assert docker.questions == ["检查 web-1 当前状态。"]
     assert infrastructure.questions == []

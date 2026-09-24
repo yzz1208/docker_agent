@@ -6,7 +6,11 @@ from typing import Any, Literal, cast
 
 from docker_agent.agent.answer import AgentAnswer
 from docker_agent.config import Settings, get_settings
-from docker_agent.rag.llm import ChatModel, OpenAICompatibleChatClient
+from docker_agent.rag.llm import (
+    ChatModel,
+    OpenAICompatibleChatClient,
+    complete_public_response,
+)
 
 InfrastructureRoute = Literal["triage", "clarify"]
 
@@ -135,7 +139,8 @@ class InfrastructureTroubleshooterAgent:
                 worker_trace=(),
             )
 
-        answer_text = self.answer_model.complete(
+        answer_text = complete_public_response(
+            self.answer_model,
             system_prompt=TRIAGE_ANSWER_SYSTEM_PROMPT,
             user_prompt=_build_triage_prompt(
                 normalized,

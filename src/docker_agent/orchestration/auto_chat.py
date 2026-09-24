@@ -20,12 +20,19 @@ from docker_agent.orchestration.approval_graph import (
     resume_human_approval_orchestration,
     start_human_approval_orchestration,
 )
+from docker_agent.orchestration.checkpoint import (
+    orchestration_thread_config,
+)
 from docker_agent.orchestration.decision import (
     OrchestrationDecision,
     OrchestrationDecisionModel,
 )
 from docker_agent.orchestration.delegation import DelegationContext
-from docker_agent.orchestration.envelope import SpecialistResultEnvelope
+from docker_agent.orchestration.envelope import (
+    SpecialistDocSource,
+    SpecialistResultEnvelope,
+    SpecialistRuntimeSource,
+)
 from docker_agent.orchestration.execution import (
     DelegationExecutionService,
     OrchestrationExecutionResult,
@@ -788,6 +795,11 @@ class LangGraphProductAutoOrchestrationService(
                 checkpointer=checkpointer,
                 approval_policy=self._approval_policy,
             )
+            _clear_orphaned_approval_thread(
+                graph=graph,
+                checkpointer=checkpointer,
+                thread_id=thread_id,
+            )
             result = start_human_approval_orchestration(
                 graph,
                 thread_id=thread_id,
@@ -1368,6 +1380,24 @@ def _state_payload(
                 "result_needs_clarification": result.needs_clarification,
                 "result_clarification": result.clarification or "",
                 "result_summary": result.summary or "",
+                "result_doc_sources": [
+                    {
+                        "index": source.index,
+                        "title": source.title,
+                        "section": source.section,
+                        "source_url": source.source_url,
+                    }
+                    for source in result.doc_sources
+                ],
+                "result_runtime_sources": [
+                    {
+                        "index": source.index,
+                        "tool": source.tool,
+                        "command": list(source.command),
+                        "ok": source.ok,
+                    }
+                    for source in result.runtime_sources
+                ],
             }
         )
     return payload
@@ -1394,6 +1424,12 @@ def _restore_result_envelope(
         if isinstance(summary_raw, str) and summary_raw
         else None
     )
+    doc_sources = _restore_doc_sources(
+        payload.get("result_doc_sources")
+    )
+    runtime_sources = _restore_runtime_sources(
+        payload.get("result_runtime_sources")
+    )
     try:
         return SpecialistResultEnvelope(
             agent_type=agent_type,
@@ -1402,9 +1438,93 @@ def _restore_result_envelope(
             needs_clarification=needs,
             clarification=clarification,
             summary=summary,
+            doc_sources=doc_sources,
+            runtime_sources=runtime_sources,
         )
     except ValueError:
         return None
+
+
+def _restore_doc_sources(
+    value: object,
+) -> tuple[SpecialistDocSource, ...]:
+    if not isinstance(value, list):
+        return ()
+    sources: list[SpecialistDocSource] = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        index = item.get("index")
+        title = item.get("title")
+        section = item.get("section")
+        source_url = item.get("source_url")
+        if (
+            not isinstance(index, int)
+            or not isinstance(title, str)
+            or not isinstance(section, str)
+            or not isinstance(source_url, str)
+        ):
+            continue
+        sources.append(
+            SpecialistDocSource(
+                index=index,
+                title=title,
+                section=section,
+                source_url=source_url,
+            )
+        )
+    return tuple(sources)
+
+
+def _restore_runtime_sources(
+    value: object,
+) -> tuple[SpecialistRuntimeSource, ...]:
+    if not isinstance(value, list):
+        return ()
+    sources: list[SpecialistRuntimeSource] = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        index = item.get("index")
+        tool = item.get("tool")
+        command = item.get("command")
+        ok = item.get("ok")
+        if (
+            not isinstance(index, int)
+            or not isinstance(tool, str)
+            or not isinstance(command, list)
+            or not all(isinstance(part, str) for part in command)
+            or not isinstance(ok, bool)
+        ):
+            continue
+        sources.append(
+            SpecialistRuntimeSource(
+                index=index,
+                tool=tool,
+                command=tuple(command),
+                ok=ok,
+            )
+        )
+    return tuple(sources)
+
+
+def _clear_orphaned_approval_thread(
+    *,
+    graph,
+    checkpointer: BaseCheckpointSaver,
+    thread_id: str,
+) -> None:
+    """Remove checkpoint state left by a failed, non-persisted turn."""
+
+    config = orchestration_thread_config(thread_id)
+    if not graph.get_state(config).values:
+        return
+
+    checkpointer.delete_thread(thread_id)
+    if graph.get_state(config).values:
+        raise AutoOrchestrationError(
+            "failed to clear orphaned approval thread"
+        )
 
 
 def _next_auto_turn_index(

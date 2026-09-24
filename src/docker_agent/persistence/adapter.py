@@ -69,17 +69,7 @@ def persist_agent_turn(
             record.role
             for record in result.worker_trace
         ),
-        worker_trace=tuple(
-            {
-                "index": record.index,
-                "role": record.role,
-                "tool_results_added": record.tool_results_added,
-                "evidence_added": record.evidence_added,
-                "runtime_steps_added": record.runtime_steps_added,
-                "answer_created": record.answer_created,
-            }
-            for record in result.worker_trace
-        ),
+        worker_trace=_safe_execution_trace(result),
     )
 
     return PersistedAgentTurn(
@@ -87,6 +77,54 @@ def persist_agent_turn(
         assistant_message=assistant_record,
         execution=execution_record,
     )
+
+
+def _safe_execution_trace(
+    result: PersistableAgentTurnProtocol,
+) -> tuple[dict[str, object], ...]:
+    trace: list[dict[str, object]] = [
+        {
+            "index": record.index,
+            "role": record.role,
+            "tool_results_added": record.tool_results_added,
+            "evidence_added": record.evidence_added,
+            "runtime_steps_added": record.runtime_steps_added,
+            "answer_created": record.answer_created,
+        }
+        for record in result.worker_trace
+    ]
+
+    if result.answer is None:
+        return tuple(trace)
+
+    trace.extend(
+        {
+            "kind": "doc_source",
+            "index": source.index,
+            "title": source.title,
+            "section": source.section,
+            "source_url": source.source_url,
+        }
+        for source in result.answer.cited_doc_sources
+    )
+    trace.extend(
+        {
+            "kind": "runtime_source",
+            "index": source.index,
+            "tool": source.tool,
+            "command": list(source.command),
+            "ok": source.ok,
+        }
+        for source in result.answer.cited_runtime_sources
+    )
+    trace.append(
+        {
+            "kind": "answer_context",
+            "docs_context_truncated": result.answer.docs_context_truncated,
+            "runtime_context_truncated": result.answer.runtime_context_truncated,
+        }
+    )
+    return tuple(trace)
 
 
 def persist_langgraph_turn(

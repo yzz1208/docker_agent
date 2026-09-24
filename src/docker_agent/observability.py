@@ -4,12 +4,14 @@ import json
 import logging
 import re
 from collections import Counter
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar, Token
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from threading import Lock
+from time import perf_counter
+from typing import Literal
 from uuid import uuid4
 
 _REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
@@ -33,6 +35,14 @@ _conversation_id: ContextVar[str | None] = ContextVar(
     "docker_agent_conversation_id",
     default=None,
 )
+_stage_event_sink: ContextVar[StageEventSink | None] = ContextVar(
+    "docker_agent_stage_event_sink",
+    default=None,
+)
+_public_text_sink: ContextVar[PublicTextSink | None] = ContextVar(
+    "docker_agent_public_text_sink",
+    default=None,
+)
 
 _RUN_DURATION_BUCKETS = (
     0.1,
@@ -45,6 +55,39 @@ _RUN_DURATION_BUCKETS = (
     30.0,
     60.0,
 )
+_STAGE_DURATION_BUCKETS = (
+    0.01,
+    0.025,
+    0.05,
+    0.1,
+    0.25,
+    0.5,
+    1.0,
+    2.5,
+    5.0,
+    10.0,
+    30.0,
+    60.0,
+    120.0,
+)
+_LATENCY_STAGES = frozenset(
+    {
+        "decision",
+        "orchestration_decision",
+        "rag_database",
+        "embedding",
+        "dense_retrieval",
+        "keyword_retrieval",
+        "fusion",
+        "rerank",
+        "context_build",
+        "runtime",
+        "answer",
+        "synthesis",
+        "embedding_model_warmup",
+        "reranker_model_warmup",
+    }
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -52,6 +95,35 @@ class CorrelationContext:
     request_id: str | None
     run_id: str | None
     conversation_id: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class StageEvent:
+    stage: str
+    status: Literal["started", "completed"]
+    duration_ms: int | None = None
+
+
+StageEventSink = Callable[[StageEvent], None]
+PublicTextSink = Callable[[str], None]
+
+
+@dataclass(frozen=True, slots=True)
+class StagePerformanceSnapshot:
+    stage: str
+    count: int
+    average_ms: float
+    p50_upper_ms: int | None
+    p95_upper_ms: int | None
+
+
+@dataclass(frozen=True, slots=True)
+class PerformanceSnapshot:
+    ttft_count: int
+    ttft_average_ms: float | None
+    ttft_p50_upper_ms: int | None
+    ttft_p95_upper_ms: int | None
+    stages: tuple[StagePerformanceSnapshot, ...]
 
 
 class JsonLogFormatter(logging.Formatter):
@@ -96,6 +168,8 @@ class JsonLogFormatter(logging.Formatter):
             "agent_route",
             "error_type",
             "worker_count",
+            "stage",
+            "stage_duration_ms",
         ):
             value = getattr(record, field_name, None)
             if value is not None:
@@ -185,6 +259,66 @@ def current_correlation() -> CorrelationContext:
     )
 
 
+@contextmanager
+def stage_event_context(
+    sink: StageEventSink,
+) -> Iterator[None]:
+    """Expose bounded stage events to one synchronous execution context."""
+
+    token = _stage_event_sink.set(sink)
+    try:
+        yield
+    finally:
+        _stage_event_sink.reset(token)
+
+
+@contextmanager
+def public_text_context(
+    sink: PublicTextSink,
+) -> Iterator[None]:
+    """Expose public answer deltas to one synchronous execution context."""
+
+    token = _public_text_sink.set(sink)
+    try:
+        yield
+    finally:
+        _public_text_sink.reset(token)
+
+
+def public_text_stream_available() -> bool:
+    """Whether the current execution can deliver public answer deltas."""
+
+    return _public_text_sink.get() is not None
+
+
+def emit_public_text_delta(delta: str) -> None:
+    """Deliver one non-empty public answer delta to the active stream."""
+
+    if not delta:
+        return
+    sink = _public_text_sink.get()
+    if sink is None:
+        return
+    try:
+        sink(delta)
+    except Exception:
+        logging.getLogger("docker_agent.performance").exception(
+            "Public text event sink failed"
+        )
+
+
+def _emit_stage_event(event: StageEvent) -> None:
+    sink = _stage_event_sink.get()
+    if sink is None:
+        return
+    try:
+        sink(event)
+    except Exception:
+        logging.getLogger("docker_agent.performance").exception(
+            "Stage event sink failed"
+        )
+
+
 class MetricsRegistry:
     """Small in-process Prometheus text registry with bounded labels."""
 
@@ -204,6 +338,14 @@ class MetricsRegistry:
             self._run_duration_count = 0
             self._run_duration_sum = 0.0
             self._run_duration_buckets: Counter[float] = Counter()
+            self._stage_duration_count: Counter[str] = Counter()
+            self._stage_duration_sum: Counter[str] = Counter()
+            self._stage_duration_buckets: Counter[
+                tuple[str, float]
+            ] = Counter()
+            self._ttft_count = 0
+            self._ttft_sum = 0.0
+            self._ttft_buckets: Counter[float] = Counter()
 
     def record_http_request(
         self,
@@ -245,6 +387,99 @@ class MetricsRegistry:
                 if duration_seconds <= bucket:
                     self._run_duration_buckets[bucket] += 1
 
+    def record_stage_duration(
+        self,
+        *,
+        stage: str,
+        duration_ms: int,
+    ) -> None:
+        """Record one bounded internal latency stage."""
+
+        if stage not in _LATENCY_STAGES:
+            raise ValueError(f"unsupported latency stage: {stage}")
+        if duration_ms < 0:
+            raise ValueError("duration_ms must not be negative")
+
+        duration_seconds = duration_ms / 1000
+        with self._lock:
+            self._stage_duration_count[stage] += 1
+            self._stage_duration_sum[stage] += duration_seconds
+            for bucket in _STAGE_DURATION_BUCKETS:
+                if duration_seconds <= bucket:
+                    self._stage_duration_buckets[(stage, bucket)] += 1
+
+    def record_ttft(self, *, duration_ms: int) -> None:
+        """Record request-to-first-public-token latency."""
+
+        if duration_ms < 0:
+            raise ValueError("duration_ms must not be negative")
+        duration_seconds = duration_ms / 1000
+        with self._lock:
+            self._ttft_count += 1
+            self._ttft_sum += duration_seconds
+            for bucket in _STAGE_DURATION_BUCKETS:
+                if duration_seconds <= bucket:
+                    self._ttft_buckets[bucket] += 1
+
+    def snapshot_performance(self) -> PerformanceSnapshot:
+        """Return a bounded in-process latency snapshot for the product UI."""
+
+        with self._lock:
+            stage_count = self._stage_duration_count.copy()
+            stage_sum = self._stage_duration_sum.copy()
+            stage_buckets = self._stage_duration_buckets.copy()
+            ttft_count = self._ttft_count
+            ttft_sum = self._ttft_sum
+            ttft_buckets = self._ttft_buckets.copy()
+
+        stages = tuple(
+            StagePerformanceSnapshot(
+                stage=stage,
+                count=count,
+                average_ms=round(
+                    (stage_sum[stage] / count) * 1000,
+                    1,
+                ),
+                p50_upper_ms=_histogram_quantile_upper_ms(
+                    count=count,
+                    buckets={
+                        bucket: stage_buckets[(stage, bucket)]
+                        for bucket in _STAGE_DURATION_BUCKETS
+                    },
+                    quantile=0.50,
+                ),
+                p95_upper_ms=_histogram_quantile_upper_ms(
+                    count=count,
+                    buckets={
+                        bucket: stage_buckets[(stage, bucket)]
+                        for bucket in _STAGE_DURATION_BUCKETS
+                    },
+                    quantile=0.95,
+                ),
+            )
+            for stage, count in sorted(stage_count.items())
+            if count > 0
+        )
+        return PerformanceSnapshot(
+            ttft_count=ttft_count,
+            ttft_average_ms=(
+                round((ttft_sum / ttft_count) * 1000, 1)
+                if ttft_count > 0
+                else None
+            ),
+            ttft_p50_upper_ms=_histogram_quantile_upper_ms(
+                count=ttft_count,
+                buckets=ttft_buckets,
+                quantile=0.50,
+            ),
+            ttft_p95_upper_ms=_histogram_quantile_upper_ms(
+                count=ttft_count,
+                buckets=ttft_buckets,
+                quantile=0.95,
+            ),
+            stages=stages,
+        )
+
     def render_prometheus(self) -> str:
         with self._lock:
             http_requests = self._http_requests.copy()
@@ -255,6 +490,12 @@ class MetricsRegistry:
             duration_count = self._run_duration_count
             duration_sum = self._run_duration_sum
             duration_buckets = self._run_duration_buckets.copy()
+            stage_duration_count = self._stage_duration_count.copy()
+            stage_duration_sum = self._stage_duration_sum.copy()
+            stage_duration_buckets = self._stage_duration_buckets.copy()
+            ttft_count = self._ttft_count
+            ttft_sum = self._ttft_sum
+            ttft_buckets = self._ttft_buckets.copy()
 
         lines = [
             (
@@ -348,7 +589,82 @@ class MetricsRegistry:
             f"docker_agent_run_duration_seconds_count {duration_count}"
         )
 
+        lines.extend(
+            [
+                (
+                    "# HELP docker_agent_stage_duration_seconds "
+                    "Internal Agent stage duration by bounded stage name."
+                ),
+                "# TYPE docker_agent_stage_duration_seconds histogram",
+            ]
+        )
+        for stage in sorted(stage_duration_count):
+            escaped_stage = _escape_label(stage)
+            for bucket in _STAGE_DURATION_BUCKETS:
+                lines.append(
+                    "docker_agent_stage_duration_seconds_bucket"
+                    f'{{stage="{escaped_stage}",le="{bucket:g}"}} '
+                    f"{stage_duration_buckets[(stage, bucket)]}"
+                )
+            lines.append(
+                "docker_agent_stage_duration_seconds_bucket"
+                f'{{stage="{escaped_stage}",le="+Inf"}} '
+                f"{stage_duration_count[stage]}"
+            )
+            lines.append(
+                "docker_agent_stage_duration_seconds_sum"
+                f'{{stage="{escaped_stage}"}} '
+                f"{stage_duration_sum[stage]:.6f}"
+            )
+            lines.append(
+                "docker_agent_stage_duration_seconds_count"
+                f'{{stage="{escaped_stage}"}} '
+                f"{stage_duration_count[stage]}"
+            )
+
+        lines.extend(
+            [
+                (
+                    "# HELP docker_agent_time_to_first_token_seconds "
+                    "Request latency until the first public answer token."
+                ),
+                "# TYPE docker_agent_time_to_first_token_seconds histogram",
+            ]
+        )
+        for bucket in _STAGE_DURATION_BUCKETS:
+            lines.append(
+                "docker_agent_time_to_first_token_seconds_bucket"
+                f'{{le="{bucket:g}"}} {ttft_buckets[bucket]}'
+            )
+        lines.append(
+            "docker_agent_time_to_first_token_seconds_bucket"
+            f'{{le="+Inf"}} {ttft_count}'
+        )
+        lines.append(
+            "docker_agent_time_to_first_token_seconds_sum "
+            f"{ttft_sum:.6f}"
+        )
+        lines.append(
+            "docker_agent_time_to_first_token_seconds_count "
+            f"{ttft_count}"
+        )
+
         return "\n".join(lines) + "\n"
+
+
+def _histogram_quantile_upper_ms(
+    *,
+    count: int,
+    buckets: Counter[float] | dict[float, int],
+    quantile: float,
+) -> int | None:
+    if count <= 0:
+        return None
+    target = max(1, int((count * quantile) + 0.999999))
+    for bucket in _STAGE_DURATION_BUCKETS:
+        if buckets.get(bucket, 0) >= target:
+            return round(bucket * 1000)
+    return None
 
 
 def _append_counter(
@@ -370,6 +686,44 @@ def _escape_label(value: str) -> str:
         .replace("\n", "\\n")
         .replace('"', '\\"')
     )
+
+
+@contextmanager
+def stage_timer(stage: str) -> Iterator[None]:
+    """Measure one bounded latency stage and emit metrics plus structured logs."""
+
+    if stage not in _LATENCY_STAGES:
+        raise ValueError(f"unsupported latency stage: {stage}")
+
+    _emit_stage_event(
+        StageEvent(
+            stage=stage,
+            status="started",
+        )
+    )
+    started = perf_counter()
+    try:
+        yield
+    finally:
+        duration_ms = max(0, round((perf_counter() - started) * 1000))
+        metrics.record_stage_duration(
+            stage=stage,
+            duration_ms=duration_ms,
+        )
+        logging.getLogger("docker_agent.performance").info(
+            "Agent stage completed",
+            extra={
+                "stage": stage,
+                "stage_duration_ms": duration_ms,
+            },
+        )
+        _emit_stage_event(
+            StageEvent(
+                stage=stage,
+                status="completed",
+                duration_ms=duration_ms,
+            )
+        )
 
 
 metrics = MetricsRegistry()

@@ -75,6 +75,7 @@ def test_nginx_keeps_operations_page_in_spa_and_proxies_operations_apis() -> Non
     nginx = _read("docker/nginx/default.conf")
 
     assert "location = /operations/summary" in nginx
+    assert "location = /operations/performance" in nginx
     assert "location ^~ /operations/runs" in nginx
     assert "location ^~ /operations/evaluations" in nginx
     assert "location = /operations {" not in nginx

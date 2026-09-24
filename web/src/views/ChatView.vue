@@ -341,9 +341,9 @@ onBeforeUnmount(() => {
           <strong>正在智能编排</strong>
           <p>
             {{
-              elapsedSeconds > 8
-                ? `已处理 ${elapsedSeconds} 秒。首次文档检索可能需要加载本地模型，后续请求会明显更快。`
-                : "快速判断问题类型并交给最合适的专家处理。"
+              elapsedSeconds > 0
+                ? `${workspace.autoProgressText.value} · 已处理 ${elapsedSeconds}s`
+                : workspace.autoProgressText.value
             }}
           </p>
         </div>
@@ -468,18 +468,73 @@ onBeforeUnmount(() => {
             <MessageContent :content="message.content" />
 
             <div
-              v-if="message.execution && workspace.activeMode.value === 'manual'"
-              class="message__execution"
+              v-if="
+                message.role === 'assistant' &&
+                (
+                  workspace.messageDocSources(message).length ||
+                  workspace.messageRuntimeSources(message).length
+                )
+              "
+              class="message-sources"
             >
-              <span>
+              <span class="message-sources__label">依据</span>
+              <a
+                v-for="source in workspace.messageDocSources(message)"
+                :key="'doc-' + message.id + '-' + source.index + '-' + source.source_url"
+                class="message-source-chip message-source-chip--doc"
+                :href="source.source_url"
+                target="_blank"
+                rel="noreferrer"
+              >
+                [{{ source.index }}] {{ source.title }}
+                <small v-if="source.section">{{ source.section }}</small>
+              </a>
+              <span
+                v-for="source in workspace.messageRuntimeSources(message)"
+                :key="'runtime-' + message.id + '-' + source.index + '-' + source.tool"
+                class="message-source-chip message-source-chip--runtime"
+              >
+                [R{{ source.index }}] {{ source.tool }}
+                <small>{{ source.ok ? "成功" : "失败" }}</small>
+              </span>
+            </div>
+
+            <details
+              v-if="
+                message.execution &&
+                workspace.activeMode.value === 'manual' &&
+                workspace.messageWorkerTrace(message).length
+              "
+              class="message-execution-details"
+            >
+              <summary>
                 执行链：
                 {{
                   message.execution.completed_workers
                     .map(workspace.workerDisplayName)
                     .join(" → ") || "无"
                 }}
-              </span>
-            </div>
+              </summary>
+              <div class="message-execution-details__body">
+                <div
+                  v-for="worker in workspace.messageWorkerTrace(message)"
+                  :key="message.id + '-worker-' + worker.index"
+                  class="message-execution-worker"
+                >
+                  <div>
+                    <strong>
+                      {{ worker.index }}. {{ workspace.workerDisplayName(worker.role) }}
+                    </strong>
+                    <span v-if="worker.answer_created">生成回答</span>
+                  </div>
+                  <small>
+                    证据 {{ worker.evidence_added }} ·
+                    工具结果 {{ worker.tool_results_added }} ·
+                    运行步骤 {{ worker.runtime_steps_added }}
+                  </small>
+                </div>
+              </div>
+            </details>
           </article>
 
           <article
@@ -501,13 +556,24 @@ onBeforeUnmount(() => {
               <span>助手</span>
               <span>处理中</span>
             </div>
-            <div class="thinking-indicator">
+            <MessageContent
+              v-if="
+                workspace.activeMode.value === 'auto' &&
+                workspace.streamingAssistantText.value
+              "
+              :content="workspace.streamingAssistantText.value"
+            />
+            <div v-else class="thinking-indicator">
               <span /><span /><span />
               <strong>
                 {{
-                  elapsedSeconds > 0
-                    ? `正在处理 · ${elapsedSeconds}s`
-                    : "正在处理"
+                  workspace.activeMode.value === "auto"
+                    ? elapsedSeconds > 0
+                      ? `${workspace.autoProgressText.value} · ${elapsedSeconds}s`
+                      : workspace.autoProgressText.value
+                    : elapsedSeconds > 0
+                      ? `正在处理 · ${elapsedSeconds}s`
+                      : "正在处理"
                 }}
               </strong>
             </div>
@@ -527,13 +593,24 @@ onBeforeUnmount(() => {
               <span>助手</span>
               <span>处理中</span>
             </div>
-            <div class="thinking-indicator">
+            <MessageContent
+              v-if="
+                workspace.activeMode.value === 'auto' &&
+                workspace.streamingAssistantText.value
+              "
+              :content="workspace.streamingAssistantText.value"
+            />
+            <div v-else class="thinking-indicator">
               <span /><span /><span />
               <strong>
                 {{
-                  elapsedSeconds > 0
-                    ? `正在处理 · ${elapsedSeconds}s`
-                    : "正在处理"
+                  workspace.activeMode.value === "auto"
+                    ? elapsedSeconds > 0
+                      ? `${workspace.autoProgressText.value} · ${elapsedSeconds}s`
+                      : workspace.autoProgressText.value
+                    : elapsedSeconds > 0
+                      ? `正在处理 · ${elapsedSeconds}s`
+                      : "正在处理"
                 }}
               </strong>
             </div>
@@ -768,6 +845,26 @@ onBeforeUnmount(() => {
               </div>
               <p v-if="result.summary">{{ result.summary }}</p>
               <p v-else-if="result.clarification">{{ result.clarification }}</p>
+              <div
+                v-if="result.doc_sources.length || result.runtime_sources.length"
+                class="specialist-result-sources"
+              >
+                <a
+                  v-for="source in result.doc_sources"
+                  :key="'auto-doc-' + result.agent_type + '-' + source.index"
+                  :href="source.source_url"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  [{{ source.index }}] {{ source.title }}
+                </a>
+                <span
+                  v-for="source in result.runtime_sources"
+                  :key="'auto-runtime-' + result.agent_type + '-' + source.index"
+                >
+                  [R{{ source.index }}] {{ source.tool }}
+                </span>
+              </div>
             </div>
           </section>
         </template>

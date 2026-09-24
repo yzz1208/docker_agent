@@ -10,6 +10,25 @@ class CrossAgentEnvelopeError(ValueError):
 
 
 @dataclass(frozen=True, slots=True)
+class SpecialistDocSource:
+    index: int
+    title: str
+    section: str
+    source_url: str
+
+
+@dataclass(frozen=True, slots=True)
+class SpecialistRuntimeSource:
+    index: int
+    tool: str
+    command: tuple[str, ...]
+    ok: bool
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "command", tuple(self.command))
+
+
+@dataclass(frozen=True, slots=True)
 class SpecialistResultEnvelope:
     """Public specialist result safe to carry across an Agent boundary."""
 
@@ -19,8 +38,16 @@ class SpecialistResultEnvelope:
     needs_clarification: bool
     clarification: str | None
     summary: str | None
+    doc_sources: tuple[SpecialistDocSource, ...] = ()
+    runtime_sources: tuple[SpecialistRuntimeSource, ...] = ()
 
     def __post_init__(self) -> None:
+        object.__setattr__(self, "doc_sources", tuple(self.doc_sources))
+        object.__setattr__(
+            self,
+            "runtime_sources",
+            tuple(self.runtime_sources),
+        )
         if _canonical_label(
             self.agent_type,
             field="agent_type",
@@ -194,6 +221,32 @@ def build_specialist_result_envelope(
         needs_clarification=False,
         clarification=None,
         summary=summary,
+        doc_sources=tuple(
+            SpecialistDocSource(
+                index=source.index,
+                title=source.title,
+                section=source.section,
+                source_url=source.source_url,
+            )
+            for source in getattr(
+                turn.answer,
+                "cited_doc_sources",
+                (),
+            )
+        ),
+        runtime_sources=tuple(
+            SpecialistRuntimeSource(
+                index=source.index,
+                tool=source.tool,
+                command=tuple(source.command),
+                ok=source.ok,
+            )
+            for source in getattr(
+                turn.answer,
+                "cited_runtime_sources",
+                (),
+            )
+        ),
     )
 
 
@@ -309,7 +362,9 @@ def _bounded_text(value: str, *, max_chars: int) -> str:
 __all__ = [
     "CrossAgentContextEnvelope",
     "CrossAgentEnvelopeError",
+    "SpecialistDocSource",
     "SpecialistResultEnvelope",
+    "SpecialistRuntimeSource",
     "build_cross_agent_context_envelope",
     "build_specialist_result_envelope",
 ]

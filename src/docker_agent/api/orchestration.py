@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
+from docker_agent.api.chat import DocSourceResponse, RuntimeSourceResponse
 from docker_agent.orchestration.auto_chat import (
     AutoOrchestrationTurn,
     AutoTraceStep,
@@ -44,6 +45,10 @@ class AutoSpecialistResultResponse(BaseModel):
     needs_clarification: bool
     clarification: str | None = None
     summary: str | None = None
+    doc_sources: list[DocSourceResponse] = Field(default_factory=list)
+    runtime_sources: list[RuntimeSourceResponse] = Field(
+        default_factory=list
+    )
 
 
 class AutoChatResponse(BaseModel):
@@ -84,6 +89,24 @@ def build_auto_chat_response(
                 needs_clarification=item.needs_clarification,
                 clarification=item.clarification,
                 summary=item.summary,
+                doc_sources=[
+                    DocSourceResponse(
+                        index=source.index,
+                        title=source.title,
+                        section=source.section,
+                        source_url=source.source_url,
+                    )
+                    for source in item.doc_sources
+                ],
+                runtime_sources=[
+                    RuntimeSourceResponse(
+                        index=source.index,
+                        tool=source.tool,
+                        command=list(source.command),
+                        ok=source.ok,
+                    )
+                    for source in item.runtime_sources
+                ],
             )
             for item in turn.specialist_results
         ],

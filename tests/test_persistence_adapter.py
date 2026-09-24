@@ -1,6 +1,7 @@
 from sqlalchemy import create_engine
 
 from docker_agent.agent.answer import AgentAnswer
+from docker_agent.agent.evidence import RuntimeEvidenceSource
 from docker_agent.agent.router import AgentRouteDecision
 from docker_agent.graph.service import LangGraphAgentTurnResult
 from docker_agent.multi_agent.execution import WorkerExecutionRecord
@@ -12,6 +13,7 @@ from docker_agent.persistence import (
     persist_agent_turn,
     persist_langgraph_turn,
 )
+from docker_agent.rag.context import CitationSource
 
 
 def _engine():
@@ -102,6 +104,82 @@ def test_persist_langgraph_turn_saves_messages_and_execution_metadata() -> None:
         "assistant",
     ]
     assert snapshot.executions == (persisted.execution,)
+
+
+def test_persist_agent_turn_saves_safe_cited_source_metadata() -> None:
+    engine = _engine()
+    conversation = create_conversation(
+        engine,
+        conversation_id="conversation-sources",
+    )
+    answer = AgentAnswer(
+        answer="来自文档。[1] 当前容器可见。[R1]",
+        doc_sources=(),
+        cited_doc_sources=(
+            CitationSource(
+                index=1,
+                chunk_id="chunk-1",
+                title="Docker volumes",
+                section_path=("Storage", "Volumes"),
+                source_url="https://docs.docker.com/engine/storage/volumes/",
+                file_path="volumes.md",
+            ),
+        ),
+        doc_citation_indices=(1,),
+        runtime_sources=(),
+        cited_runtime_sources=(
+            RuntimeEvidenceSource(
+                index=1,
+                tool="docker_ps",
+                command=("docker", "ps"),
+                ok=True,
+            ),
+        ),
+        runtime_citation_indices=(1,),
+        docs_context_truncated=True,
+        runtime_context_truncated=False,
+    )
+    result = LangGraphAgentTurnResult(
+        decision=AgentRouteDecision(
+            route="runtime_tools",
+            reason="combined evidence",
+            container_ref=None,
+            tools=("docker_ps",),
+            clarification=None,
+            use_docs=True,
+        ),
+        answer=answer,
+        runtime_trace=(),
+        supervisor_plan=SupervisorPlan(
+            workers=("knowledge", "runtime", "diagnosis"),
+            reason="combined evidence",
+        ),
+        worker_trace=(),
+    )
+
+    persisted = persist_agent_turn(
+        engine,
+        conversation_id=conversation.id,
+        user_message="检查并解释",
+        result=result,
+    )
+
+    trace = persisted.execution.worker_trace
+    assert any(
+        item.get("kind") == "doc_source"
+        and item.get("title") == "Docker volumes"
+        for item in trace
+    )
+    assert any(
+        item.get("kind") == "runtime_source"
+        and item.get("tool") == "docker_ps"
+        for item in trace
+    )
+    assert any(
+        item.get("kind") == "answer_context"
+        and item.get("docs_context_truncated") is True
+        for item in trace
+    )
 
 
 def test_persist_langgraph_turn_saves_clarification_as_assistant_message() -> None:

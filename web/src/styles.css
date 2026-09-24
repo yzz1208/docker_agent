@@ -2864,3 +2864,127 @@ a {
     transform: translateY(-2px);
   }
 }
+
+
+/* Phase 10 Step 3: source traceability */
+.message-sources {
+  margin-top: 10px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.message-sources__label {
+  color: #8a96a8;
+  font-size: 9px;
+  font-weight: 750;
+}
+
+.message-source-chip {
+  max-width: 100%;
+  padding: 5px 7px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid #dce6ed;
+  border-radius: 7px;
+  background: #f8fbfd;
+  color: #526579;
+  font-size: 9px;
+  line-height: 1.35;
+  text-decoration: none;
+}
+
+.message-source-chip small {
+  overflow: hidden;
+  max-width: 180px;
+  color: #8995a6;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.message-source-chip--doc:hover {
+  border-color: #9fc8d5;
+  background: #f1f9fb;
+}
+
+.message-source-chip--runtime {
+  border-color: #d8e7df;
+  background: #f5faf7;
+  color: #476858;
+}
+
+.specialist-result-sources {
+  margin-top: 8px;
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.specialist-result-sources a,
+.specialist-result-sources span {
+  padding: 4px 6px;
+  border: 1px solid #dde6ec;
+  border-radius: 6px;
+  background: #f7fafc;
+  color: #65778a;
+  font-size: 9px;
+  text-decoration: none;
+}
+
+.specialist-result-sources a:hover {
+  border-color: #a9cbd6;
+  color: #356d7f;
+}
+
+
+.message-execution-details {
+  margin-top: 9px;
+  border-top: 1px dashed #dce4eb;
+  padding-top: 8px;
+}
+
+.message-execution-details summary {
+  width: fit-content;
+  color: #8290a2;
+  font-size: 9px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.message-execution-details__body {
+  margin-top: 8px;
+  display: grid;
+  gap: 6px;
+}
+
+.message-execution-worker {
+  padding: 7px 8px;
+  display: grid;
+  gap: 4px;
+  border: 1px solid #e4eaf0;
+  border-radius: 7px;
+  background: #fafcfd;
+}
+
+.message-execution-worker > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.message-execution-worker strong {
+  color: #4c5d70;
+  font-size: 9px;
+}
+
+.message-execution-worker span {
+  color: #2c7a61;
+  font-size: 8px;
+}
+
+.message-execution-worker small {
+  color: #8a96a7;
+  font-size: 8px;
+}

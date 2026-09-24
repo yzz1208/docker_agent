@@ -9,16 +9,20 @@ import {
   listConversations,
   renameConversation,
   resolveAutoApproval,
-  sendAutoChat,
+  sendAutoChatStream,
   sendChat,
 } from "../lib/api";
 import type {
   AgentDescriptor,
+  AutoChatProgressEvent,
   AutoChatResponse,
   ChatResponse,
   ConversationDetail,
   ConversationMessage,
   ConversationSummary,
+  DocSource,
+  RuntimeSource,
+  WorkerExecution,
 } from "../lib/types";
 
 type ChatMode = "manual" | "auto";
@@ -35,9 +39,11 @@ export function useConversationWorkspace() {
   const activeSessionId = ref<string | null>(null);
   const draft = ref("");
   const pendingUserMessage = ref<string | null>(null);
+  const streamingAssistantText = ref("");
   const optimisticMessages = ref<ConversationMessage[]>([]);
   const optimisticConversationId = ref<string | null>(null);
   const syncingConversation = ref(false);
+  const autoProgress = ref<AutoChatProgressEvent | null>(null);
 
   const latestTurns = ref<Record<string, ChatResponse>>({});
   const latestAutoTurns = ref<Record<string, AutoChatResponse>>({});
@@ -166,6 +172,44 @@ export function useConversationWorkspace() {
       agentType
     );
   }
+
+  function autoProgressStageDisplayName(stage: string): string {
+    const localized: Record<string, string> = {
+      request: "正在理解问题",
+      orchestration_decision: "正在选择合适专家",
+      decision: "正在判断处理方式",
+      rag_database: "正在检查文档知识库",
+      embedding: "正在理解检索问题",
+      dense_retrieval: "正在进行语义检索",
+      keyword_retrieval: "正在匹配关键技术词",
+      fusion: "正在合并检索结果",
+      rerank: "正在筛选最相关文档",
+      context_build: "正在整理文档证据",
+      runtime: "正在运行只读诊断",
+      answer: "正在生成回答",
+      synthesis: "正在综合专家结果",
+    };
+    return localized[stage] ?? "正在处理";
+  }
+
+  const autoProgressText = computed(() => {
+    const progress = autoProgress.value;
+    if (!progress) return "正在准备智能编排";
+
+    const label = autoProgressStageDisplayName(progress.stage);
+    if (
+      progress.status === "completed" &&
+      progress.duration_ms !== null
+    ) {
+      const completedLabel = label.startsWith("正在")
+        ? label.slice(2)
+        : label;
+      return `${completedLabel}完成 · ${(
+        progress.duration_ms / 1000
+      ).toFixed(1)}s`;
+    }
+    return label;
+  });
 
   function capabilityDisplayName(capability: string): string {
     const localized: Record<string, string> = {
@@ -501,6 +545,124 @@ export function useConversationWorkspace() {
     loadingConversation.value = false;
   }
 
+  function traceDocSources(
+    trace: Record<string, unknown>[],
+  ): DocSource[] {
+    const direct = trace
+      .filter((item) => item.kind === "doc_source")
+      .map((item) => ({
+        index: Number(item.index ?? 0),
+        title: String(item.title ?? ""),
+        section: String(item.section ?? ""),
+        source_url: String(item.source_url ?? ""),
+      }))
+      .filter(
+        (source) =>
+          source.index > 0 &&
+          Boolean(source.title) &&
+          Boolean(source.source_url),
+      );
+
+    for (const item of trace) {
+      if (item.kind !== "auto_state") continue;
+      const nested = item.result_doc_sources;
+      if (!Array.isArray(nested)) continue;
+      for (const source of nested) {
+        if (!source || typeof source !== "object") continue;
+        const value = source as Record<string, unknown>;
+        const normalized = {
+          index: Number(value.index ?? 0),
+          title: String(value.title ?? ""),
+          section: String(value.section ?? ""),
+          source_url: String(value.source_url ?? ""),
+        };
+        if (
+          normalized.index > 0 &&
+          normalized.title &&
+          normalized.source_url
+        ) {
+          direct.push(normalized);
+        }
+      }
+    }
+    return direct;
+  }
+
+  function traceRuntimeSources(
+    trace: Record<string, unknown>[],
+  ): RuntimeSource[] {
+    const direct = trace
+      .filter((item) => item.kind === "runtime_source")
+      .map((item) => ({
+        index: Number(item.index ?? 0),
+        tool: String(item.tool ?? ""),
+        command: Array.isArray(item.command)
+          ? item.command.map(String)
+          : [],
+        ok: item.ok === true,
+      }))
+      .filter(
+        (source) => source.index > 0 && Boolean(source.tool),
+      );
+
+    for (const item of trace) {
+      if (item.kind !== "auto_state") continue;
+      const nested = item.result_runtime_sources;
+      if (!Array.isArray(nested)) continue;
+      for (const source of nested) {
+        if (!source || typeof source !== "object") continue;
+        const value = source as Record<string, unknown>;
+        const normalized = {
+          index: Number(value.index ?? 0),
+          tool: String(value.tool ?? ""),
+          command: Array.isArray(value.command)
+            ? value.command.map(String)
+            : [],
+          ok: value.ok === true,
+        };
+        if (normalized.index > 0 && normalized.tool) {
+          direct.push(normalized);
+        }
+      }
+    }
+    return direct;
+  }
+
+  function messageWorkerTrace(
+    message: ConversationMessage,
+  ): WorkerExecution[] {
+    return (message.execution?.worker_trace ?? [])
+      .filter(
+        (item) =>
+          typeof item.index === "number" &&
+          typeof item.role === "string",
+      )
+      .map((item) => ({
+        index: Number(item.index),
+        role: String(item.role),
+        tool_results_added: Number(item.tool_results_added ?? 0),
+        evidence_added: Number(item.evidence_added ?? 0),
+        runtime_steps_added: Number(item.runtime_steps_added ?? 0),
+        answer_created: Boolean(item.answer_created),
+      }));
+  }
+
+  function messageDocSources(
+    message: ConversationMessage,
+  ): DocSource[] {
+    return traceDocSources(
+      message.execution?.worker_trace ?? [],
+    );
+  }
+
+  function messageRuntimeSources(
+    message: ConversationMessage,
+  ): RuntimeSource[] {
+    return traceRuntimeSources(
+      message.execution?.worker_trace ?? [],
+    );
+  }
+
   function restoreManualTurn(
     loaded: ConversationDetail,
   ): void {
@@ -529,8 +691,12 @@ export function useConversationWorkspace() {
         answer: assistant.clarification
           ? null
           : assistant.content,
-        runtime_sources: [],
-        doc_sources: [],
+        runtime_sources: traceRuntimeSources(
+          assistant.execution?.worker_trace ?? [],
+        ),
+        doc_sources: traceDocSources(
+          assistant.execution?.worker_trace ?? [],
+        ),
         execution: assistant.execution
           ? {
               planned_workers:
@@ -601,6 +767,40 @@ export function useConversationWorkspace() {
       state.current_agent_type
         ? state.current_agent_type
         : null;
+    const restoredSpecialistResults =
+      state &&
+      typeof state.result_agent_type === "string" &&
+      state.result_agent_type &&
+      typeof state.result_route === "string" &&
+      state.result_route &&
+      typeof state.result_reason === "string" &&
+      state.result_reason
+        ? [
+            {
+              agent_type: state.result_agent_type,
+              route: state.result_route,
+              reason: state.result_reason,
+              needs_clarification:
+                state.result_needs_clarification === true,
+              clarification:
+                typeof state.result_clarification === "string" &&
+                state.result_clarification
+                  ? state.result_clarification
+                  : null,
+              summary:
+                typeof state.result_summary === "string" &&
+                state.result_summary
+                  ? state.result_summary
+                  : null,
+              doc_sources: traceDocSources(
+                state ? [state] : [],
+              ),
+              runtime_sources: traceRuntimeSources(
+                state ? [state] : [],
+              ),
+            },
+          ]
+        : [];
 
     latestAutoTurns.value = {
       ...latestAutoTurns.value,
@@ -614,7 +814,7 @@ export function useConversationWorkspace() {
         needs_clarification: Boolean(assistant.clarification),
         synthesized: trace.some((item) => item.stage === "synthesis"),
         trace,
-        specialist_results: [],
+        specialist_results: restoredSpecialistResults,
         approval_status: null,
         needs_approval: false,
         approval_request: null,
@@ -630,14 +830,28 @@ export function useConversationWorkspace() {
 
     sending.value = true;
     pendingUserMessage.value = message;
+    streamingAssistantText.value = "";
     actionError.value = "";
 
     try {
       if (activeMode.value === "auto") {
-        const result = await sendAutoChat({
-          message,
-          conversationId: activeConversationId.value,
-        });
+        autoProgress.value = {
+          stage: "request",
+          status: "started",
+          duration_ms: null,
+        };
+        const result = await sendAutoChatStream(
+          {
+            message,
+            conversationId: activeConversationId.value,
+          },
+          (progress) => {
+            autoProgress.value = progress;
+          },
+          (delta) => {
+            streamingAssistantText.value += delta;
+          },
+        );
         activeConversationId.value = result.conversation_id;
         activeSessionId.value = null;
         draft.value = "";
@@ -742,6 +956,8 @@ export function useConversationWorkspace() {
     } finally {
       sending.value = false;
       pendingUserMessage.value = null;
+      autoProgress.value = null;
+      streamingAssistantText.value = "";
     }
   }
 
@@ -885,6 +1101,7 @@ export function useConversationWorkspace() {
     activeSessionId,
     draft,
     pendingUserMessage,
+    streamingAssistantText,
     optimisticMessages,
     displayMessages,
     activeMode,
@@ -899,6 +1116,8 @@ export function useConversationWorkspace() {
     sending,
     approving,
     syncingConversation,
+    autoProgress,
+    autoProgressText,
     renaming,
     deleting,
     agentError,
@@ -911,8 +1130,12 @@ export function useConversationWorkspace() {
     canSend,
     agentDisplayName,
     capabilityDisplayName,
+    autoProgressStageDisplayName,
     workerDisplayName,
     routeDisplayName,
+    messageWorkerTrace,
+    messageDocSources,
+    messageRuntimeSources,
     agentDescription,
     traceStageDisplayName,
     initialize,
