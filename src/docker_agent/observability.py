@@ -4,13 +4,14 @@ import json
 import logging
 import re
 from collections import Counter
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar, Token
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from threading import Lock
 from time import perf_counter
+from typing import Literal
 from uuid import uuid4
 
 _REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
@@ -32,6 +33,10 @@ _run_id: ContextVar[str | None] = ContextVar(
 )
 _conversation_id: ContextVar[str | None] = ContextVar(
     "docker_agent_conversation_id",
+    default=None,
+)
+_stage_event_sink: ContextVar["StageEventSink | None"] = ContextVar(
+    "docker_agent_stage_event_sink",
     default=None,
 )
 
@@ -86,6 +91,16 @@ class CorrelationContext:
     request_id: str | None
     run_id: str | None
     conversation_id: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class StageEvent:
+    stage: str
+    status: Literal["started", "completed"]
+    duration_ms: int | None = None
+
+
+StageEventSink = Callable[[StageEvent], None]
 
 
 class JsonLogFormatter(logging.Formatter):
@@ -219,6 +234,31 @@ def current_correlation() -> CorrelationContext:
         run_id=_run_id.get(),
         conversation_id=_conversation_id.get(),
     )
+
+
+@contextmanager
+def stage_event_context(
+    sink: StageEventSink,
+) -> Iterator[None]:
+    """Expose bounded stage events to one synchronous execution context."""
+
+    token = _stage_event_sink.set(sink)
+    try:
+        yield
+    finally:
+        _stage_event_sink.reset(token)
+
+
+def _emit_stage_event(event: StageEvent) -> None:
+    sink = _stage_event_sink.get()
+    if sink is None:
+        return
+    try:
+        sink(event)
+    except Exception:
+        logging.getLogger("docker_agent.performance").exception(
+            "Stage event sink failed"
+        )
 
 
 class MetricsRegistry:
@@ -477,6 +517,12 @@ def stage_timer(stage: str) -> Iterator[None]:
     if stage not in _LATENCY_STAGES:
         raise ValueError(f"unsupported latency stage: {stage}")
 
+    _emit_stage_event(
+        StageEvent(
+            stage=stage,
+            status="started",
+        )
+    )
     started = perf_counter()
     try:
         yield
@@ -492,6 +538,13 @@ def stage_timer(stage: str) -> Iterator[None]:
                 "stage": stage,
                 "stage_duration_ms": duration_ms,
             },
+        )
+        _emit_stage_event(
+            StageEvent(
+                stage=stage,
+                status="completed",
+                duration_ms=duration_ms,
+            )
         )
 
 
