@@ -32,15 +32,16 @@ _CONTAINER_TOOLS: frozenset[str] = frozenset(
 ROUTER_SYSTEM_PROMPT = """You route Docker support questions.
 Return JSON only. Never answer the Docker question itself.
 
-Available paths:
-1. chat: greeting, capability/self-introduction, or simple usage/help conversation that does
-   not require Docker facts, documentation, or runtime evidence.
-2. docs_only: Docker documentation is sufficient for conceptual, configuration, command,
+Available evidence paths:
+1. docs_only: Docker documentation is sufficient for conceptual, configuration, command,
    best-practice, or how-to questions that do not depend on this user's current runtime.
-3. runtime_tools: the question asks about the user's current Docker daemon, containers,
+2. runtime_tools: the question asks about the user's current Docker daemon, containers,
    resource usage, logs, exit/restart state, or other local runtime facts.
-4. clarify: runtime evidence is required but a specific container is needed and the user
+3. clarify: runtime evidence is required but a specific container is needed and the user
    did not provide an exact container name or ID.
+
+Greetings, capability/self-introduction, and simple platform/help requests are handled by a
+product fast path before this router is called.
 
 Allowed read-only tools:
 - docker_info: current Docker daemon/system information
@@ -52,7 +53,6 @@ Allowed read-only tools:
 Rules:
 - Never invent a container name or ID.
 - Only copy container_ref from the user's question when it is explicitly present.
-- Greetings, "who are you?", "what can you do?", and simple usage/help requests are chat.
 - General Docker questions such as "what is a volume?" or "how does depends_on work?" are docs_only.
 - Choose the smallest sufficient read-only tool set; do not add tools just in case.
 - Current CPU/memory usage for a named container needs docker_stats.
@@ -70,7 +70,7 @@ Rules:
 
 Return exactly:
 {
-  "route": "chat" | "docs_only" | "runtime_tools" | "clarify",
+  "route": "docs_only" | "runtime_tools" | "clarify",
   "reason": "brief reason",
   "container_ref": "exact name/id from question or null",
   "tools": ["allowed tool names"],
