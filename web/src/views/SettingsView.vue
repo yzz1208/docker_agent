@@ -12,23 +12,23 @@ import type {
   EffectiveConfigurationField,
 } from "../lib/types";
 
-const 设置 = useAgentSettings();
+const settings = useAgentSettings();
 const agents = ref<AgentDescriptor[]>([]);
 const catalogLoading = ref(false);
 const catalogError = ref("");
 
 const editableGroups = computed(() =>
   (settings.descriptor.value?.configuration_schema ?? [])
-    .filter((group) => group.key in 设置.fields.value)
+    .filter((group) => group.key in settings.fields.value)
     .map((group) => ({
       key: group.key as SettingGroupKey,
       label: group.label,
-      fields: 设置.fields.value[group.key as SettingGroupKey],
+      fields: settings.fields.value[group.key as SettingGroupKey],
     })),
 );
 
 const environmentFields = computed(
-  () => 设置.configuration.value?.environment_settings ?? {},
+  () => settings.configuration.value?.environment_settings ?? {},
 );
 
 function formatValue(value: unknown): string {
@@ -61,13 +61,13 @@ function inputStep(field: EditableSettingField): string | undefined {
   return undefined;
 }
 
-function handle覆盖默认值Change(
+function handleOverrideChange(
   field: EditableSettingField,
   event: Event,
 ): void {
   const target = event.target;
   if (target instanceof HTMLInputElement) {
-    设置.set覆盖默认值(field, target.checked);
+    settings.setOverride(field, target.checked);
   }
 }
 
@@ -78,13 +78,13 @@ async function loadPage(): Promise<void> {
     agents.value = await listAgents();
     const selected =
       agents.value.find(
-        (agent) => agent.agent_type === 设置.agentType.value,
+        (agent) => agent.agent_type === settings.agentType.value,
       ) ??
       agents.value.find((agent) => agent.default_enabled) ??
       agents.value[0];
 
     if (selected) {
-      await 设置.load(selected.agent_type);
+      await settings.load(selected.agent_type);
     } else {
       catalogError.value = "当前没有可用的专家。";
     }
@@ -93,7 +93,7 @@ async function loadPage(): Promise<void> {
       error instanceof Error
         ? error.message
         : "无法加载专家列表。";
-    await 设置.load();
+    await settings.load();
   } finally {
     catalogLoading.value = false;
   }
@@ -104,7 +104,7 @@ function handleAgentChange(event: Event): void {
   if (!(target instanceof HTMLSelectElement)) {
     return;
   }
-  void 设置.load(target.value);
+  void settings.load(target.value);
 }
 
 onMounted(loadPage);
@@ -117,7 +117,7 @@ onMounted(loadPage);
         <p class="section-label">专家配置</p>
         <h2>
           {{
-            设置.descriptor.value?.display_name ??
+            settings.descriptor.value?.display_name ??
             "Agent"
           }}
           设置
@@ -136,9 +136,9 @@ onMounted(loadPage);
             :value="settings.agentType.value"
             :disabled="
               catalogLoading ||
-              设置.loading.value ||
-              设置.saving.value ||
-              设置.dirty.value
+              settings.loading.value ||
+              settings.saving.value ||
+              settings.dirty.value
             "
             @change="handleAgentChange"
           >
@@ -155,22 +155,22 @@ onMounted(loadPage);
         <button
           class="button button--ghost"
           type="button"
-          :disabled="settings.loading.value || 设置.saving.value"
+          :disabled="settings.loading.value || settings.saving.value"
           @click="settings.load()"
         >
-          {{ 设置.dirty.value ? "放弃修改" : "Refresh" }}
+          {{ settings.dirty.value ? "放弃修改" : "Refresh" }}
         </button>
         <button
           class="button button--primary"
           type="button"
           :disabled="
             !settings.dirty.value ||
-            设置.loading.value ||
-            设置.saving.value
+            settings.loading.value ||
+            settings.saving.value
           "
           @click="settings.save"
         >
-          {{ 设置.saving.value ? "保存中…" : "Save 设置" }}
+          {{ settings.saving.value ? "保存中…" : "Save 设置" }}
         </button>
       </div>
     </div>
@@ -193,7 +193,7 @@ onMounted(loadPage);
       v-if="settings.errorMessage.value"
       class="alert alert--error alert--dismissible"
     >
-      <span>{{ 设置.errorMessage.value }}</span>
+      <span>{{ settings.errorMessage.value }}</span>
       <button
         type="button"
         aria-label="关闭错误提示"
@@ -207,7 +207,7 @@ onMounted(loadPage);
       v-if="settings.successMessage.value"
       class="alert alert--success alert--dismissible"
     >
-      <span>{{ 设置.successMessage.value }}</span>
+      <span>{{ settings.successMessage.value }}</span>
       <button
         type="button"
         aria-label="关闭成功提示"
@@ -260,7 +260,7 @@ onMounted(loadPage);
         <div class="settings-summary__meta">
           <span>
             {{
-              设置.persisted.value
+              settings.persisted.value
                 ? "已保存自定义配置"
                 : "尚未保存自定义配置"
             }}
@@ -269,7 +269,7 @@ onMounted(loadPage);
             更新时间
             {{
               new Date(
-                设置.configuration.value.configuration_updated_at,
+                settings.configuration.value.configuration_updated_at,
               ).toLocaleString()
             }}
           </span>
@@ -282,15 +282,15 @@ onMounted(loadPage);
       >
         <div>
           <p class="section-label">能力</p>
-          <h2>{{ 设置.descriptor.value.display_name }}</h2>
-          <p>{{ 设置.descriptor.value.description }}</p>
+          <h2>{{ settings.descriptor.value.display_name }}</h2>
+          <p>{{ settings.descriptor.value.description }}</p>
         </div>
         <div class="agent-capability-groups">
           <div>
             <strong>能力</strong>
             <div class="chip-row">
               <span
-                v-for="item in 设置.descriptor.value.capabilities"
+                v-for="item in settings.descriptor.value.capabilities"
                 :key="`settings-capability-${item}`"
                 class="chip"
               >
@@ -302,7 +302,7 @@ onMounted(loadPage);
             <strong>工具集</strong>
             <div class="chip-row">
               <span
-                v-for="item in 设置.descriptor.value.toolsets"
+                v-for="item in settings.descriptor.value.toolsets"
                 :key="`settings-toolset-${item}`"
                 class="chip"
               >
@@ -320,7 +320,7 @@ onMounted(loadPage);
             <strong>工作角色</strong>
             <div class="chip-row">
               <span
-                v-for="item in 设置.descriptor.value.worker_roles"
+                v-for="item in settings.descriptor.value.worker_roles"
                 :key="`settings-worker-${item}`"
                 class="chip"
               >
@@ -361,7 +361,7 @@ onMounted(loadPage);
                     :checked="field.override"
                     type="checkbox"
                     :disabled="settings.saving.value"
-                    @change="handle覆盖默认值Change(field, $event)"
+                    @change="handleOverrideChange(field, $event)"
                   />
                   <span>覆盖默认值</span>
                 </label>
@@ -398,7 +398,7 @@ onMounted(loadPage);
                 :step="inputStep(field)"
                 :min="field.minimum ?? undefined"
                 :max="field.maximum ?? undefined"
-                :disabled="!field.override || 设置.saving.value"
+                :disabled="!field.override || settings.saving.value"
                 :aria-invalid="Boolean(field.error)"
               />
               <span v-if="field.error" class="field-error">
