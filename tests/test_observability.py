@@ -8,6 +8,8 @@ from docker_agent.observability import (
     current_correlation,
     redact_log_text,
     resolve_request_id,
+    stage_event_context,
+    stage_timer,
 )
 
 
@@ -85,6 +87,26 @@ def test_redact_log_text_covers_common_secret_forms() -> None:
     assert "xyz" not in redacted
     assert "sk-abcdefgh12345678" not in redacted
     assert redacted.count("[REDACTED]") == 3
+
+
+def test_stage_timer_emits_started_and_completed_events() -> None:
+    events = []
+
+    with stage_event_context(events.append):
+        with stage_timer("decision"):
+            pass
+
+    assert [event.status for event in events] == [
+        "started",
+        "completed",
+    ]
+    assert [event.stage for event in events] == [
+        "decision",
+        "decision",
+    ]
+    assert events[0].duration_ms is None
+    assert events[1].duration_ms is not None
+    assert events[1].duration_ms >= 0
 
 
 def test_metrics_registry_renders_bounded_prometheus_metrics() -> None:
