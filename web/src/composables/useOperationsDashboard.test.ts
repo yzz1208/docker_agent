@@ -207,8 +207,8 @@ describe("operations dashboard", () => {
     expect(dashboard.agents.value).toEqual(agents);
     expect(
       dashboard.agentDisplayName("infrastructure_troubleshooter"),
-    ).toBe("Infrastructure Troubleshooter");
-    expect(dashboard.agentDisplayName(null)).toBe("Platform-wide");
+    ).toBe("基础设施排障");
+    expect(dashboard.agentDisplayName(null)).toBe("全平台");
   });
 
   it("ignores stale run detail responses", async () => {
