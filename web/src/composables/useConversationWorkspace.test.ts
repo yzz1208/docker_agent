@@ -327,6 +327,7 @@ describe("conversation workspace", () => {
         conversationId: null,
       },
       expect.any(Function),
+      expect.any(Function),
     );
     expect(sendChat).not.toHaveBeenCalled();
     expect(workspace.activeMode.value).toBe("auto");
@@ -343,12 +344,14 @@ describe("conversation workspace", () => {
       | ((value: AutoChatResponse) => void)
       | undefined;
     vi.mocked(sendAutoChatStream).mockImplementation(
-      async (_input, onProgress) => {
+      async (_input, onProgress, onDelta) => {
         onProgress?.({
           stage: "rerank",
           status: "started",
           duration_ms: null,
         });
+        onDelta?.("正在生成");
+        onDelta?.("回答");
         return await new Promise<AutoChatResponse>((resolve) => {
           release = resolve;
         });
@@ -365,10 +368,14 @@ describe("conversation workspace", () => {
     expect(workspace.autoProgressText.value).toBe(
       "正在筛选最相关文档",
     );
+    expect(workspace.streamingAssistantText.value).toBe(
+      "正在生成回答",
+    );
 
     release?.(autoTurn({ answer: "Volume explanation" }));
     expect(await sending).toBe(true);
     expect(workspace.autoProgress.value).toBeNull();
+    expect(workspace.streamingAssistantText.value).toBe("");
   });
 
   it("defaults new conversations to intelligent orchestration", () => {
