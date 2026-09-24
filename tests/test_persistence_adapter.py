@@ -6,7 +6,6 @@ from docker_agent.agent.router import AgentRouteDecision
 from docker_agent.graph.service import LangGraphAgentTurnResult
 from docker_agent.multi_agent.execution import WorkerExecutionRecord
 from docker_agent.multi_agent.supervisor import SupervisorPlan
-from docker_agent.rag.context import CitationSource
 from docker_agent.persistence import (
     create_conversation,
     init_persistence_store,
@@ -14,6 +13,7 @@ from docker_agent.persistence import (
     persist_agent_turn,
     persist_langgraph_turn,
 )
+from docker_agent.rag.context import CitationSource
 
 
 def _engine():
