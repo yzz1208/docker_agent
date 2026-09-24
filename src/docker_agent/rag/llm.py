@@ -97,17 +97,7 @@ class OpenAICompatibleChatClient:
         )
 
         response = self._post_with_retry(headers=headers, payload=payload)
-        data = response.json()
-        try:
-            content = data["choices"][0]["message"]["content"]
-        except (KeyError, IndexError, TypeError) as exc:
-            raise ModelResponseError(
-                "Model response does not contain choices[0].message.content"
-            ) from exc
-
-        if not isinstance(content, str) or not content.strip():
-            raise ModelResponseError("Model returned an empty message")
-        return content.strip()
+        return _message_content(response.json()).strip()
 
     def stream_complete(
         self,
@@ -305,14 +295,49 @@ class OpenAICompatibleChatClient:
 
 def _message_content(data: object) -> str:
     try:
-        content = data["choices"][0]["message"]["content"]  # type: ignore[index]
+        choice = data["choices"][0]  # type: ignore[index]
+        message = choice["message"]
+        content = message["content"]
     except (KeyError, IndexError, TypeError) as exc:
         raise ModelResponseError(
             "Model response does not contain choices[0].message.content"
         ) from exc
-    if not isinstance(content, str) or not content.strip():
-        raise ModelResponseError("Model returned an empty message")
-    return content
+
+    if isinstance(content, str) and content.strip():
+        return content
+
+    if isinstance(content, list):
+        parts: list[str] = []
+        for item in content:
+            if not isinstance(item, dict):
+                continue
+            text = item.get("text")
+            if isinstance(text, str) and text:
+                parts.append(text)
+        joined = "".join(parts)
+        if joined.strip():
+            return joined
+
+    finish_reason = None
+    if isinstance(choice, dict):
+        raw_finish_reason = choice.get("finish_reason")
+        if isinstance(raw_finish_reason, str):
+            finish_reason = raw_finish_reason
+
+    reasoning_present = (
+        isinstance(message, dict)
+        and isinstance(message.get("reasoning_content"), str)
+        and bool(message["reasoning_content"].strip())
+    )
+    detail = "Model returned an empty message"
+    if finish_reason:
+        detail += f" (finish_reason={finish_reason!r}"
+        if reasoning_present:
+            detail += ", reasoning_content_present=True"
+        detail += ")"
+    elif reasoning_present:
+        detail += " (reasoning_content_present=True)"
+    raise ModelResponseError(detail)
 
 
 def complete_public_response(
