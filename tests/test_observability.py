@@ -107,6 +107,18 @@ def test_metrics_registry_renders_bounded_prometheus_metrics() -> None:
         workers=("knowledge",),
         error_type="RuntimeError",
     )
+    registry.record_stage_duration(
+        stage="embedding",
+        duration_ms=125,
+    )
+    registry.record_stage_duration(
+        stage="embedding",
+        duration_ms=375,
+    )
+    registry.record_stage_duration(
+        stage="rerank",
+        duration_ms=900,
+    )
 
     output = registry.render_prometheus()
 
@@ -127,3 +139,15 @@ def test_metrics_registry_renders_bounded_prometheus_metrics() -> None:
     )
     assert "docker_agent_run_duration_seconds_count 2" in output
     assert "docker_agent_run_duration_seconds_sum 1.750000" in output
+    assert (
+        'docker_agent_stage_duration_seconds_count{stage="embedding"} 2'
+        in output
+    )
+    assert (
+        'docker_agent_stage_duration_seconds_sum{stage="embedding"} 0.500000'
+        in output
+    )
+    assert (
+        'docker_agent_stage_duration_seconds_count{stage="rerank"} 1'
+        in output
+    )
