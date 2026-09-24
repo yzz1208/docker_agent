@@ -2,6 +2,7 @@
 import { nextTick, onMounted, ref, watch } from "vue";
 
 import AppDialog from "../components/AppDialog.vue";
+import MessageContent from "../components/MessageContent.vue";
 import { useConversationWorkspace } from "../composables/useConversationWorkspace";
 
 const workspace = useConversationWorkspace();
@@ -407,7 +408,7 @@ onMounted(async () => {
               <span>{{ roleLabel(message.role) }}</span>
               <span>{{ formatDate(message.created_at) }}</span>
             </div>
-            <p>{{ message.content }}</p>
+            <MessageContent :content="message.content" />
 
             <div
               v-if="message.execution && workspace.activeMode.value === 'manual'"
