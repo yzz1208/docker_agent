@@ -627,7 +627,7 @@ onBeforeUnmount(() => {
                 </button>
                 <button
                   type="button"
-                  @click="dashboard.useAs设为候选(evaluation.id)"
+                  @click="dashboard.useAsCandidate(evaluation.id)"
                 >
                   设为候选
                 </button>
