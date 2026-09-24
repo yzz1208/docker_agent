@@ -44,7 +44,16 @@ Rules:
 - If current_agent_type is null, use direct rather than delegate.
 - If action is direct and current_agent_type is non-null, target must be that current Agent.
 - If action is delegate, current_agent_type must be non-null and target must be different.
-- Use clarify when information is insufficient to distinguish the needed specialist/capability.
+- Use clarify only when missing information would materially change the specialist/capability
+  choice or is required for a safe next step. Do not clarify merely because the request is broad.
+- Greetings, platform/Agent introductions, general Docker concepts, and ordinary explanatory
+  questions should normally route directly to the most suitable chat/documentation capability.
+- For follow-up requests such as "continue", "what next", or "still failing", use the supplied
+  orchestration context and keep the current specialist unless the new evidence clearly requires
+  another registered specialist.
+- Prefer making useful progress with the information already provided. Ask one concise
+  clarification question only when progress is genuinely blocked.
+- Keep the reason concrete and based on the user's request; do not use generic routing boilerplate.
 - clarification must use the same language as the user request.
 
 Return exactly:
