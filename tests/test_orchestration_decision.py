@@ -35,6 +35,24 @@ def _model(response: str, *, max_hops: int = 2):
     )
 
 
+def test_initial_lightweight_chat_skips_orchestration_model() -> None:
+    registry = build_agent_registry()
+    fake = SequenceModel([])
+    orchestrator = OrchestrationDecisionModel(
+        registry=registry,
+        model=fake,
+    )
+
+    decision = orchestrator.decide("介绍一下这个平台")
+
+    assert decision.action == "direct"
+    assert decision.target_agent_type == "docker_support"
+    assert decision.capability == "chat"
+    assert decision.clarification is None
+    assert fake.user_prompts == []
+    assert fake.system_prompts == []
+
+
 def test_initial_runtime_request_routes_directly_to_docker_support() -> None:
     orchestrator, fake, _ = _model(
         '{"action":"direct","reason":"needs runtime facts",'
