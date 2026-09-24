@@ -468,6 +468,38 @@ onBeforeUnmount(() => {
             <MessageContent :content="message.content" />
 
             <div
+              v-if="
+                message.role === 'assistant' &&
+                (
+                  workspace.messageDocSources(message).length ||
+                  workspace.messageRuntimeSources(message).length
+                )
+              "
+              class="message-sources"
+            >
+              <span class="message-sources__label">依据</span>
+              <a
+                v-for="source in workspace.messageDocSources(message)"
+                :key="'doc-' + message.id + '-' + source.index + '-' + source.source_url"
+                class="message-source-chip message-source-chip--doc"
+                :href="source.source_url"
+                target="_blank"
+                rel="noreferrer"
+              >
+                [{{ source.index }}] {{ source.title }}
+                <small v-if="source.section">{{ source.section }}</small>
+              </a>
+              <span
+                v-for="source in workspace.messageRuntimeSources(message)"
+                :key="'runtime-' + message.id + '-' + source.index + '-' + source.tool"
+                class="message-source-chip message-source-chip--runtime"
+              >
+                [R{{ source.index }}] {{ source.tool }}
+                <small>{{ source.ok ? "成功" : "失败" }}</small>
+              </span>
+            </div>
+
+            <div
               v-if="message.execution && workspace.activeMode.value === 'manual'"
               class="message__execution"
             >
@@ -790,6 +822,26 @@ onBeforeUnmount(() => {
               </div>
               <p v-if="result.summary">{{ result.summary }}</p>
               <p v-else-if="result.clarification">{{ result.clarification }}</p>
+              <div
+                v-if="result.doc_sources.length || result.runtime_sources.length"
+                class="specialist-result-sources"
+              >
+                <a
+                  v-for="source in result.doc_sources"
+                  :key="'auto-doc-' + result.agent_type + '-' + source.index"
+                  :href="source.source_url"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  [{{ source.index }}] {{ source.title }}
+                </a>
+                <span
+                  v-for="source in result.runtime_sources"
+                  :key="'auto-runtime-' + result.agent_type + '-' + source.index"
+                >
+                  [R{{ source.index }}] {{ source.tool }}
+                </span>
+              </div>
             </div>
           </section>
         </template>
