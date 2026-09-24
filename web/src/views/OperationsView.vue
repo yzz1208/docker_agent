@@ -1,13 +1,14 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 
-import { use运行观测Dashboard } from "../composables/use运行观测Dashboard";
+import { useOperationsDashboard } from "../composables/useOperationsDashboard";
 
-type 运行观测Tab = "overview" | "runs" | "evaluations";
+type OperationsTab = "overview" | "runs" | "evaluations";
 
-const dashboard = use运行观测Dashboard();
-const activeTab = ref<运行观测Tab>("overview");
-const tabs: 运行观测Tab[] = ["overview", "runs", "evaluations"];
+const dashboard = useOperationsDashboard();
+const activeTab = ref<OperationsTab>("overview");
+const tabs: OperationsTab[] = ["overview", "runs", "evaluations"];
+let refreshTimer: number | null = null;
 
 const activeRun = computed(() => dashboard.activeRun.value);
 const activeEvaluation = computed(
@@ -86,6 +87,15 @@ function routeLabel(value: string): string {
   return labels[value] ?? value;
 }
 
+function tabLabel(value: OperationsTab): string {
+  const labels: Record<OperationsTab, string> = {
+    overview: "概览",
+    runs: "执行记录",
+    evaluations: "质量评测",
+  };
+  return labels[value];
+}
+
 function workerLabel(value: string): string {
   const labels: Record<string, string> = {
     diagnosis: "诊断",
@@ -118,7 +128,7 @@ function metricDelta(value: number): string {
   return `${sign}${value.toFixed(3)}`;
 }
 
-function selectTab(tab: 运行观测Tab): void {
+function selectTab(tab: OperationsTab): void {
   activeTab.value = tab;
 }
 
@@ -127,7 +137,20 @@ async function openRunFromOverview(runId: string): Promise<void> {
   selectTab("runs");
 }
 
-onMounted(dashboard.initialize);
+onMounted(async () => {
+  await dashboard.initialize();
+  refreshTimer = window.setInterval(() => {
+    if (!dashboard.loadingOverview.value) {
+      void dashboard.loadOverview();
+    }
+  }, 15_000);
+});
+
+onBeforeUnmount(() => {
+  if (refreshTimer !== null) {
+    window.clearInterval(refreshTimer);
+  }
+});
 </script>
 
 <template>
@@ -137,12 +160,13 @@ onMounted(dashboard.initialize);
         <p class="section-label">运行观测与评测</p>
         <h2>运行观测</h2>
         <p>
-          Inspect runtime health, recent Agent runs, persisted evaluations,
-          and regression gates from one operational surface.
+          集中查看运行状态、最近执行、持久化评测和回归门禁，
+          快速定位系统性能与质量问题。
         </p>
       </div>
 
       <div class="operations-hero__actions">
+        <span class="operations-auto-refresh">每 15 秒自动刷新</span>
         <label>
           <span>专家</span>
           <select
@@ -178,7 +202,7 @@ onMounted(dashboard.initialize);
           {{
             dashboard.loadingOverview.value
               ? "刷新中…"
-              : "Refresh"
+              : "刷新"
           }}
         </button>
       </div>
@@ -198,7 +222,7 @@ onMounted(dashboard.initialize);
       </button>
     </div>
 
-    <nav class="operations-tabs" aria-label="运行观测 sections">
+    <nav class="operations-tabs" aria-label="运行观测栏目">
       <button
         v-for="tab in tabs"
         :key="tab"
@@ -206,7 +230,7 @@ onMounted(dashboard.initialize);
         :class="{ 'operations-tab--active': activeTab === tab }"
         @click="selectTab(tab)"
       >
-        {{ tab }}
+        {{ tabLabel(tab) }}
       </button>
     </nav>
 
@@ -318,7 +342,7 @@ onMounted(dashboard.initialize);
               class="distribution-row"
             >
               <div class="distribution-row__meta">
-                <span>{{ routeLabel(row.label) }}</span>
+                <span>{{ workerLabel(row.label) }}</span>
                 <strong>{{ row.value }}</strong>
               </div>
               <div class="distribution-track">
