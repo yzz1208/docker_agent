@@ -264,11 +264,17 @@ export function useConversationWorkspace() {
   function optimisticMessage(
     role: "user" | "assistant",
     content: string,
-    *,
-    route: string | null = null,
-    clarification: string | null = null,
-    useDocs: boolean | null = null,
+    options: {
+      route?: string | null;
+      clarification?: string | null;
+      useDocs?: boolean | null;
+    } = {},
   ): ConversationMessage {
+    const {
+      route = null,
+      clarification = null,
+      useDocs = null,
+    } = options;
     return {
       id: `optimistic-${role}-${Date.now()}-${Math.random().toString(16).slice(2)}`,
       role,
