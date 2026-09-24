@@ -290,18 +290,15 @@ export function useConversationWorkspace() {
   function showOptimisticCompletedTurn(
     userMessage: string,
     assistantContent: string,
-    *,
-    route: string | null,
-    clarification: string | null = null,
-    useDocs: boolean | null = null,
+    options: {
+      route: string | null;
+      clarification?: string | null;
+      useDocs?: boolean | null;
+    },
   ): void {
     optimisticMessages.value = [
       optimisticMessage("user", userMessage),
-      optimisticMessage("assistant", assistantContent, {
-        route,
-        clarification,
-        useDocs,
-      }),
+      optimisticMessage("assistant", assistantContent, options),
     ];
   }
 
