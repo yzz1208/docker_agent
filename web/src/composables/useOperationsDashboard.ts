@@ -5,6 +5,7 @@ import {
   compareEvaluationRuns,
   getAgentRun,
   getEvaluationRun,
+  getOperationsPerformance,
   getOperationsSummary,
   listAgentRuns,
   listAgents,
@@ -18,6 +19,7 @@ import type {
   EvaluationComparison,
   EvaluationRun,
   EvaluationRunDetail,
+  PerformanceSnapshot,
 } from "../lib/types";
 
 function errorText(error: unknown): string {
@@ -34,6 +36,7 @@ export function useOperationsDashboard() {
   const agents = ref<AgentDescriptor[]>([]);
   const summary = ref<AgentRunSummary | null>(null);
   const runs = ref<AgentRunRecord[]>([]);
+  const performance = ref<PerformanceSnapshot | null>(null);
   const evaluations = ref<EvaluationRun[]>([]);
   const activeRun = ref<AgentRunRecord | null>(null);
   const activeEvaluation = ref<EvaluationRunDetail | null>(null);
@@ -97,12 +100,17 @@ export function useOperationsDashboard() {
     errorMessage.value = "";
 
     try {
-      const [nextSummary, nextRuns, nextEvaluations] =
-        await Promise.all([
+      const [
+        nextSummary,
+        nextPerformance,
+        nextRuns,
+        nextEvaluations,
+      ] = await Promise.all([
           getOperationsSummary(
             hours.value,
             agentType.value || undefined,
           ),
+          getOperationsPerformance(),
           listAgentRuns({
             agentType: agentType.value || undefined,
             status: runStatus.value || undefined,
@@ -116,6 +124,7 @@ export function useOperationsDashboard() {
         ]);
 
       summary.value = nextSummary;
+      performance.value = nextPerformance;
       runs.value = nextRuns;
       evaluations.value = nextEvaluations;
 
@@ -223,6 +232,7 @@ export function useOperationsDashboard() {
   return {
     agents,
     summary,
+    performance,
     runs,
     evaluations,
     activeRun,
