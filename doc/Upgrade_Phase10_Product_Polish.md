@@ -226,8 +226,10 @@ RAG_WARMUP_ON_STARTUP=false
 ~~~
 
 Development and test examples keep warmup disabled so lightweight commands and tests do not
-unnecessarily load PyTorch/model weights. The production example enables warmup so cold model
-loading happens during application startup rather than inside the first real user request.
+unnecessarily load PyTorch/model weights. The production example enables a background startup
+warmup. Application readiness is not blocked by model loading; if a documentation request arrives
+before warmup finishes, the existing retrieval lock makes it wait for the same model load instead
+of starting a competing load.
 
 Warmup duration is also included in the stage metrics using
 `embedding_model_warmup` and `reranker_model_warmup`.
