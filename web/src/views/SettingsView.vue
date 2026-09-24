@@ -59,6 +59,94 @@ function agentDescription(agentType: string): string {
   );
 }
 
+function groupDisplayName(key: string, fallback: string): string {
+  const labels: Record<string, string> = {
+    model_settings: "模型",
+    retrieval_settings: "文档检索",
+    runtime_settings: "运行与分诊",
+  };
+  return labels[key] ?? fallback;
+}
+
+function settingLabel(key: string, fallback: string): string {
+  const labels: Record<string, string> = {
+    model_name: "模型名称",
+    temperature: "生成温度",
+    max_tokens: "最大输出 Token",
+    timeout_seconds: "模型超时时间",
+    max_retries: "模型重试次数",
+    retry_backoff_seconds: "重试等待时间",
+    top_k: "候选文档数量",
+    rrf_k: "RRF 平滑参数",
+    dense_weight: "向量检索权重",
+    keyword_weight: "关键词检索权重",
+    rerank_top_k: "重排保留数量",
+    context_max_chars: "文档上下文字符上限",
+    max_steps: "运行时最大步骤",
+    tool_timeout_seconds: "Docker 工具超时",
+    logs_max_lines: "日志行数上限",
+    evidence_max_chars: "运行时证据字符上限",
+    max_hypotheses: "最大假设数量",
+    max_next_steps: "最大后续检查数量",
+  };
+  return labels[key] ?? fallback;
+}
+
+function settingDescription(
+  key: string,
+  fallback: string,
+): string {
+  const descriptions: Record<string, string> = {
+    model_name: "专家调用的 OpenAI 兼容模型标识。",
+    temperature: "控制模型回答的随机性；排障场景通常使用较低值。",
+    max_tokens: "模型一次回答允许生成的最大 Token 数。",
+    timeout_seconds: "单次模型请求允许等待的最长秒数。",
+    max_retries: "可重试模型错误发生后允许再次请求的次数。",
+    retry_backoff_seconds: "模型重试之间的等待时间（秒）。",
+    top_k: "混合检索后进入下一阶段的候选文档数量。",
+    rrf_k: "RRF 融合排序的平滑参数。",
+    dense_weight: "向量语义检索在混合召回中的权重。",
+    keyword_weight: "关键词检索在混合召回中的权重。",
+    rerank_top_k: "重排后最终保留给回答模型的文档数量。",
+    context_max_chars: "传给回答模型的 Docker 文档上下文最大字符数。",
+    max_steps: "一次动态运行时诊断允许执行的最大步骤数。",
+    tool_timeout_seconds: "单次只读 Docker 工具调用的超时时间（秒）。",
+    logs_max_lines: "一次日志读取最多保留的 Docker 日志行数。",
+    evidence_max_chars: "运行时诊断保留并用于回答的最大证据字符数。",
+    max_hypotheses: "一次服务故障分诊最多列出的可能原因数量。",
+    max_next_steps: "一次服务故障分诊最多给出的下一步检查数量。",
+  };
+  return descriptions[key] ?? fallback;
+}
+
+function capabilityLabel(value: string): string {
+  const labels: Record<string, string> = {
+    chat: "对话支持",
+    documentation_qa: "Docker 文档问答",
+    runtime_diagnostics: "运行时诊断",
+    multi_agent_supervision: "多 Worker 协作",
+    incident_triage: "服务故障分诊",
+  };
+  return labels[value] ?? value;
+}
+
+function toolsetLabel(value: string): string {
+  const labels: Record<string, string> = {
+    docker_read_only: "Docker 只读工具",
+  };
+  return labels[value] ?? value;
+}
+
+function workerRoleLabel(value: string): string {
+  const labels: Record<string, string> = {
+    knowledge: "知识检索",
+    runtime: "运行时检查",
+    diagnosis: "诊断与回答",
+    triage: "故障分诊",
+  };
+  return labels[value] ?? value;
+}
+
 function sourceLabel(source: string): string {
   const labels: Record<string, string> = {
     persisted: "自定义覆盖",
@@ -330,7 +418,7 @@ onMounted(loadPage);
                 :key="`settings-capability-${item}`"
                 class="chip"
               >
-                {{ item }}
+                {{ capabilityLabel(item) }}
               </span>
             </div>
           </div>
@@ -342,7 +430,7 @@ onMounted(loadPage);
                 :key="`settings-toolset-${item}`"
                 class="chip"
               >
-                {{ item }}
+                {{ toolsetLabel(item) }}
               </span>
               <span
                 v-if="settings.descriptor.value.toolsets.length === 0"
@@ -360,7 +448,7 @@ onMounted(loadPage);
                 :key="`settings-worker-${item}`"
                 class="chip"
               >
-                {{ item }}
+                {{ workerRoleLabel(item) }}
               </span>
             </div>
           </div>
@@ -375,7 +463,7 @@ onMounted(loadPage);
         <div class="panel__header">
           <div>
             <p class="section-label">可编辑配置</p>
-            <h2>{{ group.label }}</h2>
+            <h2>{{ groupDisplayName(group.key, group.label) }}</h2>
           </div>
         </div>
 
@@ -389,7 +477,7 @@ onMounted(loadPage);
             <div class="setting-editor__info">
               <div class="setting-editor__title">
                 <div>
-                  <strong>{{ field.label }}</strong>
+                  <strong>{{ settingLabel(field.key, field.label) }}</strong>
                   <code>{{ field.key }}</code>
                 </div>
                 <label class="override-toggle">
@@ -403,7 +491,7 @@ onMounted(loadPage);
                 </label>
               </div>
 
-              <p>{{ field.description }}</p>
+              <p>{{ settingDescription(field.key, field.description) }}</p>
 
               <div class="setting-editor__source">
                 <span
