@@ -455,8 +455,69 @@ onBeforeUnmount(() => {
             >
               <span>
                 执行链：
-                {{ message.execution.completed_workers.join(" → ") || "无" }}
+                {{
+                  message.execution.completed_workers
+                    .map(workspace.workerDisplayName)
+                    .join(" → ") || "无"
+                }}
               </span>
+            </div>
+          </article>
+
+          <article
+            v-if="workspace.pendingUserMessage.value"
+            class="message message--user message--pending"
+          >
+            <div class="message__meta">
+              <span>你</span>
+              <span>发送中</span>
+            </div>
+            <MessageContent :content="workspace.pendingUserMessage.value" />
+          </article>
+
+          <article
+            v-if="workspace.pendingUserMessage.value"
+            class="message message--assistant message--thinking"
+          >
+            <div class="message__meta">
+              <span>助手</span>
+              <span>处理中</span>
+            </div>
+            <div class="thinking-indicator">
+              <span /><span /><span />
+              <strong>
+                {{
+                  elapsedSeconds > 0
+                    ? `正在处理 · ${elapsedSeconds}s`
+                    : "正在处理"
+                }}
+              </strong>
+            </div>
+          </article>
+        </template>
+
+        <template v-else-if="workspace.pendingUserMessage.value">
+          <article class="message message--user message--pending">
+            <div class="message__meta">
+              <span>你</span>
+              <span>发送中</span>
+            </div>
+            <MessageContent :content="workspace.pendingUserMessage.value" />
+          </article>
+          <article class="message message--assistant message--thinking">
+            <div class="message__meta">
+              <span>助手</span>
+              <span>处理中</span>
+            </div>
+            <div class="thinking-indicator">
+              <span /><span /><span />
+              <strong>
+                {{
+                  elapsedSeconds > 0
+                    ? `正在处理 · ${elapsedSeconds}s`
+                    : "正在处理"
+                }}
+              </strong>
             </div>
           </article>
         </template>
@@ -723,7 +784,7 @@ onBeforeUnmount(() => {
                 :key="worker"
                 class="chip"
               >
-                {{ worker }}
+                {{ workspace.workerDisplayName(worker) }}
               </span>
             </div>
           </section>
