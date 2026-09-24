@@ -13,6 +13,7 @@ import {
   resetChatSession,
   resolveAutoApproval,
   sendAutoChat,
+  sendAutoChatStream,
   sendChat,
   updateAgentConfiguration,
 } from "./api";
@@ -140,6 +141,58 @@ describe("API client", () => {
         }),
       }),
     );
+  });
+
+  it("parses progress, delta and result events from auto chat stream", async () => {
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(
+          encoder.encode(
+            'event: progress\ndata: {"stage":"answer","status":"started","duration_ms":null}\n\n',
+          ),
+        );
+        controller.enqueue(
+          encoder.encode(
+            'event: delta\ndata: {"text":"你好"}\n\n',
+          ),
+        );
+        controller.enqueue(
+          encoder.encode(
+            'event: result\ndata: {"mode":"auto","conversation_id":"auto-1","current_agent_type":"docker_support","route":"auto_direct","answer":"你好","clarification":null,"needs_clarification":false,"synthesized":false,"trace":[],"specialist_results":[],"approval_status":null,"needs_approval":false,"approval_request":null}\n\n',
+          ),
+        );
+        controller.close();
+      },
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(stream, {
+          status: 200,
+          headers: { "Content-Type": "text/event-stream" },
+        }),
+      ),
+    );
+    const progress = vi.fn();
+    const delta = vi.fn();
+
+    const result = await sendAutoChatStream(
+      {
+        message: "你好",
+        conversationId: null,
+      },
+      progress,
+      delta,
+    );
+
+    expect(progress).toHaveBeenCalledWith({
+      stage: "answer",
+      status: "started",
+      duration_ms: null,
+    });
+    expect(delta).toHaveBeenCalledWith("你好");
+    expect(result.answer).toBe("你好");
   });
 
   it("loads and resolves durable auto approval", async () => {
