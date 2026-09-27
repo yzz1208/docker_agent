@@ -219,7 +219,7 @@ def test_checkpoint_graph_pauses_before_synthesis_and_resumes_without_rework() -
         "delegate",
         "specialist",
     )
-    assert decision_raw.calls == 1
+    assert decision_raw.calls == 0
     assert synthesis_raw.calls == 0
     assert docker.questions == []
     assert len(infrastructure.questions) == 1
