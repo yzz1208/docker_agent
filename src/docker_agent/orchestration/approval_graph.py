@@ -266,7 +266,7 @@ def build_human_approval_orchestration_graph(
             )
 
         execution = execution_service.execute(
-            state["question"],
+            state["approval_question"] or state["question"],
             decision=decision,
             context=state["context"],
             explicit_user_clarification=(
