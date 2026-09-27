@@ -22,6 +22,7 @@ from docker_agent.orchestration.envelope import (
     SpecialistResultEnvelope,
     build_cross_agent_context_envelope,
     build_specialist_result_envelope,
+    render_specialist_continuation_input,
 )
 
 
@@ -100,13 +101,21 @@ class DelegationExecutionService:
 
         request_envelope: CrossAgentContextEnvelope | None = None
         if decision.action == "direct":
-            if prior_specialist_result is not None:
-                raise OrchestrationExecutionError(
-                    "prior specialist result is only valid for delegation"
-                )
             target = self._validate_direct(decision, active_context)
             next_context = active_context
-            agent_input = normalized_question
+            if prior_specialist_result is None:
+                agent_input = normalized_question
+            else:
+                if prior_specialist_result.agent_type != target:
+                    raise OrchestrationExecutionError(
+                        "direct continuation result must belong to "
+                        "the selected Agent"
+                    )
+                agent_input = render_specialist_continuation_input(
+                    original_query=active_context.original_query,
+                    current_user_message=normalized_question,
+                    prior_specialist_result=prior_specialist_result,
+                )
         else:
             target, next_context = self._validate_delegate(
                 decision,
