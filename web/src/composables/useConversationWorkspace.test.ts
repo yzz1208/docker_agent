@@ -380,6 +380,50 @@ describe("conversation workspace", () => {
     expect(workspace.streamingAssistantText.value).toBe("");
   });
 
+  it("keeps a failed user message visible and allows retry", async () => {
+    vi.mocked(sendAutoChatStream)
+      .mockRejectedValueOnce(
+        new Error(
+          "Docker 支持专家执行失败：IndexError: list index out of range",
+        ),
+      )
+      .mockResolvedValueOnce(
+        autoTurn({ answer: "Volume 和 bind mount 的区别。[1]" }),
+      );
+    vi.mocked(getConversation).mockResolvedValue(
+      detailFor(
+        "auto-conversation",
+        "Auto issue",
+        "auto_orchestration",
+      ),
+    );
+
+    const workspace = useConversationWorkspace();
+    workspace.draft.value =
+      "Docker volume 和 bind mount 有什么区别？";
+
+    expect(await workspace.submitMessage()).toBe(false);
+    expect(workspace.failedSubmission.value?.content).toBe(
+      "Docker volume 和 bind mount 有什么区别？",
+    );
+    expect(workspace.failedSubmission.value?.error).toContain(
+      "IndexError",
+    );
+    expect(workspace.draft.value).toBe(
+      "Docker volume 和 bind mount 有什么区别？",
+    );
+    expect(workspace.displayMessages.value.at(-1)).toMatchObject({
+      role: "user",
+      content: "Docker volume 和 bind mount 有什么区别？",
+      route: "__client_failed__",
+    });
+    expect(workspace.actionError.value).toBe("");
+
+    expect(await workspace.retryFailedMessage()).toBe(true);
+    expect(workspace.failedSubmission.value).toBeNull();
+    expect(sendAutoChatStream).toHaveBeenCalledTimes(2);
+  });
+
   it("defaults new conversations to intelligent orchestration", () => {
     const workspace = useConversationWorkspace();
 
