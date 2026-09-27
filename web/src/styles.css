@@ -2880,6 +2880,21 @@ a {
   color: #9f2f2f;
 }
 
+.message--partial-failed {
+  border-style: dashed;
+  border-color: #e7c98e;
+  background: #fffbf2;
+}
+
+.partial-failed-note {
+  margin-top: 10px;
+  padding-top: 9px;
+  border-top: 1px solid #f0dfb8;
+  color: #8b6a2d;
+  font-size: 10px;
+  line-height: 1.5;
+}
+
 .message--thinking {
   min-height: 74px;
 }
