@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+import re
 from threading import Lock
 
 from sqlalchemy.engine import Engine
@@ -204,15 +205,27 @@ class DockerSupportAgent:
                     question,
                     top_k=self.settings.retrieval_candidate_k,
                 )
+                comparison_keyword = _comparison_keyword_results(
+                    self._docs_engine,
+                    question,
+                    initial_results=keyword,
+                    top_k=self.settings.retrieval_candidate_k,
+                )
 
-            if _use_keyword_fast_path(question, keyword):
-                fast_results = _keyword_results_to_hybrid(keyword)
+            fast_keyword = comparison_keyword or keyword
+            if _use_keyword_fast_path(question, fast_keyword):
+                fast_results = _keyword_results_to_hybrid(
+                    fast_keyword
+                )
                 with stage_timer("context_build"):
                     return build_rag_context(
                         fast_results,
-                        max_sources=min(3, self.settings.rerank_top_k),
+                        max_sources=min(
+                            4,
+                            self.settings.rerank_top_k,
+                        ),
                         max_chars=min(
-                            6_000,
+                            7_000,
                             self.settings.rag_context_max_chars,
                         ),
                     )
@@ -268,6 +281,71 @@ class DockerSupportAgent:
             raise ValueError(
                 "Model answer did not cite requested runtime evidence"
             )
+
+
+_COMPARISON_RE = re.compile(
+    r"(?P<left>[A-Za-z0-9_ ./-]{2,80}?)\s*"
+    r"(?:和|与|vs\.?|versus)\s*"
+    r"(?P<right>[A-Za-z0-9_ ./-]{2,80}?)\s*"
+    r"(?:有什么区别|有何区别|区别|比较|compare|difference)",
+    re.IGNORECASE,
+)
+
+
+def _comparison_concepts(question: str) -> tuple[str, str] | None:
+    match = _COMPARISON_RE.search(question)
+    if match is None:
+        return None
+    left = match.group("left").strip(" -./")
+    right = match.group("right").strip(" -./")
+    if not left or not right:
+        return None
+    return left, right
+
+
+def _comparison_keyword_results(
+    engine: Engine,
+    question: str,
+    *,
+    initial_results: list[KeywordSearchResult],
+    top_k: int,
+) -> list[KeywordSearchResult] | None:
+    """Ensure comparison questions retrieve evidence for both concepts."""
+
+    concepts = _comparison_concepts(question)
+    if concepts is None:
+        return None
+
+    per_concept: list[list[KeywordSearchResult]] = []
+    for concept in concepts:
+        results = search_keyword_chunks(
+            engine,
+            concept,
+            top_k=max(2, min(top_k, 6)),
+        )
+        if not results:
+            return None
+        per_concept.append(results)
+
+    merged: list[KeywordSearchResult] = []
+    seen: set[str] = set()
+
+    for results in per_concept:
+        for item in results[:2]:
+            if item.chunk_id in seen:
+                continue
+            seen.add(item.chunk_id)
+            merged.append(item)
+
+    for item in initial_results:
+        if item.chunk_id in seen:
+            continue
+        seen.add(item.chunk_id)
+        merged.append(item)
+        if len(merged) >= top_k:
+            break
+
+    return merged
 
 
 def _use_keyword_fast_path(
