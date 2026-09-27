@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
+from time import perf_counter
 from typing import Literal
 
 from langgraph.checkpoint.base import BaseCheckpointSaver
@@ -39,6 +40,11 @@ from docker_agent.orchestration.execution import (
 )
 from docker_agent.orchestration.graph import run_orchestration_synthesis_graph
 from docker_agent.orchestration.synthesis import OrchestratedSynthesisService
+from docker_agent.persistence.telemetry import (
+    create_agent_run,
+    finalize_agent_run_failure,
+    finalize_agent_run_success,
+)
 from docker_agent.persistence.store import (
     ConversationRecord,
     append_message,
@@ -767,71 +773,101 @@ class LangGraphProductAutoOrchestrationService(
                 "conversation is waiting for approval"
             )
 
-        previous_agent, previous_result = self._restore_latest_state(
-            conversation.id
+        telemetry_run = create_agent_run(
+            self._engine,
+            conversation_id=conversation.id,
+            agent_type=AUTO_ORCHESTRATION_AGENT_TYPE,
         )
-        effective_question = self._effective_question(
-            normalized,
-            recent_messages=recent_messages,
-        )
-        original_query = _original_query(
-            normalized,
-            recent_messages=recent_messages,
-        )
-        observations = _recent_user_observations(
-            normalized,
-            recent_messages=recent_messages,
-        )
-        thread_id = _approval_thread_id(
-            conversation.id,
-            _next_auto_turn_index(recent_messages),
-        )
+        telemetry_started = perf_counter()
 
-        with self._checkpointer_context_factory() as checkpointer:
-            graph = build_human_approval_orchestration_graph(
-                decision_model=self._decision_model,
-                execution_service=self._execution_service,
-                synthesis_service=self._synthesis_service,
-                checkpointer=checkpointer,
-                approval_policy=self._approval_policy,
+        try:
+            previous_agent, previous_result = self._restore_latest_state(
+                conversation.id
             )
-            _clear_orphaned_approval_thread(
-                graph=graph,
-                checkpointer=checkpointer,
-                thread_id=thread_id,
+            effective_question = self._effective_question(
+                normalized,
+                recent_messages=recent_messages,
             )
-            result = start_human_approval_orchestration(
-                graph,
-                thread_id=thread_id,
-                question=effective_question,
-                approval_question=normalized,
-                context=DelegationContext(
-                    original_query=original_query
-                ),
-                source_agent_type=previous_agent,
-                user_observations=observations,
-                prior_specialist_result=previous_result,
+            original_query = _original_query(
+                normalized,
+                recent_messages=recent_messages,
+            )
+            observations = _recent_user_observations(
+                normalized,
+                recent_messages=recent_messages,
+            )
+            thread_id = _approval_thread_id(
+                conversation.id,
+                _next_auto_turn_index(recent_messages),
             )
 
-        if result.approval_status == "pending":
-            self._persist_user_message(
+            with self._checkpointer_context_factory() as checkpointer:
+                graph = build_human_approval_orchestration_graph(
+                    decision_model=self._decision_model,
+                    execution_service=self._execution_service,
+                    synthesis_service=self._synthesis_service,
+                    checkpointer=checkpointer,
+                    approval_policy=self._approval_policy,
+                )
+                _clear_orphaned_approval_thread(
+                    graph=graph,
+                    checkpointer=checkpointer,
+                    thread_id=thread_id,
+                )
+                result = start_human_approval_orchestration(
+                    graph,
+                    thread_id=thread_id,
+                    question=effective_question,
+                    approval_question=normalized,
+                    context=DelegationContext(
+                        original_query=original_query
+                    ),
+                    source_agent_type=previous_agent,
+                    user_observations=observations,
+                    prior_specialist_result=previous_result,
+                )
+
+            if result.approval_status == "pending":
+                self._persist_user_message(
+                    conversation=conversation,
+                    content=normalized,
+                )
+                turn = self._pending_turn(
+                    conversation=conversation,
+                    result=result,
+                    previous_agent=previous_agent,
+                    previous_result=previous_result,
+                )
+                _finalize_auto_run_success(
+                    self._engine,
+                    telemetry_run.id,
+                    turn,
+                    started=telemetry_started,
+                )
+                return turn
+
+            turn = self._persist_completed_start(
                 conversation=conversation,
-                content=normalized,
-            )
-            return self._pending_turn(
-                conversation=conversation,
+                user_message=normalized,
                 result=result,
                 previous_agent=previous_agent,
                 previous_result=previous_result,
             )
-
-        return self._persist_completed_start(
-            conversation=conversation,
-            user_message=normalized,
-            result=result,
-            previous_agent=previous_agent,
-            previous_result=previous_result,
-        )
+            _finalize_auto_run_success(
+                self._engine,
+                telemetry_run.id,
+                turn,
+                started=telemetry_started,
+            )
+            return turn
+        except Exception as exc:
+            _finalize_auto_run_failure(
+                self._engine,
+                telemetry_run.id,
+                exc,
+                started=telemetry_started,
+            )
+            raise
 
     def pending_approval(
         self,
@@ -894,30 +930,53 @@ class LangGraphProductAutoOrchestrationService(
                 "conversation has no pending approval"
             )
 
-        previous_agent, previous_result = self._restore_latest_state(
-            conversation.id
+        telemetry_run = create_agent_run(
+            self._engine,
+            conversation_id=conversation.id,
+            agent_type=AUTO_ORCHESTRATION_AGENT_TYPE,
         )
-        with self._checkpointer_context_factory() as checkpointer:
-            graph = build_human_approval_orchestration_graph(
-                decision_model=self._decision_model,
-                execution_service=self._execution_service,
-                synthesis_service=self._synthesis_service,
-                checkpointer=checkpointer,
-                approval_policy=self._approval_policy,
-            )
-            result = resume_human_approval_orchestration(
-                graph,
-                thread_id=thread_id,
-                approved=approved,
-                comment=comment,
-            )
+        telemetry_started = perf_counter()
 
-        return self._persist_completed_resume(
-            conversation=conversation,
-            result=result,
-            previous_agent=previous_agent,
-            previous_result=previous_result,
-        )
+        try:
+            previous_agent, previous_result = self._restore_latest_state(
+                conversation.id
+            )
+            with self._checkpointer_context_factory() as checkpointer:
+                graph = build_human_approval_orchestration_graph(
+                    decision_model=self._decision_model,
+                    execution_service=self._execution_service,
+                    synthesis_service=self._synthesis_service,
+                    checkpointer=checkpointer,
+                    approval_policy=self._approval_policy,
+                )
+                result = resume_human_approval_orchestration(
+                    graph,
+                    thread_id=thread_id,
+                    approved=approved,
+                    comment=comment,
+                )
+
+            turn = self._persist_completed_resume(
+                conversation=conversation,
+                result=result,
+                previous_agent=previous_agent,
+                previous_result=previous_result,
+            )
+            _finalize_auto_run_success(
+                self._engine,
+                telemetry_run.id,
+                turn,
+                started=telemetry_started,
+            )
+            return turn
+        except Exception as exc:
+            _finalize_auto_run_failure(
+                self._engine,
+                telemetry_run.id,
+                exc,
+                started=telemetry_started,
+            )
+            raise
 
     def _pending_turn(
         self,
@@ -1208,6 +1267,50 @@ class LangGraphProductAutoOrchestrationService(
             synthesized=False,
             approval_status=status,
         )
+
+
+def _auto_run_stages(
+    turn: AutoOrchestrationTurn,
+) -> tuple[str, ...]:
+    return tuple(step.stage for step in turn.trace)
+
+
+def _auto_run_uses_docs(turn: AutoOrchestrationTurn) -> bool:
+    return any(result.doc_sources for result in turn.specialist_results)
+
+
+def _finalize_auto_run_success(
+    engine: Engine,
+    run_id: str,
+    turn: AutoOrchestrationTurn,
+    *,
+    started: float,
+) -> None:
+    stages = _auto_run_stages(turn)
+    finalize_agent_run_success(
+        engine,
+        run_id,
+        route=turn.route,
+        use_docs=_auto_run_uses_docs(turn),
+        planned_workers=stages,
+        completed_workers=stages,
+        duration_ms=max(0, round((perf_counter() - started) * 1000)),
+    )
+
+
+def _finalize_auto_run_failure(
+    engine: Engine,
+    run_id: str,
+    error: BaseException,
+    *,
+    started: float,
+) -> None:
+    finalize_agent_run_failure(
+        engine,
+        run_id,
+        duration_ms=max(0, round((perf_counter() - started) * 1000)),
+        error=error,
+    )
 
 
 def _decision_trace(decision: OrchestrationDecision) -> AutoTraceStep:
