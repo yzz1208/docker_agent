@@ -330,6 +330,70 @@ def test_exact_keyword_docs_query_skips_embedding_and_reranker(
     assert context.sources[1].title == "Bind mounts"
 
 
+def test_comparison_fast_path_rejects_option_only_evidence() -> None:
+    volume_option = KeywordSearchResult(
+        chunk_id="volume-option",
+        document_id="doc-volume",
+        title="Volumes",
+        section_path=["Volumes", "Syntax", "Options for --mount"],
+        content="volume-subpath and volume-nocopy options.",
+        source_url="https://docs.docker.com/engine/storage/volumes/",
+        file_path="volumes.md",
+        rank_score=2.0,
+    )
+    bind_option = KeywordSearchResult(
+        chunk_id="bind-option",
+        document_id="doc-bind",
+        title="Bind mounts",
+        section_path=["Bind mounts", "Configure bind propagation"],
+        content="Configure bind propagation.",
+        source_url="https://docs.docker.com/engine/storage/bind-mounts/",
+        file_path="bind-mounts.md",
+        rank_score=2.0,
+    )
+
+    assert (
+        service_module._use_keyword_fast_path(
+            "Docker volume 和 bind mount 有什么区别？",
+            [volume_option, bind_option],
+        )
+        is False
+    )
+
+
+def test_comparison_prefers_overview_chunks_before_narrow_options() -> None:
+    narrow = KeywordSearchResult(
+        chunk_id="narrow",
+        document_id="doc-volume",
+        title="Volumes",
+        section_path=["Volumes", "Syntax", "Options for --mount"],
+        content="volume-subpath option.",
+        source_url="https://docs.docker.com/engine/storage/volumes/",
+        file_path="volumes.md",
+        rank_score=4.0,
+    )
+    overview = KeywordSearchResult(
+        chunk_id="overview",
+        document_id="doc-volume",
+        title="Volumes",
+        section_path=["Storage", "Volumes"],
+        content="Overview of Docker-managed volumes.",
+        source_url="https://docs.docker.com/engine/storage/volumes/",
+        file_path="volumes.md",
+        rank_score=1.0,
+    )
+
+    ranked = service_module._prefer_comparison_overview_results(
+        "Docker volume",
+        [narrow, overview],
+    )
+
+    assert [item.chunk_id for item in ranked] == [
+        "overview",
+        "narrow",
+    ]
+
+
 def test_comparison_query_fetches_evidence_for_both_concepts(
     monkeypatch,
 ) -> None:
