@@ -5,7 +5,10 @@ from dataclasses import dataclass
 from typing import Any, Literal, cast
 
 from docker_agent.agent.answer import AgentAnswer
-from docker_agent.agent.context import extract_specialist_user_context
+from docker_agent.agent.context import (
+    extract_specialist_user_context,
+    specialist_user_text,
+)
 from docker_agent.config import Settings, get_settings
 from docker_agent.rag.llm import (
     ChatModel,
@@ -125,7 +128,7 @@ class InfrastructureTroubleshooterAgent:
             raise ValueError("question must not be empty")
 
         user_context = extract_specialist_user_context(normalized)
-        user_question = user_context.render()
+        user_question = specialist_user_text(normalized)
         decision = (
             _structured_incident_route(user_question)
             if user_context.structured
