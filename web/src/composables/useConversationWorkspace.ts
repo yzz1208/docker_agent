@@ -34,6 +34,7 @@ type FailedSubmission = {
   createdAt: string;
   conversationId: string | null;
   stage: string | null;
+  partialAssistantText: string;
 };
 
 const AUTO_AGENT_TYPE = "auto_orchestration";
@@ -991,6 +992,7 @@ export function useConversationWorkspace() {
         createdAt: new Date().toISOString(),
         conversationId: activeConversationId.value,
         stage: autoProgress.value?.stage ?? null,
+        partialAssistantText: streamingAssistantText.value,
       };
       actionError.value = "";
       return false;
