@@ -16,7 +16,7 @@ from docker_agent.orchestration.delegation import (
     DelegationPolicy,
     DelegationPolicyError,
 )
-from docker_agent.rag.llm import ChatModel
+from docker_agent.rag.llm import ChatModel, ModelResponseError
 
 OrchestrationAction = Literal["clarify", "direct", "delegate"]
 
@@ -143,6 +143,14 @@ class OrchestrationDecisionModel:
                         clarification=None,
                     )
         else:
+            handoff = self._deterministic_handoff(
+                source=source,
+                question=routing_question,
+                context=active_context,
+            )
+            if handoff is not None:
+                return handoff
+
             capability = _current_specialist_fast_path(
                 source,
                 routing_question,
@@ -161,14 +169,30 @@ class OrchestrationDecisionModel:
                     clarification=None,
                 )
 
-        with stage_timer("orchestration_decision"):
-            raw = self._model.complete(
-                system_prompt=ORCHESTRATION_SYSTEM_PROMPT,
-                user_prompt=_build_decision_prompt(
-                    registry=self._registry,
-                    question=normalized,
-                    context=active_context,
-                    source_agent_type=source,
+        try:
+            with stage_timer("orchestration_decision"):
+                raw = self._model.complete(
+                    system_prompt=ORCHESTRATION_SYSTEM_PROMPT,
+                    user_prompt=_build_decision_prompt(
+                        registry=self._registry,
+                        question=normalized,
+                        context=active_context,
+                        source_agent_type=source,
+                    ),
+                )
+        except ModelResponseError:
+            return OrchestrationDecision(
+                action="clarify",
+                reason=(
+                    "编排模型未能在输出预算内形成有效决策，"
+                    "安全降级为一次简短澄清。"
+                ),
+                source_agent_type=source,
+                target_agent_type=None,
+                capability=None,
+                clarification=(
+                    "你希望继续排查 Docker 容器/运行时，"
+                    "还是服务级故障与依赖异常？"
                 ),
             )
         return self.validate(
@@ -265,6 +289,64 @@ class OrchestrationDecisionModel:
         handoff = validated.handoffs[-1]
         return OrchestrationDecision(
             action=action,
+            reason=handoff.reason,
+            source_agent_type=handoff.source_agent_type,
+            target_agent_type=handoff.target_agent_type,
+            capability=handoff.capability,
+            clarification=None,
+        )
+
+    def _deterministic_handoff(
+        self,
+        *,
+        source: str,
+        question: str,
+        context: DelegationContext,
+    ) -> OrchestrationDecision | None:
+        target: str | None = None
+        capability: str | None = None
+        reason: str | None = None
+
+        if (
+            source == "docker_support"
+            and _is_initial_infrastructure_incident_request(question)
+        ):
+            target = "infrastructure_troubleshooter"
+            capability = "incident_triage"
+            reason = (
+                "容器层已不足以解释当前服务级 5xx/依赖超时现象，"
+                "需要转交基础设施排障专家。"
+            )
+        elif (
+            source == "infrastructure_troubleshooter"
+            and _is_initial_runtime_request(question)
+        ):
+            target = "docker_support"
+            capability = "runtime_diagnostics"
+            reason = (
+                "当前请求明确需要 Docker 运行时证据，"
+                "需要转交 Docker 支持专家进行只读诊断。"
+            )
+
+        if target is None or capability is None or reason is None:
+            return None
+        if not self._capabilities.supports(target, capability):
+            return None
+
+        try:
+            validated = self._policy.delegate(
+                context,
+                source_agent_type=source,
+                target_agent_type=target,
+                capability=capability,
+                reason=reason,
+            )
+        except DelegationPolicyError as exc:
+            raise OrchestrationDecisionError(str(exc)) from exc
+
+        handoff = validated.handoffs[-1]
+        return OrchestrationDecision(
+            action="delegate",
             reason=handoff.reason,
             source_agent_type=handoff.source_agent_type,
             target_agent_type=handoff.target_agent_type,
