@@ -1,13 +1,13 @@
 import pytest
 
 from docker_agent.agent.registry import build_agent_registry
-from docker_agent.rag.llm import ModelResponseError
 from docker_agent.orchestration import (
     DelegationContext,
     DelegationPolicy,
     OrchestrationDecisionError,
     OrchestrationDecisionModel,
 )
+from docker_agent.rag.llm import ModelResponseError
 
 
 class SequenceModel:
