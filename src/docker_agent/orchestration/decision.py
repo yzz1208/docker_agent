@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from typing import Any, Literal, cast
 
@@ -523,6 +524,9 @@ def _is_initial_runtime_request(question: str) -> bool:
         "运行状态",
         "是否运行",
         "还在运行",
+        "容器状态",
+        "容器日志",
+        "容器资源",
         "cpu 和内存",
         "cpu和内存",
         "memory usage",
@@ -532,7 +536,19 @@ def _is_initial_runtime_request(question: str) -> bool:
         "docker logs",
         "docker inspect",
     )
-    return any(signal in lowered for signal in current_state_signals)
+    if any(signal in lowered for signal in current_state_signals):
+        return True
+
+    return bool(
+        re.search(
+            r"(?:检查|查看|看一下|看看|排查).{0,48}容器",
+            lowered,
+        )
+        or re.search(
+            r"容器.{0,32}(?:状态|日志|资源|内存|cpu|运行)",
+            lowered,
+        )
+    )
 
 
 def _is_initial_docker_docs_request(question: str) -> bool:
