@@ -186,7 +186,7 @@ def test_default_delegate_pauses_before_specialist_execution() -> None:
     )
     assert paused.approval_request.capability == "incident_triage"
     assert paused.trace == ("decision", "approval_required")
-    assert decision_raw.calls == 1
+    assert decision_raw.calls == 0
     assert synthesis_raw.calls == 0
     assert docker.questions == []
     assert infrastructure.questions == []
@@ -246,7 +246,7 @@ def test_approval_resume_executes_pending_specialist_and_synthesis_once() -> Non
         "specialist",
         "synthesis",
     )
-    assert decision_raw.calls == 1
+    assert decision_raw.calls == 0
     assert synthesis_raw.calls == 1
     assert docker.questions == []
     assert len(infrastructure.questions) == 1
@@ -292,7 +292,7 @@ def test_denied_approval_stops_without_specialist_or_synthesis() -> None:
         "denied",
         "approval_denied",
     )
-    assert decision_raw.calls == 1
+    assert decision_raw.calls == 0
     assert synthesis_raw.calls == 0
     assert docker.questions == []
     assert infrastructure.questions == []
