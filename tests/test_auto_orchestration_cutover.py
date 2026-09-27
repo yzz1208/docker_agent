@@ -20,6 +20,7 @@ from docker_agent.orchestration import (
 from docker_agent.persistence import (
     create_conversation,
     init_persistence_store,
+    list_agent_runs,
     load_conversation,
 )
 
@@ -185,6 +186,16 @@ def test_product_direct_fast_path_completes_without_pending_approval() -> None:
         "assistant",
     ]
 
+    runs = list_agent_runs(engine)
+    assert len(runs) == 1
+    assert runs[0].agent_type == "auto_orchestration"
+    assert runs[0].status == "succeeded"
+    assert runs[0].route == "auto_direct"
+    assert runs[0].completed_workers == (
+        "decision",
+        "specialist",
+    )
+
 
 def test_failed_turn_retry_clears_orphaned_approval_checkpoint() -> None:
     build_service, engine, docker, infrastructure, decision, synthesis = (
@@ -221,6 +232,12 @@ def test_failed_turn_retry_clears_orphaned_approval_checkpoint() -> None:
         conversation.id,
     )
     assert failed_snapshot.messages == ()
+
+    failed_runs = list_agent_runs(engine)
+    assert len(failed_runs) == 1
+    assert failed_runs[0].agent_type == "auto_orchestration"
+    assert failed_runs[0].status == "failed"
+    assert failed_runs[0].error_type == "OrchestrationDecisionError"
 
     completed = service.chat(
         message="帮我看看这个 Docker 问题。",
@@ -336,6 +353,17 @@ def test_product_delegate_pauses_then_approves_without_duplicate_work() -> None:
         "user",
         "assistant",
     ]
+
+    runs = list_agent_runs(engine)
+    assert [item.route for item in runs[:3]] == [
+        "auto_synthesis",
+        "auto_approval_pending",
+        "auto_direct",
+    ]
+    assert all(
+        item.agent_type == "auto_orchestration"
+        for item in runs[:3]
+    )
 
 
 def test_product_denied_approval_persists_stop_message_only() -> None:
