@@ -252,6 +252,24 @@ class DockerSupportAgent:
                     max_chars=self.settings.rag_context_max_chars,
                 )
 
+    @staticmethod
+    def _validate_required_citations(
+        decision: AgentRouteDecision,
+        answer: AgentAnswer,
+    ) -> None:
+        if decision.route == "docs_only" and not answer.doc_citation_indices:
+            raise ValueError(
+                "Model answer did not cite Docker documentation evidence"
+            )
+        if (
+            decision.route == "runtime_tools"
+            and not answer.runtime_citation_indices
+        ):
+            raise ValueError(
+                "Model answer did not cite requested runtime evidence"
+            )
+
+
 def _use_keyword_fast_path(
     question: str,
     results: list[KeywordSearchResult],
@@ -285,24 +303,6 @@ def _keyword_results_to_hybrid(
             )
         )
     return converted
-
-
-    @staticmethod
-    def _validate_required_citations(
-        decision: AgentRouteDecision,
-        answer: AgentAnswer,
-    ) -> None:
-        if decision.route == "docs_only" and not answer.doc_citation_indices:
-            raise ValueError(
-                "Model answer did not cite Docker documentation evidence"
-            )
-        if (
-            decision.route == "runtime_tools"
-            and not answer.runtime_citation_indices
-        ):
-            raise ValueError(
-                "Model answer did not cite requested runtime evidence"
-            )
 
 
 def _fast_conversation_turn(
