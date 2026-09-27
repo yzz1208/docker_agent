@@ -126,6 +126,9 @@ from docker_agent.orchestration import (
     OrchestrationSynthesisError,
     open_postgres_orchestration_checkpointer,
 )
+from docker_agent.orchestration.execution import (
+    OrchestrationSpecialistExecutionError,
+)
 from docker_agent.persistence import (
     AgentConfigurationAlreadyExists,
     AgentConfigurationNotFound,
@@ -1270,11 +1273,32 @@ def _resolve_chat_agent_type(
     return descriptor.agent_type
 
 
+def _deepest_cause(error: BaseException) -> BaseException:
+    current = error
+    seen: set[int] = set()
+    while current.__cause__ is not None and id(current) not in seen:
+        seen.add(id(current))
+        current = current.__cause__
+    return current
+
+
 def _auto_stream_error_message(error: BaseException) -> str:
     if isinstance(error, ConversationNotFound):
         return "对话不存在。"
     if isinstance(error, AgentDisabledError):
         return str(error)
+    if isinstance(error, OrchestrationSpecialistExecutionError):
+        cause = _deepest_cause(error)
+        if isinstance(cause, (ModelRequestError, ModelResponseError)):
+            return f"Docker 支持模型请求失败：{cause}"
+        if isinstance(cause, CitationValidationError):
+            return f"Docker 支持回答引用校验失败：{cause}"
+        if isinstance(cause, ValueError):
+            return f"Docker 支持执行失败：{cause}"
+        return (
+            "Docker 支持专家执行失败："
+            f"{type(cause).__name__}: {cause}"
+        )
     if isinstance(
         error,
         (
