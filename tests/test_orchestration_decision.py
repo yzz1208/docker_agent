@@ -1,6 +1,7 @@
 import pytest
 
 from docker_agent.agent.registry import build_agent_registry
+from docker_agent.rag.llm import ModelResponseError
 from docker_agent.orchestration import (
     DelegationContext,
     DelegationPolicy,
@@ -237,10 +238,11 @@ def test_current_docker_specialist_docs_followup_skips_model() -> None:
 
 
 def test_current_docker_specialist_incident_can_still_delegate() -> None:
-    orchestrator, fake, _ = _model(
-        '{"action":"delegate","reason":"service incident",'
-        '"target_agent_type":"infrastructure_troubleshooter",'
-        '"capability":"incident_triage","clarification":null}'
+    registry = build_agent_registry()
+    fake = SequenceModel([])
+    orchestrator = OrchestrationDecisionModel(
+        registry=registry,
+        model=fake,
     )
 
     decision = orchestrator.decide(
@@ -253,7 +255,53 @@ def test_current_docker_specialist_incident_can_still_delegate() -> None:
         "infrastructure_troubleshooter"
     )
     assert decision.capability == "incident_triage"
-    assert len(fake.user_prompts) == 1
+    assert fake.user_prompts == []
+
+
+def test_current_infrastructure_specialist_runtime_request_delegates_without_model() -> None:
+    registry = build_agent_registry()
+    fake = SequenceModel([])
+    orchestrator = OrchestrationDecisionModel(
+        registry=registry,
+        model=fake,
+    )
+
+    decision = orchestrator.decide(
+        "检查 web-1 当前状态和最近日志。",
+        source_agent_type="infrastructure_troubleshooter",
+    )
+
+    assert decision.action == "delegate"
+    assert decision.target_agent_type == "docker_support"
+    assert decision.capability == "runtime_diagnostics"
+    assert fake.user_prompts == []
+
+
+def test_model_response_failure_degrades_to_clarification() -> None:
+    class FailingModel:
+        def complete(
+            self,
+            *,
+            system_prompt: str,
+            user_prompt: str,
+        ) -> str:
+            raise ModelResponseError(
+                "Model returned an empty message "
+                "(finish_reason='length', reasoning_content_present=True)"
+            )
+
+    orchestrator = OrchestrationDecisionModel(
+        registry=build_agent_registry(),
+        model=FailingModel(),
+    )
+
+    decision = orchestrator.decide("帮我看看系统怎么了")
+
+    assert decision.action == "clarify"
+    assert decision.target_agent_type is None
+    assert decision.capability is None
+    assert "Docker" in (decision.clarification or "")
+    assert "依赖异常" in (decision.clarification or "")
 
 
 def test_direct_action_can_keep_current_specialist() -> None:
