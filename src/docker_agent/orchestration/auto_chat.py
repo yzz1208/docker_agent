@@ -1436,6 +1436,40 @@ def _execution_answer(execution: OrchestrationExecutionResult) -> str:
     return answer
 
 
+def _original_query(
+    message: str,
+    *,
+    recent_messages: tuple[object, ...],
+) -> str:
+    """Legacy orchestration helper retained for the non-product runtime."""
+
+    for item in recent_messages:
+        if getattr(item, "role", "") == "user":
+            content = str(getattr(item, "content", "")).strip()
+            if content:
+                return content
+    return message
+
+
+def _recent_user_observations(
+    message: str,
+    *,
+    recent_messages: tuple[object, ...],
+) -> tuple[str, ...]:
+    """Legacy bounded observations for the non-product runtime."""
+
+    values: list[str] = []
+    for item in recent_messages[-6:]:
+        if getattr(item, "role", "") != "user":
+            continue
+        content = str(getattr(item, "content", "")).strip()
+        if content and content not in values:
+            values.append(content)
+    if message not in values:
+        values.append(message)
+    return tuple(values)
+
+
 _FOLLOWUP_PREFIXES = (
     "继续",
     "接着",
