@@ -47,6 +47,38 @@ def test_route_docs_only_question() -> None:
     assert model.calls == 0
 
 
+def test_named_container_check_fast_routes_without_model() -> None:
+    model = FakeModel("not-json")
+
+    decision = route_question(
+        "先检查 checkout 容器",
+        model,
+    )
+
+    assert decision.route == "runtime_tools"
+    assert decision.container_ref == "checkout"
+    assert decision.tools == ("docker_inspect", "docker_stats")
+    assert decision.use_docs is False
+    assert model.calls == 0
+
+
+def test_structured_current_container_check_ignores_original_incident_for_routing() -> None:
+    model = FakeModel("not-json")
+
+    decision = route_question(
+        "Original user issue:\n"
+        "checkout-api 一直 503，依赖请求频繁超时。\n\n"
+        "Current user request:\n"
+        "先检查 checkout 容器",
+        model,
+    )
+
+    assert decision.route == "runtime_tools"
+    assert decision.container_ref == "checkout"
+    assert decision.tools == ("docker_inspect", "docker_stats")
+    assert model.calls == 0
+
+
 def test_runtime_word_prevents_docs_fast_path() -> None:
     model = FakeModel(
         '{"route":"runtime_tools","reason":"current runtime",'
