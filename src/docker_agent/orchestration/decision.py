@@ -395,7 +395,10 @@ def _current_specialist_fast_path(
     original_query: str,
 ) -> str | None:
     if source_agent_type == "docker_support":
-        if _is_initial_infrastructure_incident_request(question):
+        if (
+            _is_initial_infrastructure_incident_request(question)
+            or _is_service_level_followup(question)
+        ):
             return None
         if _is_initial_runtime_request(question):
             return "runtime_diagnostics"
@@ -426,6 +429,22 @@ def _current_specialist_fast_path(
             return "incident_triage"
 
     return None
+
+
+def _is_service_level_followup(question: str) -> bool:
+    lowered = question.lower()
+    signals = (
+        "服务级故障",
+        "服务故障",
+        "服务级问题",
+        "服务异常",
+        "系统级故障",
+        "整体服务",
+        "service incident",
+        "service-level",
+        "service failure",
+    )
+    return any(signal in lowered for signal in signals)
 
 
 def _is_short_followup(question: str) -> bool:
