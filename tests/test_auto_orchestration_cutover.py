@@ -63,6 +63,40 @@ def test_new_topic_drops_stale_specialist_result() -> None:
     assert relevant is None
 
 
+def test_shared_service_anchor_keeps_relevant_prior_result() -> None:
+    previous = SpecialistResultEnvelope(
+        agent_type="docker_support",
+        route="runtime_diagnostics",
+        reason="container check",
+        needs_clarification=False,
+        clarification=None,
+        summary="checkout 容器运行正常。",
+    )
+    recent = (
+        SimpleNamespace(
+            role="user",
+            content="先检查 checkout 容器。",
+        ),
+        SimpleNamespace(
+            role="assistant",
+            content="checkout 容器运行正常。",
+        ),
+    )
+
+    original, observations, relevant = _relevant_turn_context(
+        "容器正常，但 checkout-api 仍持续 503。",
+        recent_messages=recent,
+        previous_result=previous,
+    )
+
+    assert original == "先检查 checkout 容器。"
+    assert observations == (
+        "先检查 checkout 容器。",
+        "容器正常，但 checkout-api 仍持续 503。",
+    )
+    assert relevant is previous
+
+
 def test_explicit_followup_keeps_current_topic_result() -> None:
     previous = SpecialistResultEnvelope(
         agent_type="infrastructure_troubleshooter",
