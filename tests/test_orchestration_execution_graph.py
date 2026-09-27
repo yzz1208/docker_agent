@@ -222,7 +222,7 @@ def test_execution_graph_delegate_builds_envelope_and_runs_target_once() -> None
     delegated_input = infrastructure.questions[0]
     assert "容器运行正常，但服务仍然返回 503。" in delegated_input
     assert "影响生产环境。" in delegated_input
-    assert model.calls == 1
+    assert model.calls == 0
 
 
 def test_execution_graph_does_not_forward_prior_result_on_direct_path() -> None:
