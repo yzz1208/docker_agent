@@ -277,6 +277,25 @@ def test_current_infrastructure_specialist_runtime_request_delegates_without_mod
     assert fake.user_prompts == []
 
 
+def test_infrastructure_specialist_container_inspection_delegates_without_model() -> None:
+    registry = build_agent_registry()
+    fake = SequenceModel([])
+    orchestrator = OrchestrationDecisionModel(
+        registry=registry,
+        model=fake,
+    )
+
+    decision = orchestrator.decide(
+        "先检查 checkout 容器",
+        source_agent_type="infrastructure_troubleshooter",
+    )
+
+    assert decision.action == "delegate"
+    assert decision.target_agent_type == "docker_support"
+    assert decision.capability == "runtime_diagnostics"
+    assert fake.user_prompts == []
+
+
 def test_model_response_failure_degrades_to_clarification() -> None:
     class FailingModel:
         def complete(
