@@ -415,10 +415,57 @@ def _use_keyword_fast_path(
     question: str,
     results: list[KeywordSearchResult],
 ) -> bool:
-    """Use lexical-only retrieval when the question has strong exact anchors."""
+    """Use lexical-only retrieval only when exact evidence is sufficiently broad."""
 
     terms = extract_keyword_terms(question)
-    return len(terms) >= 2 and len(results) >= 2
+    if len(terms) < 2 or len(results) < 2:
+        return False
+
+    concepts = _comparison_concepts(question)
+    if concepts is None:
+        return True
+    return _comparison_has_overview_evidence(
+        concepts,
+        results,
+    )
+
+
+def _comparison_has_overview_evidence(
+    concepts: tuple[str, str],
+    results: list[KeywordSearchResult],
+) -> bool:
+    narrow_signals = (
+        "option",
+        "options",
+        "subpath",
+        "subdirectory",
+        "propagation",
+        "recursive",
+        "readonly",
+        "read-only",
+        "nocopy",
+    )
+    for concept in concepts:
+        terms = {
+            term
+            for term in extract_keyword_terms(concept)
+            if term not in {"docker"}
+        }
+        matched = False
+        for item in results:
+            title = item.title.casefold()
+            section = " / ".join(item.section_path).casefold()
+            searchable = f"{title} {section}"
+            if terms and not any(term in searchable for term in terms):
+                continue
+            if any(signal in section for signal in narrow_signals):
+                continue
+            if len(item.section_path) <= 2:
+                matched = True
+                break
+        if not matched:
+            return False
+    return True
 
 
 def _keyword_results_to_hybrid(
