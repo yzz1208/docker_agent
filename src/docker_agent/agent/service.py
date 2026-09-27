@@ -323,11 +323,16 @@ def _comparison_keyword_results(
         results = search_keyword_chunks(
             engine,
             concept,
-            top_k=max(2, min(top_k, 6)),
+            top_k=max(6, min(top_k, 12)),
         )
         if not results:
             return None
-        per_concept.append(results)
+        per_concept.append(
+            _prefer_comparison_overview_results(
+                concept,
+                results,
+            )
+        )
 
     merged: list[KeywordSearchResult] = []
     seen: set[str] = set()
@@ -348,6 +353,62 @@ def _comparison_keyword_results(
             break
 
     return merged
+
+
+def _prefer_comparison_overview_results(
+    concept: str,
+    results: list[KeywordSearchResult],
+) -> list[KeywordSearchResult]:
+    """Prefer overview evidence over option-specific snippets for comparisons."""
+
+    concept_terms = {
+        term
+        for term in extract_keyword_terms(concept)
+        if term not in {"docker"}
+    }
+    narrow_section_signals = (
+        "option",
+        "options",
+        "subpath",
+        "subdirectory",
+        "propagation",
+        "recursive",
+        "readonly",
+        "read-only",
+        "nocopy",
+        "driver option",
+    )
+    overview_signals = (
+        "overview",
+        "introduction",
+        "when to use",
+        "choose",
+        "considerations",
+        "storage",
+    )
+
+    def key(item: KeywordSearchResult) -> tuple[int, int, float, str]:
+        title = item.title.casefold()
+        section = " / ".join(item.section_path).casefold()
+        searchable = f"{title} {section}"
+        title_hits = sum(term in title for term in concept_terms)
+        overview_hits = sum(signal in searchable for signal in overview_signals)
+        narrow_hits = sum(signal in section for signal in narrow_section_signals)
+        depth = len(item.section_path)
+        overview_score = (
+            title_hits * 8
+            + overview_hits * 3
+            - narrow_hits * 5
+            - max(0, depth - 2)
+        )
+        return (
+            -overview_score,
+            depth,
+            -item.rank_score,
+            item.chunk_id,
+        )
+
+    return sorted(results, key=key)
 
 
 def _use_keyword_fast_path(
