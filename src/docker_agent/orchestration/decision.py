@@ -310,7 +310,10 @@ class OrchestrationDecisionModel:
 
         if (
             source == "docker_support"
-            and _is_initial_infrastructure_incident_request(question)
+            and (
+                _is_initial_infrastructure_incident_request(question)
+                or _is_service_level_followup(question)
+            )
         ):
             target = "infrastructure_troubleshooter"
             capability = "incident_triage"
