@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
@@ -1503,6 +1504,32 @@ def _is_followup_message(message: str) -> bool:
     return normalized.startswith(_FOLLOWUP_PREFIXES)
 
 
+_TOPIC_TOKEN_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{1,63}")
+_TOPIC_STOPWORDS = frozenset(
+    {
+        "api",
+        "docker",
+        "service",
+        "container",
+        "error",
+        "status",
+    }
+)
+
+
+def _topic_tokens(value: str) -> set[str]:
+    tokens: set[str] = set()
+    for raw in _TOPIC_TOKEN_RE.findall(value.casefold()):
+        for part in re.split(r"[_-]+", raw):
+            if len(part) >= 3 and part not in _TOPIC_STOPWORDS:
+                tokens.add(part)
+    return tokens
+
+
+def _shares_topic_anchor(current: str, previous: str) -> bool:
+    return bool(_topic_tokens(current) & _topic_tokens(previous))
+
+
 def _latest_topic_root(
     recent_messages: tuple[object, ...],
 ) -> str | None:
@@ -1527,10 +1554,16 @@ def _relevant_turn_context(
 ]:
     """Carry previous specialist state only for an explicit follow-up turn."""
 
-    if previous_result is None or not _is_followup_message(message):
+    if previous_result is None:
         return message, (message,), None
 
     root = _latest_topic_root(recent_messages) or message
+    if not (
+        _is_followup_message(message)
+        or _shares_topic_anchor(message, root)
+    ):
+        return message, (message,), None
+
     observations: list[str] = []
     for value in (root, message):
         if value and value not in observations:
