@@ -246,6 +246,94 @@ def test_exact_keyword_docs_query_skips_embedding_and_reranker(
     assert context.sources[1].title == "Bind mounts"
 
 
+def test_comparison_query_fetches_evidence_for_both_concepts(
+    monkeypatch,
+) -> None:
+    embedder = FakeEmbedder()
+    reranker = FakeReranker()
+    engine = object()
+    calls: list[str] = []
+
+    volume = KeywordSearchResult(
+        chunk_id="volume",
+        document_id="doc-volume",
+        title="Volumes",
+        section_path=["Storage", "Volumes"],
+        content="Docker volumes are managed storage.",
+        source_url="https://docs.docker.com/engine/storage/volumes/",
+        file_path="volumes.md",
+        rank_score=1.0,
+    )
+    bind = KeywordSearchResult(
+        chunk_id="bind",
+        document_id="doc-bind",
+        title="Bind mounts",
+        section_path=["Storage", "Bind mounts"],
+        content="Bind mounts map host paths into containers.",
+        source_url="https://docs.docker.com/engine/storage/bind-mounts/",
+        file_path="bind-mounts.md",
+        rank_score=1.0,
+    )
+
+    def keyword_search(_engine, query, **_kwargs):
+        calls.append(query)
+        lowered = query.lower()
+        if query == "Docker volume 和 bind mount 有什么区别？":
+            return [bind]
+        if "volume" in lowered:
+            return [volume]
+        if "bind mount" in lowered:
+            return [bind]
+        return []
+
+    monkeypatch.setattr(service_module, "check_database", lambda _engine: True)
+    monkeypatch.setattr(
+        service_module,
+        "search_keyword_chunks",
+        keyword_search,
+    )
+    monkeypatch.setattr(
+        service_module,
+        "search_similar_chunks",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("dense retrieval must be skipped")
+        ),
+    )
+    monkeypatch.setattr(
+        service_module,
+        "rerank_candidates",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("reranker must be skipped")
+        ),
+    )
+
+    agent = DockerSupportAgent(
+        settings=Settings(),
+        router_model=FixedModel("{}"),
+        answer_model=FixedModel(""),
+        docker_tools=FakeDockerTools(),  # type: ignore[arg-type]
+        embedder=embedder,  # type: ignore[arg-type]
+        reranker=reranker,
+        docs_engine=engine,  # type: ignore[arg-type]
+    )
+
+    context = agent._retrieve_docs(
+        "Docker volume 和 bind mount 有什么区别？"
+    )
+
+    assert calls == [
+        "Docker volume 和 bind mount 有什么区别？",
+        "Docker volume",
+        "bind mount",
+    ]
+    assert embedder.calls == []
+    assert reranker.calls == []
+    assert [item.title for item in context.sources] == [
+        "Volumes",
+        "Bind mounts",
+    ]
+
+
 def test_default_docs_retriever_reuses_heavy_models_and_database_check(
     monkeypatch,
 ) -> None:
