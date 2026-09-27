@@ -200,6 +200,64 @@ def test_openai_compatible_client_streams_chat_completion_deltas() -> None:
         ) == ["Hello", " world"]
 
 
+def test_streaming_client_skips_empty_choices_usage_event() -> None:
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            headers={"content-type": "text/event-stream"},
+            text=(
+                'data: {"choices":[{"delta":{"content":"Hello"}}]}\n\n'
+                'data: {"choices":[],'
+                '"usage":{"prompt_tokens":10,"completion_tokens":1}}\n\n'
+                'data: {"choices":[{"delta":{"content":" world"}}]}\n\n'
+                "data: [DONE]\n\n"
+            ),
+        )
+
+    transport = httpx.MockTransport(handler)
+    with httpx.Client(transport=transport) as http_client:
+        client = OpenAICompatibleChatClient(
+            model="test-model",
+            base_url="https://example.test/v1",
+            client=http_client,
+        )
+
+        assert list(
+            client.stream_complete(
+                system_prompt="system",
+                user_prompt="user",
+            )
+        ) == ["Hello", " world"]
+
+
+def test_streaming_client_skips_finish_only_event() -> None:
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            headers={"content-type": "text/event-stream"},
+            text=(
+                'data: {"choices":[{"delta":{"content":"Done"}}]}\n\n'
+                'data: {"choices":[{"finish_reason":"stop"}]}\n\n'
+                "data: [DONE]\n\n"
+            ),
+        )
+
+    transport = httpx.MockTransport(handler)
+    with httpx.Client(transport=transport) as http_client:
+        client = OpenAICompatibleChatClient(
+            model="test-model",
+            base_url="https://example.test/v1",
+            client=http_client,
+        )
+
+        assert list(
+            client.stream_complete(
+                system_prompt="system",
+                user_prompt="user",
+            )
+        ) == ["Done"]
+
+
 def test_public_response_streams_only_when_context_is_active() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         body = request.content.decode()
