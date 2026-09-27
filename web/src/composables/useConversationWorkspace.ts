@@ -432,6 +432,7 @@ export function useConversationWorkspace() {
           const loaded = await refreshConversationDetail(
             conversationId,
             1,
+            true,
           );
           reconcileOptimisticMessages(
             conversationId,
@@ -474,6 +475,7 @@ export function useConversationWorkspace() {
   async function refreshConversationDetail(
     conversationId: string,
     attempts = 3,
+    preservePendingApproval = false,
   ): Promise<ConversationDetail> {
     let lastError: unknown = null;
     for (let attempt = 0; attempt < attempts; attempt += 1) {
@@ -482,7 +484,15 @@ export function useConversationWorkspace() {
         if (activeConversationId.value === conversationId) {
           detail.value = loaded;
           if (loaded.conversation.agent_type === AUTO_AGENT_TYPE) {
-            restoreAutoTurn(loaded);
+            const liveTurn = latestAutoTurns.value[conversationId];
+            if (
+              !(
+                preservePendingApproval &&
+                liveTurn?.needs_approval
+              )
+            ) {
+              restoreAutoTurn(loaded);
+            }
           }
         }
         return loaded;
