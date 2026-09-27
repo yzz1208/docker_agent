@@ -382,10 +382,18 @@ describe("conversation workspace", () => {
 
   it("keeps a failed user message visible and allows retry", async () => {
     vi.mocked(sendAutoChatStream)
-      .mockRejectedValueOnce(
-        new Error(
-          "Docker 支持专家执行失败：IndexError: list index out of range",
-        ),
+      .mockImplementationOnce(
+        async (_input, onProgress, onDelta) => {
+          onProgress?.({
+            stage: "answer",
+            status: "started",
+            duration_ms: null,
+          });
+          onDelta?.("这是已经生成的一半回答。");
+          throw new Error(
+            "Docker 支持专家执行失败：IndexError: list index out of range",
+          );
+        },
       )
       .mockResolvedValueOnce(
         autoTurn({ answer: "Volume 和 bind mount 的区别。[1]" }),
@@ -409,6 +417,10 @@ describe("conversation workspace", () => {
     expect(workspace.failedSubmission.value?.error).toContain(
       "IndexError",
     );
+    expect(
+      workspace.failedSubmission.value?.partialAssistantText,
+    ).toBe("这是已经生成的一半回答。");
+    expect(workspace.failedSubmission.value?.stage).toBe("answer");
     expect(workspace.draft.value).toBe(
       "Docker volume 和 bind mount 有什么区别？",
     );
