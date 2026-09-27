@@ -195,7 +195,7 @@ def test_wrapped_history_does_not_force_current_specialist_fast_path() -> None:
     assert decision.target_agent_type == (
         "infrastructure_troubleshooter"
     )
-    assert len(fake.user_prompts) == 1
+    assert fake.user_prompts == []
 
 
 def test_generic_current_word_does_not_trigger_runtime_fast_path() -> None:
