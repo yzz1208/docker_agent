@@ -167,6 +167,87 @@ def test_direct_decision_can_keep_current_specialist() -> None:
     assert infrastructure.questions == []
 
 
+def test_direct_followup_receives_previous_public_specialist_result() -> None:
+    service, docker, infrastructure = _service()
+    prior = SpecialistResultEnvelope(
+        agent_type="infrastructure_troubleshooter",
+        route="incident_triage",
+        reason="dependency timeout suspected",
+        needs_clarification=False,
+        clarification=None,
+        summary=(
+            "checkout-api 持续 503，依赖请求频繁超时，"
+            "下一步应继续验证下游依赖健康度。"
+        ),
+    )
+    decision = OrchestrationDecision(
+        action="direct",
+        reason="continue current incident triage",
+        source_agent_type="infrastructure_troubleshooter",
+        target_agent_type="infrastructure_troubleshooter",
+        capability="incident_triage",
+        clarification=None,
+    )
+
+    result = service.execute(
+        "继续，从依赖超时这个方向往下排查。",
+        decision=decision,
+        context=DelegationContext(
+            original_query=(
+                "checkout-api 一直 503，但 Docker 容器正常，"
+                "依赖请求频繁超时。"
+            )
+        ),
+        prior_specialist_result=prior,
+    )
+
+    assert result.agent_type == "infrastructure_troubleshooter"
+    assert result.request_envelope is None
+    assert docker.questions == []
+    assert len(infrastructure.questions) == 1
+    specialist_input = infrastructure.questions[0]
+    assert "Continuation of the same specialist task:" in specialist_input
+    assert "checkout-api 一直 503" in specialist_input
+    assert "继续，从依赖超时这个方向往下排查。" in specialist_input
+    assert "下一步应继续验证下游依赖健康度" in specialist_input
+
+
+def test_direct_followup_rejects_result_from_other_agent() -> None:
+    service, docker, infrastructure = _service()
+    wrong = SpecialistResultEnvelope(
+        agent_type="docker_support",
+        route="runtime_tools",
+        reason="runtime checked",
+        needs_clarification=False,
+        clarification=None,
+        summary="容器运行正常。",
+    )
+    decision = OrchestrationDecision(
+        action="direct",
+        reason="continue current incident triage",
+        source_agent_type="infrastructure_troubleshooter",
+        target_agent_type="infrastructure_troubleshooter",
+        capability="incident_triage",
+        clarification=None,
+    )
+
+    with pytest.raises(
+        OrchestrationExecutionError,
+        match="must belong to the selected Agent",
+    ):
+        service.execute(
+            "继续排查。",
+            decision=decision,
+            context=DelegationContext(
+                original_query="checkout-api 持续 503。"
+            ),
+            prior_specialist_result=wrong,
+        )
+
+    assert docker.questions == []
+    assert infrastructure.questions == []
+
+
 def test_delegate_appends_handoff_then_invokes_target_once() -> None:
     service, docker, infrastructure = _service()
     context = DelegationContext(
