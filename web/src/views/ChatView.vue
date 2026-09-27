@@ -580,6 +580,28 @@ onBeforeUnmount(() => {
           </article>
 
           <article
+            v-if="
+              workspace.failedSubmission.value?.partialAssistantText &&
+              workspace.failedSubmission.value.conversationId ===
+                workspace.activeConversationId.value
+            "
+            class="message message--assistant message--partial-failed"
+          >
+            <div class="message__meta">
+              <span>助手</span>
+              <span>回答中断</span>
+            </div>
+            <MessageContent
+              :content="
+                workspace.failedSubmission.value.partialAssistantText
+              "
+            />
+            <div class="partial-failed-note">
+              上面的内容是在连接中断前已经生成的部分回答，尚未完整完成。
+            </div>
+          </article>
+
+          <article
             v-if="workspace.pendingUserMessage.value"
             class="message message--user message--pending"
           >
