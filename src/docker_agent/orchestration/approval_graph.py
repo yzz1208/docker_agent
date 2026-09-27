@@ -272,11 +272,9 @@ def build_human_approval_orchestration_graph(
             explicit_user_clarification=(
                 state["explicit_user_clarification"]
             ),
-            prior_specialist_result=(
-                state["prior_specialist_result"]
-                if decision.action == "delegate"
-                else None
-            ),
+            prior_specialist_result=state[
+                "prior_specialist_result"
+            ],
         )
         result = execution.result_envelope
         if result is None:
