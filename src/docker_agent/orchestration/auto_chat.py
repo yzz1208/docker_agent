@@ -788,13 +788,14 @@ class LangGraphProductAutoOrchestrationService(
                 normalized,
                 recent_messages=recent_messages,
             )
-            original_query = _original_query(
+            (
+                original_query,
+                observations,
+                relevant_previous_result,
+            ) = _relevant_turn_context(
                 normalized,
                 recent_messages=recent_messages,
-            )
-            observations = _recent_user_observations(
-                normalized,
-                recent_messages=recent_messages,
+                previous_result=previous_result,
             )
             thread_id = _approval_thread_id(
                 conversation.id,
@@ -824,7 +825,7 @@ class LangGraphProductAutoOrchestrationService(
                     ),
                     source_agent_type=previous_agent,
                     user_observations=observations,
-                    prior_specialist_result=previous_result,
+                    prior_specialist_result=relevant_previous_result,
                 )
 
             if result.approval_status == "pending":
@@ -836,7 +837,7 @@ class LangGraphProductAutoOrchestrationService(
                     conversation=conversation,
                     result=result,
                     previous_agent=previous_agent,
-                    previous_result=previous_result,
+                    previous_result=relevant_previous_result,
                 )
                 _finalize_auto_run_success(
                     self._engine,
@@ -851,7 +852,7 @@ class LangGraphProductAutoOrchestrationService(
                 user_message=normalized,
                 result=result,
                 previous_agent=previous_agent,
-                previous_result=previous_result,
+                previous_result=relevant_previous_result,
             )
             _finalize_auto_run_success(
                 self._engine,
@@ -1435,34 +1436,72 @@ def _execution_answer(execution: OrchestrationExecutionResult) -> str:
     return answer
 
 
-def _original_query(
-    message: str,
-    *,
-    recent_messages: tuple[object, ...],
-) -> str:
-    for item in recent_messages:
-        if getattr(item, "role", "") == "user":
-            content = str(getattr(item, "content", "")).strip()
-            if content:
-                return content
-    return message
+_FOLLOWUP_PREFIXES = (
+    "继续",
+    "接着",
+    "再看",
+    "再查",
+    "再分析",
+    "然后",
+    "那",
+    "那么",
+    "刚才",
+    "上一个",
+    "上一条",
+    "这个",
+    "它",
+    "其中",
+    "进一步",
+    "还有",
+    "第二步",
+    "第三步",
+    "continue",
+    "then",
+    "what about",
+    "and what",
+)
 
 
-def _recent_user_observations(
-    message: str,
-    *,
+def _is_followup_message(message: str) -> bool:
+    normalized = message.strip().casefold()
+    if not normalized:
+        return False
+    return normalized.startswith(_FOLLOWUP_PREFIXES)
+
+
+def _latest_topic_root(
     recent_messages: tuple[object, ...],
-) -> tuple[str, ...]:
-    values: list[str] = []
-    for item in recent_messages[-6:]:
+) -> str | None:
+    for item in reversed(recent_messages):
         if getattr(item, "role", "") != "user":
             continue
         content = str(getattr(item, "content", "")).strip()
-        if content and content not in values:
-            values.append(content)
-    if message not in values:
-        values.append(message)
-    return tuple(values)
+        if content and not _is_followup_message(content):
+            return content
+    return None
+
+
+def _relevant_turn_context(
+    message: str,
+    *,
+    recent_messages: tuple[object, ...],
+    previous_result: SpecialistResultEnvelope | None,
+) -> tuple[
+    str,
+    tuple[str, ...],
+    SpecialistResultEnvelope | None,
+]:
+    """Carry previous specialist state only for an explicit follow-up turn."""
+
+    if previous_result is None or not _is_followup_message(message):
+        return message, (message,), None
+
+    root = _latest_topic_root(recent_messages) or message
+    observations: list[str] = []
+    for value in (root, message):
+        if value and value not in observations:
+            observations.append(value)
+    return root, tuple(observations), previous_result
 
 
 def _state_payload(
