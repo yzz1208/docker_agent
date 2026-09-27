@@ -122,18 +122,18 @@ def route_question(question: str, model: ChatModel) -> AgentRouteDecision:
 
 _CONTAINER_CHECK_PATTERNS = (
     re.compile(
-        r"(?:检查|查看|看看|排查|check|inspect)\\s+"
-        r"(?P<ref>[A-Za-z0-9][A-Za-z0-9_.-]{0,127})\\s*"
+        r"(?:检查|查看|看看|排查|check|inspect)\s+"
+        r"(?P<ref>[A-Za-z0-9][A-Za-z0-9_.-]{0,127})\s*"
         r"(?:容器|container)",
         re.IGNORECASE,
     ),
     re.compile(
-        r"(?:容器|container)\\s*[:：]?\\s*"
+        r"(?:容器|container)\s*[:：]?\s*"
         r"(?P<ref>[A-Za-z0-9][A-Za-z0-9_.-]{0,127})",
         re.IGNORECASE,
     ),
     re.compile(
-        r"(?P<ref>[A-Za-z0-9][A-Za-z0-9_.-]{0,127})\\s*"
+        r"(?P<ref>[A-Za-z0-9][A-Za-z0-9_.-]{0,127})\s*"
         r"(?:容器|container)",
         re.IGNORECASE,
     ),
