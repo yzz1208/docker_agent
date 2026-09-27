@@ -22,6 +22,9 @@ from docker_agent.rag.reranker import (
     rerank_candidates,
 )
 from docker_agent.rag.store import (
+    HybridSearchResult,
+    KeywordSearchResult,
+    extract_keyword_terms,
     reciprocal_rank_fusion,
     search_keyword_chunks,
     search_similar_chunks,
@@ -132,6 +135,8 @@ class DockerSupportAgent:
             docs_context,
             runtime_context,
             self.answer_model,
+            require_doc_citation=decision.route == "docs_only",
+            require_runtime_citation=decision.route == "runtime_tools",
         )
         self._validate_required_citations(decision, answer)
         return AgentTurnResult(decision=decision, answer=answer)
@@ -193,6 +198,25 @@ class DockerSupportAgent:
                     check_database(self._docs_engine)
                 self._docs_database_checked = True
 
+            with stage_timer("keyword_retrieval"):
+                keyword = search_keyword_chunks(
+                    self._docs_engine,
+                    question,
+                    top_k=self.settings.retrieval_candidate_k,
+                )
+
+            if _use_keyword_fast_path(question, keyword):
+                fast_results = _keyword_results_to_hybrid(keyword)
+                with stage_timer("context_build"):
+                    return build_rag_context(
+                        fast_results,
+                        max_sources=min(3, self.settings.rerank_top_k),
+                        max_chars=min(
+                            6_000,
+                            self.settings.rag_context_max_chars,
+                        ),
+                    )
+
             with stage_timer("embedding"):
                 query_embedding = self._embedder.embed_query(question)
 
@@ -200,13 +224,6 @@ class DockerSupportAgent:
                 dense = search_similar_chunks(
                     self._docs_engine,
                     query_embedding,
-                    top_k=self.settings.retrieval_candidate_k,
-                )
-
-            with stage_timer("keyword_retrieval"):
-                keyword = search_keyword_chunks(
-                    self._docs_engine,
-                    question,
                     top_k=self.settings.retrieval_candidate_k,
                 )
 
@@ -234,6 +251,41 @@ class DockerSupportAgent:
                     max_sources=self.settings.rerank_top_k,
                     max_chars=self.settings.rag_context_max_chars,
                 )
+
+def _use_keyword_fast_path(
+    question: str,
+    results: list[KeywordSearchResult],
+) -> bool:
+    """Use lexical-only retrieval when the question has strong exact anchors."""
+
+    terms = extract_keyword_terms(question)
+    return len(terms) >= 2 and len(results) >= 2
+
+
+def _keyword_results_to_hybrid(
+    results: list[KeywordSearchResult],
+) -> list[HybridSearchResult]:
+    converted: list[HybridSearchResult] = []
+    for rank, item in enumerate(results, start=1):
+        converted.append(
+            HybridSearchResult(
+                chunk_id=item.chunk_id,
+                document_id=item.document_id,
+                title=item.title,
+                section_path=item.section_path,
+                content=item.content,
+                source_url=item.source_url,
+                file_path=item.file_path,
+                rrf_score=item.rank_score,
+                dense_rank=None,
+                keyword_rank=rank,
+                dense_distance=None,
+                keyword_score=item.rank_score,
+                rerank_score=None,
+            )
+        )
+    return converted
+
 
     @staticmethod
     def _validate_required_citations(
