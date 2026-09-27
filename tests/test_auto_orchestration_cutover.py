@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from contextlib import nullcontext
 from dataclasses import dataclass
+from types import SimpleNamespace
 
 import pytest
 from langgraph.checkpoint.memory import InMemorySaver
@@ -10,6 +11,10 @@ from sqlalchemy.pool import StaticPool
 
 from docker_agent.agent.factory import AgentFactory
 from docker_agent.agent.registry import build_agent_registry
+from docker_agent.orchestration.auto_chat import (
+    _relevant_turn_context,
+)
+from docker_agent.orchestration.envelope import SpecialistResultEnvelope
 from docker_agent.orchestration import (
     DelegationExecutionService,
     LangGraphProductAutoOrchestrationService,
@@ -23,6 +28,68 @@ from docker_agent.persistence import (
     list_agent_runs,
     load_conversation,
 )
+
+
+def test_new_topic_drops_stale_specialist_result() -> None:
+    previous = SpecialistResultEnvelope(
+        agent_type="docker_support",
+        route="documentation_qa",
+        reason="Docker docs question",
+        needs_clarification=False,
+        clarification=None,
+        summary="Volume 和 bind mount 的文档结论。",
+    )
+    recent = (
+        SimpleNamespace(
+            role="user",
+            content="Docker volume 和 bind mount 有什么区别？",
+        ),
+        SimpleNamespace(
+            role="assistant",
+            content="这是上一轮 Docker 文档回答。",
+        ),
+    )
+
+    original, observations, relevant = _relevant_turn_context(
+        "checkout-api 一直 503，但 Docker 容器正常，依赖请求频繁超时。",
+        recent_messages=recent,
+        previous_result=previous,
+    )
+
+    assert original.startswith("checkout-api")
+    assert observations == (
+        "checkout-api 一直 503，但 Docker 容器正常，依赖请求频繁超时。",
+    )
+    assert relevant is None
+
+
+def test_explicit_followup_keeps_current_topic_result() -> None:
+    previous = SpecialistResultEnvelope(
+        agent_type="infrastructure_troubleshooter",
+        route="incident_triage",
+        reason="service incident",
+        needs_clarification=False,
+        clarification=None,
+        summary="依赖超时可能与下游服务有关。",
+    )
+    root = "checkout-api 一直 503，依赖请求频繁超时。"
+    recent = (
+        SimpleNamespace(role="user", content=root),
+        SimpleNamespace(role="assistant", content="先检查下游依赖。"),
+    )
+
+    original, observations, relevant = _relevant_turn_context(
+        "继续，从依赖超时这个方向往下排查。",
+        recent_messages=recent,
+        previous_result=previous,
+    )
+
+    assert original == root
+    assert observations == (
+        root,
+        "继续，从依赖超时这个方向往下排查。",
+    )
+    assert relevant is previous
 
 
 @dataclass(frozen=True, slots=True)
