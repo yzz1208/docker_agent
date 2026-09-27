@@ -2817,6 +2817,51 @@ a {
   opacity: 0.78;
 }
 
+.message--failed {
+  border-color: #efb8b8;
+  background: #fff7f7;
+}
+
+.failed-message {
+  margin-top: 10px;
+  padding-top: 10px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  border-top: 1px solid #f1d3d3;
+}
+
+.failed-message > div {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.failed-message strong {
+  color: #9f2f2f;
+  font-size: 11px;
+}
+
+.failed-message span {
+  color: #9f4b4b;
+  font-size: 11px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.failed-message small {
+  color: #a16d6d;
+  font-size: 10px;
+}
+
+.failed-message__retry {
+  flex: 0 0 auto;
+  border-color: #e6b8b8;
+  background: #fff;
+  color: #9f2f2f;
+}
+
 .message--thinking {
   min-height: 74px;
 }
