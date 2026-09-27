@@ -459,13 +459,55 @@ onBeforeUnmount(() => {
             v-for="message in workspace.displayMessages.value"
             :key="message.id"
             class="message"
-            :class="'message--' + message.role"
+            :class="[
+              'message--' + message.role,
+              {
+                'message--failed':
+                  message.route === '__client_failed__',
+              },
+            ]"
           >
             <div class="message__meta">
               <span>{{ roleLabel(message.role) }}</span>
-              <span>{{ formatDate(message.created_at) }}</span>
+              <span>
+                {{
+                  message.route === "__client_failed__"
+                    ? "发送失败"
+                    : formatDate(message.created_at)
+                }}
+              </span>
             </div>
             <MessageContent :content="message.content" />
+
+            <div
+              v-if="
+                message.route === '__client_failed__' &&
+                workspace.failedSubmission.value
+              "
+              class="failed-message"
+              role="alert"
+            >
+              <div>
+                <strong>这条消息没有完成处理</strong>
+                <span>{{ workspace.failedSubmission.value.error }}</span>
+                <small v-if="workspace.failedSubmission.value.stage">
+                  失败阶段：
+                  {{
+                    workspace.autoProgressStageDisplayName(
+                      workspace.failedSubmission.value.stage,
+                    ).replace("正在", "")
+                  }}
+                </small>
+              </div>
+              <button
+                class="button button--ghost failed-message__retry"
+                type="button"
+                :disabled="workspace.sending.value"
+                @click="workspace.retryFailedMessage"
+              >
+                重试
+              </button>
+            </div>
 
             <div
               v-if="
