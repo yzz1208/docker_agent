@@ -151,19 +151,47 @@ class OpenAICompatibleChatClient:
                             return
                         try:
                             event = json.loads(data)
-                            delta = event["choices"][0]["delta"].get(
-                                "content"
-                            )
-                        except (
-                            json.JSONDecodeError,
-                            KeyError,
-                            IndexError,
-                            TypeError,
-                            AttributeError,
-                        ) as exc:
+                        except json.JSONDecodeError as exc:
                             raise ModelResponseError(
                                 "Streaming model response is malformed"
                             ) from exc
+
+                        if not isinstance(event, dict):
+                            raise ModelResponseError(
+                                "Streaming model response is malformed"
+                            )
+
+                        choices = event.get("choices")
+                        if choices == []:
+                            # OpenAI-compatible providers may emit usage,
+                            # statistics, or heartbeat events with no choices.
+                            # They contain no public text and are safe to skip.
+                            continue
+                        if not isinstance(choices, list) or not choices:
+                            raise ModelResponseError(
+                                "Streaming model response is missing choices"
+                            )
+
+                        choice = choices[0]
+                        if not isinstance(choice, dict):
+                            raise ModelResponseError(
+                                "Streaming model response contains an invalid choice"
+                            )
+                        delta_payload = choice.get("delta")
+                        if delta_payload is None:
+                            # Some providers emit a final finish_reason-only
+                            # choice without a delta object.
+                            if choice.get("finish_reason") is not None:
+                                continue
+                            raise ModelResponseError(
+                                "Streaming model response is missing delta"
+                            )
+                        if not isinstance(delta_payload, dict):
+                            raise ModelResponseError(
+                                "Streaming model response contains an invalid delta"
+                            )
+
+                        delta = delta_payload.get("content")
                         if isinstance(delta, str) and delta:
                             emitted = True
                             yield delta
