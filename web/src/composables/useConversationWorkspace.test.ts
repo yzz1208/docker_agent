@@ -579,6 +579,75 @@ describe("conversation workspace", () => {
     expect(workspace.canSend.value).toBe(true);
   });
 
+  it("keeps live approval visible while background persistence sync runs", async () => {
+    const pending = autoTurn({
+      route: "auto_approval_pending",
+      answer: null,
+      current_agent_type: "docker_support",
+      approval_status: "pending",
+      needs_approval: true,
+      approval_request: {
+        interrupt_id: "interrupt-live",
+        action: "delegate",
+        source_agent_type: "docker_support",
+        target_agent_type: "infrastructure_troubleshooter",
+        capability: "incident_triage",
+        reason: "需要服务级排查",
+        question: "checkout-api 一直 503",
+        response_schema: {},
+      },
+    });
+    vi.mocked(sendAutoChatStream).mockResolvedValue(pending);
+    vi.mocked(getConversation).mockResolvedValue({
+      conversation: {
+        ...conversation,
+        id: "auto-conversation",
+        agent_type: "auto_orchestration",
+        title: "checkout incident",
+      },
+      messages: [
+        {
+          id: "assistant-old",
+          role: "assistant",
+          content: "上一轮 Docker 回答",
+          route: "auto_direct",
+          use_docs: false,
+          clarification: null,
+          created_at: "2026-09-27T03:00:00Z",
+          execution: null,
+        },
+        {
+          id: "user-pending",
+          role: "user",
+          content: "checkout-api 一直 503",
+          route: null,
+          use_docs: null,
+          clarification: null,
+          created_at: "2026-09-27T03:01:00Z",
+          execution: null,
+        },
+      ],
+    });
+
+    const workspace = useConversationWorkspace();
+    workspace.selectedMode.value = "auto";
+    workspace.draft.value = "checkout-api 一直 503";
+
+    expect(await workspace.submitMessage()).toBe(true);
+    expect(workspace.pendingApproval.value?.interrupt_id).toBe(
+      "interrupt-live",
+    );
+
+    await vi.waitFor(() => {
+      expect(workspace.syncingConversation.value).toBe(false);
+    });
+
+    expect(workspace.pendingApproval.value?.interrupt_id).toBe(
+      "interrupt-live",
+    );
+    expect(workspace.canSend.value).toBe(false);
+  });
+
   it("recovers pending auto approval when reopening history", async () => {
     const autoDetail = detailFor(
       "auto-conversation",
