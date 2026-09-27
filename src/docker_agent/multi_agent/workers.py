@@ -143,6 +143,8 @@ class DiagnosisWorker:
             self.answer_model,
             doc_sources=docs.sources,
             runtime_sources=runtime.sources,
+            require_doc_citation=decision.route == "docs_only",
+            require_runtime_citation=decision.route == "runtime_tools",
         )
 
         if decision.route == "docs_only" and not answer.doc_citation_indices:
