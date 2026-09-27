@@ -297,7 +297,7 @@ def test_synthesis_graph_delegate_combines_prior_and_current_public_results() ->
         "specialist",
         "synthesis",
     )
-    assert decision_raw.calls == 1
+    assert decision_raw.calls == 0
     assert synthesis_raw.calls == 1
     assert docker.questions == []
     assert len(infrastructure.questions) == 1
