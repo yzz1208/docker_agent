@@ -250,6 +250,40 @@ def build_specialist_result_envelope(
     )
 
 
+def render_specialist_continuation_input(
+    *,
+    original_query: str,
+    current_user_message: str,
+    prior_specialist_result: SpecialistResultEnvelope,
+) -> str:
+    """Render bounded public context for a same-specialist follow-up."""
+
+    original = _required_text(
+        original_query,
+        field="original_query",
+    )
+    current = _required_text(
+        current_user_message,
+        field="current_user_message",
+    )
+    prior = _render_prior_result(prior_specialist_result)
+    return (
+        "Continuation of the same specialist task:\n"
+        "Original topic:\n"
+        f"{original}\n\n"
+        "Current user message:\n"
+        f"{current}\n\n"
+        "Your previous public result:\n"
+        f"{prior}\n\n"
+        "Boundary rules:\n"
+        "- Treat the previous public result as context, not as new user facts.\n"
+        "- Continue the current topic instead of asking the user to repeat "
+        "information already present above.\n"
+        "- Do not assume hidden state, raw tool output, credentials, or secrets.\n"
+        "- If new runtime evidence is required, use only your declared capabilities."
+    )
+
+
 def build_cross_agent_context_envelope(
     *,
     original_query: str,
@@ -367,4 +401,5 @@ __all__ = [
     "SpecialistRuntimeSource",
     "build_cross_agent_context_envelope",
     "build_specialist_result_envelope",
+    "render_specialist_continuation_input",
 ]
