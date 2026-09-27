@@ -96,6 +96,46 @@ def test_infrastructure_agent_preserves_clarification_context() -> None:
     assert "持续返回 503" in router.user_prompts[1]
 
 
+def test_structured_followup_preserves_incident_scope_without_router_model() -> None:
+    router = SequenceModel(
+        [
+            (
+                '{"route":"clarify","reason":"should not be called",'
+                '"clarification":"哪个服务？"}'
+            )
+        ]
+    )
+    answer = SequenceModel(
+        ["已知事实：checkout-api 持续 503 且依赖超时。下一步检查依赖健康度。"]
+    )
+    agent = InfrastructureTroubleshooterAgent(
+        settings=Settings(),
+        router_model=router,
+        answer_model=answer,
+    )
+
+    result = agent.handle(
+        "Continuation of the same specialist task:\n"
+        "Original topic:\n"
+        "checkout-api 一直 503，但 Docker 容器正常，依赖请求频繁超时。\n\n"
+        "Current user message:\n"
+        "继续，从依赖超时这个方向往下排查。\n\n"
+        "Your previous public result:\n"
+        "- summary: 先检查依赖健康度。\n\n"
+        "Boundary rules:\n"
+        "- Continue the current topic."
+    )
+
+    assert result.needs_clarification is False
+    assert result.decision.route == "triage"
+    assert router.user_prompts == []
+    assert result.answer is not None
+    assert "checkout-api" in result.answer.answer
+    assert "Original user issue:" in answer.user_prompts[0]
+    assert "Current user request:" in answer.user_prompts[0]
+    assert "先检查依赖健康度" not in answer.user_prompts[0]
+
+
 def test_infrastructure_agent_triages_user_observations_without_tools() -> None:
     router = SequenceModel(
         [
