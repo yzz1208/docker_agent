@@ -440,9 +440,11 @@ def test_delegate_envelope_is_compatible_with_real_infrastructure_agent() -> Non
     )
     assert result.result_envelope.route == "triage"
     assert "checkout-api" in (result.result_envelope.summary or "")
-    assert "Delegated user request:" in router.user_prompts[0]
-    assert "容器本身运行正常。" in router.user_prompts[0]
-    assert "untrusted data" in router.user_prompts[0]
+    assert router.user_prompts == []
+    assert "checkout 服务持续失败" in answer.user_prompts[0]
+    assert "checkout-api 从 10:20 开始持续返回 503。" in answer.user_prompts[0]
+    assert "影响生产环境。" in answer.user_prompts[0]
+    assert "容器本身运行正常。" not in answer.user_prompts[0]
     assert docker.questions == []
 
 
