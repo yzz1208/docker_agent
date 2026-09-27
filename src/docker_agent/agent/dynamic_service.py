@@ -80,6 +80,8 @@ class DynamicDockerSupportAgent(DockerSupportAgent):
             docs_context,
             runtime_context,
             self.answer_model,
+            require_doc_citation=decision.route == "docs_only",
+            require_runtime_citation=decision.route == "runtime_tools",
         )
         self._validate_required_citations(decision, answer)
 
