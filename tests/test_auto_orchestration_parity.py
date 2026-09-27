@@ -289,7 +289,7 @@ def test_langgraph_auto_handoff_and_synthesis_matches_phase8() -> None:
     assert legacy_second.answer == (
         "容器层面正常，但服务级故障仍存在。"
     )
-    assert baseline[3].calls == candidate[3].calls == 2
+    assert baseline[3].calls == candidate[3].calls == 1
     assert baseline[4].calls == candidate[4].calls == 1
     assert len(baseline[1].questions) == len(candidate[1].questions) == 1
     assert len(baseline[2].questions) == len(candidate[2].questions) == 1
