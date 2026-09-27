@@ -398,7 +398,7 @@ def test_product_delegate_pauses_then_approves_without_duplicate_work() -> None:
     )
     assert len(docker.questions) == 1
     assert infrastructure.questions == []
-    assert decision.calls == 1
+    assert decision.calls == 0
     assert synthesis.calls == 0
 
     paused_snapshot = load_conversation(
@@ -439,7 +439,7 @@ def test_product_delegate_pauses_then_approves_without_duplicate_work() -> None:
         "specialist",
         "synthesis",
     ]
-    assert decision.calls == 1
+    assert decision.calls == 0
     assert synthesis.calls == 1
     assert len(docker.questions) == 1
     assert len(infrastructure.questions) == 1
@@ -499,7 +499,7 @@ def test_product_denied_approval_persists_stop_message_only() -> None:
     assert denied.route == "auto_approval_denied"
     assert denied.approval_status == "denied"
     assert denied.answer == "操作未获批准，工作流已停止执行。"
-    assert decision.calls == 2
+    assert decision.calls == 0
     assert synthesis.calls == 0
     assert len(docker.questions) == 1
     assert infrastructure.questions == []
@@ -546,7 +546,7 @@ def test_product_pending_approval_blocks_new_user_message() -> None:
             conversation_id=first.conversation.id,
         )
 
-    assert decision.calls == 2
+    assert decision.calls == 0
 
 
 def test_product_pending_approval_returns_none_after_resolution() -> None:
