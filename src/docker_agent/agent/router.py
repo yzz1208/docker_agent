@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from typing import Any, Literal, cast
 
@@ -101,7 +102,9 @@ def route_question(question: str, model: ChatModel) -> AgentRouteDecision:
     if not question:
         raise ValueError("question must not be empty")
 
-    fast_decision = _fast_docs_route(question)
+    fast_decision = _fast_runtime_route(question)
+    if fast_decision is None:
+        fast_decision = _fast_docs_route(question)
     if fast_decision is not None:
         return fast_decision
 
@@ -115,6 +118,138 @@ def route_question(question: str, model: ChatModel) -> AgentRouteDecision:
             "Router invented a container_ref that does not appear in the user question"
         )
     return decision
+
+
+_CONTAINER_CHECK_PATTERNS = (
+    re.compile(
+        r"(?:检查|查看|看看|排查|check|inspect)\\s+"
+        r"(?P<ref>[A-Za-z0-9][A-Za-z0-9_.-]{0,127})\\s*"
+        r"(?:容器|container)",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"(?:容器|container)\\s*[:：]?\\s*"
+        r"(?P<ref>[A-Za-z0-9][A-Za-z0-9_.-]{0,127})",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"(?P<ref>[A-Za-z0-9][A-Za-z0-9_.-]{0,127})\\s*"
+        r"(?:容器|container)",
+        re.IGNORECASE,
+    ),
+)
+
+
+def _current_request_text(question: str) -> str:
+    marker = "Current user request:\n"
+    if marker not in question:
+        return question
+    current = question.rsplit(marker, 1)[1]
+    clarification_marker = "\n\nExplicit user clarification:\n"
+    if clarification_marker in current:
+        current = current.split(clarification_marker, 1)[0]
+    return current.strip() or question
+
+
+def _fast_runtime_route(
+    question: str,
+) -> AgentRouteDecision | None:
+    """Route explicit named-container checks without a routing-model round trip."""
+
+    current = _current_request_text(question).strip()
+    lowered = current.casefold()
+    runtime_signals = (
+        "容器",
+        "container",
+        "docker inspect",
+        "docker logs",
+        "docker stats",
+    )
+    action_signals = (
+        "检查",
+        "查看",
+        "看看",
+        "排查",
+        "状态",
+        "日志",
+        "资源",
+        "内存",
+        "cpu",
+        "运行",
+        "崩溃",
+        "重启",
+        "oom",
+        "check",
+        "inspect",
+        "logs",
+        "stats",
+        "status",
+    )
+    if not any(signal in lowered for signal in runtime_signals):
+        return None
+    if not any(signal in lowered for signal in action_signals):
+        return None
+
+    container_ref: str | None = None
+    for pattern in _CONTAINER_CHECK_PATTERNS:
+        match = pattern.search(current)
+        if match is None:
+            continue
+        candidate = match.group("ref")
+        if candidate.casefold() in {"docker", "container"}:
+            continue
+        try:
+            container_ref = validate_container_ref(candidate)
+        except ValueError:
+            continue
+        break
+    if container_ref is None:
+        return None
+
+    tools: list[DockerToolName] = []
+    if any(
+        signal in lowered
+        for signal in ("崩溃", "重启", "oom", "crash", "restart")
+    ):
+        tools.extend(("docker_inspect", "docker_logs"))
+    else:
+        if any(
+            signal in lowered
+            for signal in (
+                "检查",
+                "查看",
+                "看看",
+                "排查",
+                "状态",
+                "运行",
+                "check",
+                "inspect",
+                "status",
+            )
+        ):
+            tools.append("docker_inspect")
+        if any(
+            signal in lowered
+            for signal in ("资源", "内存", "cpu", "stats", "usage")
+        ):
+            tools.append("docker_stats")
+        if any(signal in lowered for signal in ("日志", "logs")):
+            tools.append("docker_logs")
+        if (
+            tools == ["docker_inspect"]
+            and any(signal in lowered for signal in ("检查", "查看", "看看", "排查"))
+        ):
+            tools.append("docker_stats")
+
+    deduped = tuple(dict.fromkeys(tools))
+    return AgentRouteDecision(
+        route="runtime_tools",
+        reason="明确的命名容器只读检查请求，跳过模型路由。",
+        container_ref=container_ref,
+        tools=deduped,
+        clarification=None,
+        use_docs=False,
+    )
 
 
 def _fast_docs_route(question: str) -> AgentRouteDecision | None:
