@@ -229,7 +229,7 @@ def test_failed_turn_retry_clears_orphaned_approval_checkpoint() -> None:
 
     assert completed.route == "auto_direct"
     assert completed.answer == "容器运行正常。"
-    assert decision.calls == 1
+    assert decision.calls == 2
     assert synthesis.calls == 0
     assert docker.questions == ["帮我看看这个 Docker 问题。"]
     assert infrastructure.questions == []
@@ -280,7 +280,7 @@ def test_product_delegate_pauses_then_approves_without_duplicate_work() -> None:
     )
     assert len(docker.questions) == 1
     assert infrastructure.questions == []
-    assert decision.calls == 2
+    assert decision.calls == 1
     assert synthesis.calls == 0
 
     paused_snapshot = load_conversation(
