@@ -137,6 +137,7 @@ def build_docs_only_graph(
                 answer_model,
                 doc_sources=docs_context.sources,
                 runtime_sources=runtime_context.sources,
+                require_doc_citation=True,
             )
         if decision.route == "docs_only" and not answer.doc_citation_indices:
             raise ValueError("Model answer did not cite Docker documentation evidence")
@@ -311,6 +312,7 @@ def build_runtime_graph(
             answer_model,
             doc_sources=(),
             runtime_sources=runtime_context.sources,
+            require_runtime_citation=True,
         )
         if not answer.runtime_citation_indices:
             raise ValueError("Model answer did not cite requested runtime evidence")
