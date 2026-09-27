@@ -40,11 +40,6 @@ from docker_agent.orchestration.execution import (
 )
 from docker_agent.orchestration.graph import run_orchestration_synthesis_graph
 from docker_agent.orchestration.synthesis import OrchestratedSynthesisService
-from docker_agent.persistence.telemetry import (
-    create_agent_run,
-    finalize_agent_run_failure,
-    finalize_agent_run_success,
-)
 from docker_agent.persistence.store import (
     ConversationRecord,
     append_message,
@@ -53,6 +48,11 @@ from docker_agent.persistence.store import (
     load_conversation,
     reserve_message_timestamps,
     save_execution,
+)
+from docker_agent.persistence.telemetry import (
+    create_agent_run,
+    finalize_agent_run_failure,
+    finalize_agent_run_success,
 )
 
 AUTO_ORCHESTRATION_AGENT_TYPE = "auto_orchestration"
