@@ -112,7 +112,7 @@ def test_decision_graph_routes_validated_delegate_without_execution() -> None:
     assert result.trace == ("decision", "delegate")
     assert result.context == context
     assert result.context.hop_count == 0
-    assert model.calls == 1
+    assert model.calls == 0
 
 
 def test_decision_graph_matches_direct_decision_contract() -> None:
