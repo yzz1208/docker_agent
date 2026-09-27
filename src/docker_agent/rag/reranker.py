@@ -54,6 +54,17 @@ class BgeReranker:
         self._model = model
         self._resolved_device: str | None = None
 
+    @property
+    def is_loaded(self) -> bool:
+        """Whether tokenizer and reranker weights are already resident."""
+
+        return self._tokenizer is not None and self._model is not None
+
+    def warmup(self) -> None:
+        """Load tokenizer and reranker weights without scoring a query."""
+
+        self._ensure_loaded()
+
     def _ensure_loaded(self) -> None:
         if self._tokenizer is not None and self._model is not None:
             return

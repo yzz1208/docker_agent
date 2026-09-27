@@ -209,12 +209,30 @@ a {
 }
 
 .chat-panel {
-  display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .chat-panel__header {
+  flex: 0 0 auto;
   gap: 12px;
+}
+
+.chat-panel > .alert,
+.chat-panel > .conversation-sync-note,
+.chat-panel > .auto-running,
+.chat-panel > .approval-card {
+  flex: 0 0 auto;
+}
+
+.chat-panel > .message-stream {
+  min-height: 0;
+  flex: 1 1 0;
+}
+
+.chat-panel > .composer {
+  flex: 0 0 auto;
 }
 
 .header-actions {
@@ -2817,6 +2835,66 @@ a {
   opacity: 0.78;
 }
 
+.message--failed {
+  border-color: #efb8b8;
+  background: #fff7f7;
+}
+
+.failed-message {
+  margin-top: 10px;
+  padding-top: 10px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  border-top: 1px solid #f1d3d3;
+}
+
+.failed-message > div {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.failed-message strong {
+  color: #9f2f2f;
+  font-size: 11px;
+}
+
+.failed-message span {
+  color: #9f4b4b;
+  font-size: 11px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.failed-message small {
+  color: #a16d6d;
+  font-size: 10px;
+}
+
+.failed-message__retry {
+  flex: 0 0 auto;
+  border-color: #e6b8b8;
+  background: #fff;
+  color: #9f2f2f;
+}
+
+.message--partial-failed {
+  border-style: dashed;
+  border-color: #e7c98e;
+  background: #fffbf2;
+}
+
+.partial-failed-note {
+  margin-top: 10px;
+  padding-top: 9px;
+  border-top: 1px solid #f0dfb8;
+  color: #8b6a2d;
+  font-size: 10px;
+  line-height: 1.5;
+}
+
 .message--thinking {
   min-height: 74px;
 }
@@ -2863,4 +2941,128 @@ a {
     opacity: 1;
     transform: translateY(-2px);
   }
+}
+
+
+/* Phase 10 Step 3: source traceability */
+.message-sources {
+  margin-top: 10px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.message-sources__label {
+  color: #8a96a8;
+  font-size: 9px;
+  font-weight: 750;
+}
+
+.message-source-chip {
+  max-width: 100%;
+  padding: 5px 7px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid #dce6ed;
+  border-radius: 7px;
+  background: #f8fbfd;
+  color: #526579;
+  font-size: 9px;
+  line-height: 1.35;
+  text-decoration: none;
+}
+
+.message-source-chip small {
+  overflow: hidden;
+  max-width: 180px;
+  color: #8995a6;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.message-source-chip--doc:hover {
+  border-color: #9fc8d5;
+  background: #f1f9fb;
+}
+
+.message-source-chip--runtime {
+  border-color: #d8e7df;
+  background: #f5faf7;
+  color: #476858;
+}
+
+.specialist-result-sources {
+  margin-top: 8px;
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.specialist-result-sources a,
+.specialist-result-sources span {
+  padding: 4px 6px;
+  border: 1px solid #dde6ec;
+  border-radius: 6px;
+  background: #f7fafc;
+  color: #65778a;
+  font-size: 9px;
+  text-decoration: none;
+}
+
+.specialist-result-sources a:hover {
+  border-color: #a9cbd6;
+  color: #356d7f;
+}
+
+
+.message-execution-details {
+  margin-top: 9px;
+  border-top: 1px dashed #dce4eb;
+  padding-top: 8px;
+}
+
+.message-execution-details summary {
+  width: fit-content;
+  color: #8290a2;
+  font-size: 9px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.message-execution-details__body {
+  margin-top: 8px;
+  display: grid;
+  gap: 6px;
+}
+
+.message-execution-worker {
+  padding: 7px 8px;
+  display: grid;
+  gap: 4px;
+  border: 1px solid #e4eaf0;
+  border-radius: 7px;
+  background: #fafcfd;
+}
+
+.message-execution-worker > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.message-execution-worker strong {
+  color: #4c5d70;
+  font-size: 9px;
+}
+
+.message-execution-worker span {
+  color: #2c7a61;
+  font-size: 8px;
+}
+
+.message-execution-worker small {
+  color: #8a96a7;
+  font-size: 8px;
 }

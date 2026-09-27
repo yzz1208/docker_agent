@@ -5,6 +5,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from docker_agent.observability import PerformanceSnapshot
 from docker_agent.persistence.telemetry import (
     AgentRunRecord,
     AgentRunSummary,
@@ -27,6 +28,22 @@ class AgentRunResponse(BaseModel):
     error_message: str | None
     started_at: datetime
     completed_at: datetime | None
+
+
+class StagePerformanceResponse(BaseModel):
+    stage: str
+    count: int
+    average_ms: float
+    p50_upper_ms: int | None
+    p95_upper_ms: int | None
+
+
+class PerformanceSnapshotResponse(BaseModel):
+    ttft_count: int
+    ttft_average_ms: float | None
+    ttft_p50_upper_ms: int | None
+    ttft_p95_upper_ms: int | None
+    stages: list[StagePerformanceResponse] = Field(default_factory=list)
 
 
 class AgentRunSummaryResponse(BaseModel):
@@ -63,6 +80,27 @@ def build_agent_run_response(
         error_message=record.error_message,
         started_at=record.started_at,
         completed_at=record.completed_at,
+    )
+
+
+def build_performance_snapshot_response(
+    snapshot: PerformanceSnapshot,
+) -> PerformanceSnapshotResponse:
+    return PerformanceSnapshotResponse(
+        ttft_count=snapshot.ttft_count,
+        ttft_average_ms=snapshot.ttft_average_ms,
+        ttft_p50_upper_ms=snapshot.ttft_p50_upper_ms,
+        ttft_p95_upper_ms=snapshot.ttft_p95_upper_ms,
+        stages=[
+            StagePerformanceResponse(
+                stage=item.stage,
+                count=item.count,
+                average_ms=item.average_ms,
+                p50_upper_ms=item.p50_upper_ms,
+                p95_upper_ms=item.p95_upper_ms,
+            )
+            for item in snapshot.stages
+        ],
     )
 
 

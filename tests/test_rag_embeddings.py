@@ -27,3 +27,11 @@ def test_embed_query_returns_one_vector() -> None:
     embedder = BgeM3Embedder(model_name="fake", model=FakeModel())
 
     assert embedder.embed_query("docker volume") == [1.0, 0.0]
+
+
+def test_embedder_exposes_warmup_state_for_injected_model() -> None:
+    embedder = BgeM3Embedder(model_name="fake", model=FakeModel())
+
+    assert embedder.is_loaded is True
+    embedder.warmup()
+    assert embedder.is_loaded is True

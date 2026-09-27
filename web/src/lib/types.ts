@@ -62,6 +62,8 @@ export type AutoSpecialistResult = {
   needs_clarification: boolean;
   clarification: string | null;
   summary: string | null;
+  doc_sources: DocSource[];
+  runtime_sources: RuntimeSource[];
 };
 
 export type AutoApprovalRequest = {
@@ -95,6 +97,13 @@ export type AutoChatResponse = {
   approval_status: AutoApprovalStatus | null;
   needs_approval: boolean;
   approval_request: AutoApprovalRequest | null;
+};
+
+
+export type AutoChatProgressEvent = {
+  stage: string;
+  status: "started" | "completed";
+  duration_ms: number | null;
 };
 
 export type ConversationSummary = {
@@ -217,6 +226,22 @@ export type AgentRunRecord = {
   error_message: string | null;
   started_at: string;
   completed_at: string | null;
+};
+
+export type StagePerformanceSnapshot = {
+  stage: string;
+  count: number;
+  average_ms: number;
+  p50_upper_ms: number | null;
+  p95_upper_ms: number | null;
+};
+
+export type PerformanceSnapshot = {
+  ttft_count: number;
+  ttft_average_ms: number | null;
+  ttft_p50_upper_ms: number | null;
+  ttft_p95_upper_ms: number | null;
+  stages: StagePerformanceSnapshot[];
 };
 
 export type AgentRunSummary = {

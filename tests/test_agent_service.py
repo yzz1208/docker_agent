@@ -2,6 +2,7 @@ import docker_agent.agent.service as service_module
 from docker_agent.agent.service import DockerSupportAgent
 from docker_agent.config import Settings
 from docker_agent.rag.context import CitationSource, RagContext
+from docker_agent.rag.store import KeywordSearchResult
 from docker_agent.tools.docker_cli import DockerToolResult
 
 
@@ -172,6 +173,77 @@ class FakeReranker:
     def score(self, query: str, passages) -> list[float]:
         self.calls.append((query, len(passages)))
         return [1.0 for _ in passages]
+
+
+def test_exact_keyword_docs_query_skips_embedding_and_reranker(
+    monkeypatch,
+) -> None:
+    embedder = FakeEmbedder()
+    reranker = FakeReranker()
+    engine = object()
+    keyword_results = [
+        KeywordSearchResult(
+            chunk_id="chunk-1",
+            document_id="doc-1",
+            title="Volumes",
+            section_path=["Storage", "Volumes"],
+            content="Volumes are managed by Docker.",
+            source_url="https://docs.docker.com/engine/storage/volumes/",
+            file_path="volumes.md",
+            rank_score=1.0,
+        ),
+        KeywordSearchResult(
+            chunk_id="chunk-2",
+            document_id="doc-2",
+            title="Bind mounts",
+            section_path=["Storage", "Bind mounts"],
+            content="Bind mounts map host paths into containers.",
+            source_url="https://docs.docker.com/engine/storage/bind-mounts/",
+            file_path="bind-mounts.md",
+            rank_score=0.9,
+        ),
+    ]
+
+    monkeypatch.setattr(service_module, "check_database", lambda _engine: True)
+    monkeypatch.setattr(
+        service_module,
+        "search_keyword_chunks",
+        lambda *args, **kwargs: keyword_results,
+    )
+    monkeypatch.setattr(
+        service_module,
+        "search_similar_chunks",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("dense retrieval must be skipped")
+        ),
+    )
+    monkeypatch.setattr(
+        service_module,
+        "rerank_candidates",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("reranker must be skipped")
+        ),
+    )
+
+    agent = DockerSupportAgent(
+        settings=Settings(),
+        router_model=FixedModel("{}"),
+        answer_model=FixedModel(""),
+        docker_tools=FakeDockerTools(),  # type: ignore[arg-type]
+        embedder=embedder,  # type: ignore[arg-type]
+        reranker=reranker,
+        docs_engine=engine,  # type: ignore[arg-type]
+    )
+
+    context = agent._retrieve_docs(
+        "Docker volume 和 bind mount 有什么区别？"
+    )
+
+    assert embedder.calls == []
+    assert reranker.calls == []
+    assert len(context.sources) == 2
+    assert context.sources[0].title == "Volumes"
+    assert context.sources[1].title == "Bind mounts"
 
 
 def test_default_docs_retriever_reuses_heavy_models_and_database_check(

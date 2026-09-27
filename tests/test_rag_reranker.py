@@ -1,6 +1,7 @@
 import pytest
 
 from docker_agent.rag.reranker import (
+    BgeReranker,
     build_rerank_passage,
     build_rerank_pool,
     rerank_candidates,
@@ -138,3 +139,15 @@ def test_rerank_candidates_empty_input_skips_scorer() -> None:
 
     assert rerank_candidates("query", [], scorer) == []
     assert scorer.calls == []
+
+
+def test_reranker_exposes_warmup_state_for_injected_components() -> None:
+    reranker = BgeReranker(
+        model_name="fake",
+        tokenizer=object(),
+        model=object(),
+    )
+
+    assert reranker.is_loaded is True
+    reranker.warmup()
+    assert reranker.is_loaded is True

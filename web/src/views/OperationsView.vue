@@ -28,6 +28,12 @@ const workerRows = computed(() =>
 const errorRows = computed(() =>
   distributionRows(dashboard.summary.value?.error_distribution ?? {}),
 );
+const slowStageRows = computed(() =>
+  [...(dashboard.performance.value?.stages ?? [])]
+    .filter((item) => item.count > 0)
+    .sort((a, b) => b.average_ms - a.average_ms)
+    .slice(0, 6),
+);
 
 function distributionRows(values: Record<string, number>) {
   const entries = Object.entries(values).sort((a, b) => b[1] - a[1]);
@@ -59,6 +65,26 @@ function formatDuration(value: number | null): string {
     return `${value} ms`;
   }
   return `${(value / 1000).toFixed(2)} s`;
+}
+
+function stageLabel(value: string): string {
+  const labels: Record<string, string> = {
+    orchestration_decision: "智能编排判断",
+    decision: "专家路由判断",
+    rag_database: "知识库检查",
+    embedding: "问题向量化",
+    dense_retrieval: "语义检索",
+    keyword_retrieval: "关键词检索",
+    fusion: "检索融合",
+    rerank: "文档重排",
+    context_build: "证据整理",
+    runtime: "运行时诊断",
+    answer: "回答生成",
+    synthesis: "多专家综合",
+    embedding_model_warmup: "Embedding 预热",
+    reranker_model_warmup: "Reranker 预热",
+  };
+  return labels[value] ?? value;
 }
 
 function statusLabel(value: string): string {
@@ -279,6 +305,32 @@ onBeforeUnmount(() => {
           </strong>
           <small>已完成执行</small>
         </article>
+
+        <article class="kpi-card panel">
+          <span>首字延迟</span>
+          <strong>
+            {{
+              formatDuration(
+                dashboard.performance.value?.ttft_average_ms ?? null,
+              )
+            }}
+          </strong>
+          <small>
+            {{ dashboard.performance.value?.ttft_count ?? 0 }} 次流式回答
+          </small>
+        </article>
+
+        <article class="kpi-card panel">
+          <span>TTFT P95 上界</span>
+          <strong>
+            {{
+              formatDuration(
+                dashboard.performance.value?.ttft_p95_upper_ms ?? null,
+              )
+            }}
+          </strong>
+          <small>Prometheus 直方图估算</small>
+        </article>
       </section>
 
       <section class="operations-grid">
@@ -381,6 +433,35 @@ onBeforeUnmount(() => {
           </div>
           <div v-else class="empty-state compact">当前没有失败记录。</div>
         </article>
+      </section>
+
+      <section class="panel operations-recent">
+        <div class="panel__header">
+          <div>
+            <p class="section-label">实时性能</p>
+            <h2>最慢执行阶段</h2>
+          </div>
+          <span class="field-hint">进程启动后的内存指标</span>
+        </div>
+
+        <div v-if="slowStageRows.length" class="operations-table">
+          <div
+            v-for="stage in slowStageRows"
+            :key="stage.stage"
+            class="operations-table__row"
+          >
+            <span>
+              <strong>{{ stageLabel(stage.stage) }}</strong>
+              <small>{{ stage.count }} 次采样</small>
+            </span>
+            <span>平均 {{ formatDuration(stage.average_ms) }}</span>
+            <span>P50 ≤ {{ formatDuration(stage.p50_upper_ms) }}</span>
+            <span>P95 ≤ {{ formatDuration(stage.p95_upper_ms) }}</span>
+          </div>
+        </div>
+        <div v-else class="empty-state compact">
+          暂无阶段耗时数据。执行一次智能编排后即可查看。
+        </div>
       </section>
 
       <section class="panel operations-recent">

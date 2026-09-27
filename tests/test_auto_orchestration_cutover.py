@@ -14,10 +14,13 @@ from docker_agent.orchestration import (
     DelegationExecutionService,
     LangGraphProductAutoOrchestrationService,
     OrchestratedSynthesisService,
+    OrchestrationDecisionError,
     OrchestrationDecisionModel,
 )
 from docker_agent.persistence import (
+    create_conversation,
     init_persistence_store,
+    list_agent_runs,
     load_conversation,
 )
 
@@ -172,13 +175,87 @@ def test_product_direct_fast_path_completes_without_pending_approval() -> None:
         "decision",
         "specialist",
     ]
-    assert decision.calls == 1
+    assert decision.calls == 0
     assert synthesis.calls == 0
     assert docker.questions == ["检查 web-1 当前状态。"]
     assert infrastructure.questions == []
 
     snapshot = load_conversation(engine, turn.conversation.id)
     assert [item.role for item in snapshot.messages] == [
+        "user",
+        "assistant",
+    ]
+
+    runs = list_agent_runs(engine)
+    assert len(runs) == 1
+    assert runs[0].agent_type == "auto_orchestration"
+    assert runs[0].status == "succeeded"
+    assert runs[0].route == "auto_direct"
+    assert runs[0].completed_workers == (
+        "decision",
+        "specialist",
+    )
+
+
+def test_failed_turn_retry_clears_orphaned_approval_checkpoint() -> None:
+    build_service, engine, docker, infrastructure, decision, synthesis = (
+        _runtime(
+            decisions=[
+                "not-json",
+                (
+                    '{"action":"direct","reason":"docker support",'
+                    '"target_agent_type":"docker_support",'
+                    '"capability":"documentation_qa",'
+                    '"clarification":null}'
+                ),
+            ]
+        )
+    )
+    conversation = create_conversation(
+        engine,
+        agent_type="auto_orchestration",
+        title="retry orphaned approval checkpoint",
+    )
+    service = build_service()
+
+    with pytest.raises(
+        OrchestrationDecisionError,
+        match="invalid JSON",
+    ):
+        service.chat(
+            message="帮我看看这个 Docker 问题。",
+            conversation_id=conversation.id,
+        )
+
+    failed_snapshot = load_conversation(
+        engine,
+        conversation.id,
+    )
+    assert failed_snapshot.messages == ()
+
+    failed_runs = list_agent_runs(engine)
+    assert len(failed_runs) == 1
+    assert failed_runs[0].agent_type == "auto_orchestration"
+    assert failed_runs[0].status == "failed"
+    assert failed_runs[0].error_type == "OrchestrationDecisionError"
+
+    completed = service.chat(
+        message="帮我看看这个 Docker 问题。",
+        conversation_id=conversation.id,
+    )
+
+    assert completed.route == "auto_direct"
+    assert completed.answer == "容器运行正常。"
+    assert decision.calls == 2
+    assert synthesis.calls == 0
+    assert docker.questions == ["帮我看看这个 Docker 问题。"]
+    assert infrastructure.questions == []
+
+    completed_snapshot = load_conversation(
+        engine,
+        conversation.id,
+    )
+    assert [item.role for item in completed_snapshot.messages] == [
         "user",
         "assistant",
     ]
@@ -220,7 +297,7 @@ def test_product_delegate_pauses_then_approves_without_duplicate_work() -> None:
     )
     assert len(docker.questions) == 1
     assert infrastructure.questions == []
-    assert decision.calls == 2
+    assert decision.calls == 1
     assert synthesis.calls == 0
 
     paused_snapshot = load_conversation(
@@ -261,7 +338,7 @@ def test_product_delegate_pauses_then_approves_without_duplicate_work() -> None:
         "specialist",
         "synthesis",
     ]
-    assert decision.calls == 2
+    assert decision.calls == 1
     assert synthesis.calls == 1
     assert len(docker.questions) == 1
     assert len(infrastructure.questions) == 1
@@ -276,6 +353,17 @@ def test_product_delegate_pauses_then_approves_without_duplicate_work() -> None:
         "user",
         "assistant",
     ]
+
+    runs = list_agent_runs(engine)
+    assert [item.route for item in runs[:3]] == [
+        "auto_synthesis",
+        "auto_approval_pending",
+        "auto_direct",
+    ]
+    assert all(
+        item.agent_type == "auto_orchestration"
+        for item in runs[:3]
+    )
 
 
 def test_product_denied_approval_persists_stop_message_only() -> None:

@@ -7,6 +7,7 @@ import type {
   EvaluationComparison,
   EvaluationRun,
   EvaluationRunDetail,
+  PerformanceSnapshot,
 } from "../lib/types";
 
 vi.mock("../lib/api", () => ({
@@ -23,6 +24,7 @@ vi.mock("../lib/api", () => ({
   compareEvaluationRuns: vi.fn(),
   getAgentRun: vi.fn(),
   getEvaluationRun: vi.fn(),
+  getOperationsPerformance: vi.fn(),
   getOperationsSummary: vi.fn(),
   listAgentRuns: vi.fn(),
   listAgents: vi.fn(),
@@ -33,6 +35,7 @@ import {
   compareEvaluationRuns,
   getAgentRun,
   getEvaluationRun,
+  getOperationsPerformance,
   getOperationsSummary,
   listAgentRuns,
   listAgents,
@@ -55,6 +58,22 @@ const summary: AgentRunSummary = {
   route_distribution: { docs_only: 1, runtime_tools: 1 },
   worker_distribution: { diagnosis: 2 },
   error_distribution: { RuntimeError: 1 },
+};
+
+const performance: PerformanceSnapshot = {
+  ttft_count: 2,
+  ttft_average_ms: 450,
+  ttft_p50_upper_ms: 500,
+  ttft_p95_upper_ms: 1000,
+  stages: [
+    {
+      stage: "answer",
+      count: 2,
+      average_ms: 1200,
+      p50_upper_ms: 2500,
+      p95_upper_ms: 2500,
+    },
+  ],
 };
 
 const agents: AgentDescriptor[] = [
@@ -157,6 +176,7 @@ beforeEach(() => {
   vi.resetAllMocks();
   vi.mocked(listAgents).mockResolvedValue(agents);
   vi.mocked(getOperationsSummary).mockResolvedValue(summary);
+  vi.mocked(getOperationsPerformance).mockResolvedValue(performance);
   vi.mocked(listAgentRuns).mockResolvedValue([run("run-1")]);
   vi.mocked(listEvaluationRuns).mockResolvedValue([
     evaluation("eval-1"),
@@ -182,6 +202,7 @@ describe("operations dashboard", () => {
       168,
       "docker_support",
     );
+    expect(getOperationsPerformance).toHaveBeenCalledTimes(1);
     expect(listAgentRuns).toHaveBeenCalledWith({
       agentType: "docker_support",
       status: "failed",
@@ -193,6 +214,7 @@ describe("operations dashboard", () => {
       limit: 25,
     });
     expect(dashboard.summary.value).toEqual(summary);
+    expect(dashboard.performance.value).toEqual(performance);
     expect(dashboard.completedRuns.value).toBe(2);
   });
 

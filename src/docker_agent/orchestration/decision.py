@@ -9,13 +9,14 @@ from docker_agent.agent.registry import (
     AgentRegistry,
     AgentRegistryError,
 )
+from docker_agent.observability import stage_timer
 from docker_agent.orchestration.delegation import (
     AgentCapabilityIndex,
     DelegationContext,
     DelegationPolicy,
     DelegationPolicyError,
 )
-from docker_agent.rag.llm import ChatModel
+from docker_agent.rag.llm import ChatModel, ModelResponseError
 
 OrchestrationAction = Literal["clarify", "direct", "delegate"]
 
@@ -114,36 +115,86 @@ class OrchestrationDecisionModel:
         normalized = question.strip()
         if not normalized:
             raise ValueError("question must not be empty")
-        active_context = context or DelegationContext(original_query=normalized)
+        routing_question = _current_user_request(normalized)
+        active_context = context or DelegationContext(original_query=routing_question)
         source = self._resolve_source(active_context, source_agent_type)
 
-        if source is None and _is_initial_lightweight_request(normalized):
-            try:
-                target = self._registry.get("docker_support").agent_type
-            except AgentRegistryError:
-                target = None
+        if source is None:
+            fast_path = _initial_fast_path(routing_question)
+            if fast_path is not None:
+                agent_type, capability, reason = fast_path
+                try:
+                    target = self._registry.get(agent_type).agent_type
+                except AgentRegistryError:
+                    target = None
+                if (
+                    target is not None
+                    and self._capabilities.supports(
+                        target,
+                        capability,
+                    )
+                ):
+                    return OrchestrationDecision(
+                        action="direct",
+                        reason=reason,
+                        source_agent_type=None,
+                        target_agent_type=target,
+                        capability=capability,
+                        clarification=None,
+                    )
+        else:
+            handoff = self._deterministic_handoff(
+                source=source,
+                question=routing_question,
+                context=active_context,
+            )
+            if handoff is not None:
+                return handoff
+
+            capability = _current_specialist_fast_path(
+                source,
+                routing_question,
+                original_query=active_context.original_query,
+            )
             if (
-                target is not None
-                and self._capabilities.supports(target, "chat")
+                capability is not None
+                and self._capabilities.supports(source, capability)
             ):
                 return OrchestrationDecision(
                     action="direct",
-                    reason="轻量平台会话无需模型编排，直接交给 Docker 支持。",
-                    source_agent_type=None,
-                    target_agent_type=target,
-                    capability="chat",
+                    reason="当前问题仍属于现有专家能力范围，继续由当前专家处理。",
+                    source_agent_type=source,
+                    target_agent_type=source,
+                    capability=capability,
                     clarification=None,
                 )
 
-        raw = self._model.complete(
-            system_prompt=ORCHESTRATION_SYSTEM_PROMPT,
-            user_prompt=_build_decision_prompt(
-                registry=self._registry,
-                question=normalized,
-                context=active_context,
+        try:
+            with stage_timer("orchestration_decision"):
+                raw = self._model.complete(
+                    system_prompt=ORCHESTRATION_SYSTEM_PROMPT,
+                    user_prompt=_build_decision_prompt(
+                        registry=self._registry,
+                        question=normalized,
+                        context=active_context,
+                        source_agent_type=source,
+                    ),
+                )
+        except ModelResponseError:
+            return OrchestrationDecision(
+                action="clarify",
+                reason=(
+                    "编排模型未能在输出预算内形成有效决策，"
+                    "安全降级为一次简短澄清。"
+                ),
                 source_agent_type=source,
-            ),
-        )
+                target_agent_type=None,
+                capability=None,
+                clarification=(
+                    "你希望继续排查 Docker 容器/运行时，"
+                    "还是服务级故障与依赖异常？"
+                ),
+            )
         return self.validate(
             raw,
             context=active_context,
@@ -245,6 +296,64 @@ class OrchestrationDecisionModel:
             clarification=None,
         )
 
+    def _deterministic_handoff(
+        self,
+        *,
+        source: str,
+        question: str,
+        context: DelegationContext,
+    ) -> OrchestrationDecision | None:
+        target: str | None = None
+        capability: str | None = None
+        reason: str | None = None
+
+        if (
+            source == "docker_support"
+            and _is_initial_infrastructure_incident_request(question)
+        ):
+            target = "infrastructure_troubleshooter"
+            capability = "incident_triage"
+            reason = (
+                "容器层已不足以解释当前服务级 5xx/依赖超时现象，"
+                "需要转交基础设施排障专家。"
+            )
+        elif (
+            source == "infrastructure_troubleshooter"
+            and _is_initial_runtime_request(question)
+        ):
+            target = "docker_support"
+            capability = "runtime_diagnostics"
+            reason = (
+                "当前请求明确需要 Docker 运行时证据，"
+                "需要转交 Docker 支持专家进行只读诊断。"
+            )
+
+        if target is None or capability is None or reason is None:
+            return None
+        if not self._capabilities.supports(target, capability):
+            return None
+
+        try:
+            validated = self._policy.delegate(
+                context,
+                source_agent_type=source,
+                target_agent_type=target,
+                capability=capability,
+                reason=reason,
+            )
+        except DelegationPolicyError as exc:
+            raise OrchestrationDecisionError(str(exc)) from exc
+
+        handoff = validated.handoffs[-1]
+        return OrchestrationDecision(
+            action="delegate",
+            reason=handoff.reason,
+            source_agent_type=handoff.source_agent_type,
+            target_agent_type=handoff.target_agent_type,
+            capability=handoff.capability,
+            clarification=None,
+        )
+
     def _resolve_source(
         self,
         context: DelegationContext,
@@ -266,6 +375,183 @@ class OrchestrationDecisionModel:
                 f"source Agent must match current context owner {current!r}"
             )
         return source
+
+
+def _current_user_request(question: str) -> str:
+    """Extract the live user turn from the bounded conversation wrapper."""
+
+    marker = "当前用户消息：\n"
+    if marker not in question:
+        return question
+    current = question.rsplit(marker, 1)[1].strip()
+    return current or question
+
+
+def _current_specialist_fast_path(
+    source_agent_type: str,
+    question: str,
+    *,
+    original_query: str,
+) -> str | None:
+    if source_agent_type == "docker_support":
+        if _is_initial_infrastructure_incident_request(question):
+            return None
+        if _is_initial_runtime_request(question):
+            return "runtime_diagnostics"
+        if _is_initial_docker_docs_request(question):
+            return "documentation_qa"
+        if _is_initial_lightweight_request(question):
+            return "chat"
+        if _is_short_followup(question):
+            if _is_initial_runtime_request(original_query):
+                return "runtime_diagnostics"
+            if _is_initial_docker_docs_request(original_query):
+                return "documentation_qa"
+            return None
+
+    if source_agent_type == "infrastructure_troubleshooter":
+        if _is_initial_runtime_request(question):
+            return None
+        if _is_initial_lightweight_request(question):
+            return "chat"
+        if _is_initial_infrastructure_incident_request(question):
+            return "incident_triage"
+        if (
+            _is_short_followup(question)
+            and _is_initial_infrastructure_incident_request(
+                original_query
+            )
+        ):
+            return "incident_triage"
+
+    return None
+
+
+def _is_short_followup(question: str) -> bool:
+    normalized = " ".join(question.strip().split())
+    lowered = normalized.lower()
+    followup_signals = (
+        "继续",
+        "下一步",
+        "然后呢",
+        "那",
+        "还有",
+        "再看",
+        "再查",
+        "what next",
+        "continue",
+        "then",
+        "still",
+    )
+    return len(normalized) <= 80 and any(
+        lowered.startswith(signal)
+        for signal in followup_signals
+    )
+
+
+def _initial_fast_path(
+    question: str,
+) -> tuple[str, str, str] | None:
+    if _is_initial_lightweight_request(question):
+        return (
+            "docker_support",
+            "chat",
+            "轻量平台会话无需模型编排，直接交给 Docker 支持。",
+        )
+    if _is_initial_infrastructure_incident_request(question):
+        return (
+            "infrastructure_troubleshooter",
+            "incident_triage",
+            "明确的服务级故障信号直接进入基础设施排障。",
+        )
+    if _is_initial_runtime_request(question):
+        return (
+            "docker_support",
+            "runtime_diagnostics",
+            "明确的当前 Docker 运行时问题直接进入只读诊断。",
+        )
+    if _is_initial_docker_docs_request(question):
+        return (
+            "docker_support",
+            "documentation_qa",
+            "明确的 Docker 文档问题直接进入文档问答。",
+        )
+    return None
+
+
+def _is_initial_infrastructure_incident_request(
+    question: str,
+) -> bool:
+    lowered = question.lower()
+    incident_signals = (
+        " 503",
+        "503 ",
+        "502 ",
+        "504 ",
+        "5xx",
+        "依赖超时",
+        "dependency timeout",
+        "service outage",
+        "服务不可用",
+    )
+    service_signals = (
+        "api",
+        "服务",
+        "service",
+        "依赖",
+        "dependency",
+        "checkout",
+    )
+    return any(
+        signal in f" {lowered} "
+        for signal in incident_signals
+    ) and any(signal in lowered for signal in service_signals)
+
+
+def _is_initial_runtime_request(question: str) -> bool:
+    lowered = question.lower()
+    current_state_signals = (
+        "当前状态",
+        "现在状态",
+        "当前内存",
+        "现在内存",
+        "当前 cpu",
+        "现在 cpu",
+        "最近日志",
+        "查看日志",
+        "看一下日志",
+        "运行状态",
+        "是否运行",
+        "还在运行",
+        "cpu 和内存",
+        "cpu和内存",
+        "memory usage",
+        "current status",
+        "recent logs",
+        "docker ps",
+        "docker logs",
+        "docker inspect",
+    )
+    return any(signal in lowered for signal in current_state_signals)
+
+
+def _is_initial_docker_docs_request(question: str) -> bool:
+    lowered = question.lower()
+    docs_signals = (
+        "docker volume",
+        "bind mount",
+        "docker compose",
+        "dockerfile",
+        "docker daemon",
+        "docker image",
+        "docker network",
+        "docker registry",
+        "存储卷",
+        "绑定挂载",
+        "镜像",
+        "容器网络",
+    )
+    return any(signal in lowered for signal in docs_signals)
 
 
 def _is_initial_lightweight_request(question: str) -> bool:

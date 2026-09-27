@@ -15,7 +15,11 @@ from docker_agent.orchestration.delegation import (
     AgentHandoff,
     DelegationContext,
 )
-from docker_agent.orchestration.envelope import SpecialistResultEnvelope
+from docker_agent.orchestration.envelope import (
+    SpecialistDocSource,
+    SpecialistResultEnvelope,
+    SpecialistRuntimeSource,
+)
 from docker_agent.orchestration.synthesis import OrchestratedSynthesisResult
 
 CHECKPOINT_NAMESPACE = ""
@@ -48,7 +52,9 @@ def orchestration_checkpoint_serializer() -> JsonPlusSerializer:
             DelegationContext,
             OrchestrationDecision,
             OrchestratedSynthesisResult,
+            SpecialistDocSource,
             SpecialistResultEnvelope,
+            SpecialistRuntimeSource,
         ],
     )
 

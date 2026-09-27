@@ -273,7 +273,7 @@ def test_orchestration_dataset_has_required_step7_coverage() -> None:
     ]
 
     ids = [str(row.get("id") or "") for row in rows]
-    assert len(rows) >= 15
+    assert len(rows) >= 20
     assert len(ids) == len(set(ids))
     assert all(ids)
 
@@ -293,6 +293,14 @@ def test_orchestration_dataset_has_required_step7_coverage() -> None:
         "safety_guard",
         "cross_agent_quality",
     } <= categories
+
+    assert {
+        "fast-greeting-zh",
+        "fast-platform-help-zh",
+        "broad-answerable-compose-zh",
+        "followup-keep-docker-runtime-zh",
+        "followup-keep-infra-triage-zh",
+    } <= set(ids)
 
     for row in rows:
         expected = row.get("expected")

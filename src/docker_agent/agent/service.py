@@ -12,6 +12,7 @@ from docker_agent.agent.router import AgentRouteDecision, route_question
 from docker_agent.agent.runtime import execute_runtime_plan
 from docker_agent.config import Settings, get_settings
 from docker_agent.db import check_database, create_db_engine
+from docker_agent.observability import stage_timer
 from docker_agent.rag.context import RagContext, build_rag_context
 from docker_agent.rag.embeddings import BgeM3Embedder
 from docker_agent.rag.llm import ChatModel, OpenAICompatibleChatClient
@@ -21,6 +22,9 @@ from docker_agent.rag.reranker import (
     rerank_candidates,
 )
 from docker_agent.rag.store import (
+    HybridSearchResult,
+    KeywordSearchResult,
+    extract_keyword_terms,
     reciprocal_rank_fusion,
     search_keyword_chunks,
     search_similar_chunks,
@@ -131,6 +135,8 @@ class DockerSupportAgent:
             docs_context,
             runtime_context,
             self.answer_model,
+            require_doc_citation=decision.route == "docs_only",
+            require_runtime_citation=decision.route == "runtime_tools",
         )
         self._validate_required_citations(decision, answer)
         return AgentTurnResult(decision=decision, answer=answer)
@@ -149,46 +155,102 @@ class DockerSupportAgent:
             retry_backoff_seconds=self.settings.model_retry_backoff_seconds,
         )
 
+    def warmup_retrieval(self) -> None:
+        """Load retrieval dependencies before the first documentation query."""
+
+        with self._retrieval_lock:
+            if not self._docs_database_checked:
+                with stage_timer("rag_database"):
+                    check_database(self._docs_engine)
+                self._docs_database_checked = True
+
+            embedder_warmup = getattr(
+                self._embedder,
+                "warmup",
+                None,
+            )
+            if (
+                not bool(getattr(self._embedder, "is_loaded", True))
+                and callable(embedder_warmup)
+            ):
+                with stage_timer("embedding_model_warmup"):
+                    embedder_warmup()
+
+            reranker_warmup = getattr(
+                self._reranker,
+                "warmup",
+                None,
+            )
+            if (
+                not bool(getattr(self._reranker, "is_loaded", True))
+                and callable(reranker_warmup)
+            ):
+                with stage_timer("reranker_model_warmup"):
+                    reranker_warmup()
+
     def _retrieve_docs(self, question: str) -> RagContext:
         # Embedding and reranker models are intentionally reused for the
         # lifetime of this Agent instance. Loading BGE models on every query
         # can add minutes of avoidable latency on local development machines.
         with self._retrieval_lock:
             if not self._docs_database_checked:
-                check_database(self._docs_engine)
+                with stage_timer("rag_database"):
+                    check_database(self._docs_engine)
                 self._docs_database_checked = True
 
-            query_embedding = self._embedder.embed_query(question)
-            dense = search_similar_chunks(
-                self._docs_engine,
-                query_embedding,
-                top_k=self.settings.retrieval_candidate_k,
-            )
-            keyword = search_keyword_chunks(
-                self._docs_engine,
-                question,
-                top_k=self.settings.retrieval_candidate_k,
-            )
-            rrf = reciprocal_rank_fusion(
-                dense,
-                keyword,
-                top_k=self.settings.retrieval_candidate_k,
-                rrf_k=self.settings.retrieval_rrf_k,
-                dense_weight=self.settings.retrieval_dense_weight,
-                keyword_weight=self.settings.retrieval_keyword_weight,
-            )
+            with stage_timer("keyword_retrieval"):
+                keyword = search_keyword_chunks(
+                    self._docs_engine,
+                    question,
+                    top_k=self.settings.retrieval_candidate_k,
+                )
 
-            reranked = rerank_candidates(
-                question,
-                rrf,
-                self._reranker,
-                top_k=self.settings.rerank_top_k,
-            )
-            return build_rag_context(
-                reranked,
-                max_sources=self.settings.rerank_top_k,
-                max_chars=self.settings.rag_context_max_chars,
-            )
+            if _use_keyword_fast_path(question, keyword):
+                fast_results = _keyword_results_to_hybrid(keyword)
+                with stage_timer("context_build"):
+                    return build_rag_context(
+                        fast_results,
+                        max_sources=min(3, self.settings.rerank_top_k),
+                        max_chars=min(
+                            6_000,
+                            self.settings.rag_context_max_chars,
+                        ),
+                    )
+
+            with stage_timer("embedding"):
+                query_embedding = self._embedder.embed_query(question)
+
+            with stage_timer("dense_retrieval"):
+                dense = search_similar_chunks(
+                    self._docs_engine,
+                    query_embedding,
+                    top_k=self.settings.retrieval_candidate_k,
+                )
+
+            with stage_timer("fusion"):
+                rrf = reciprocal_rank_fusion(
+                    dense,
+                    keyword,
+                    top_k=self.settings.retrieval_candidate_k,
+                    rrf_k=self.settings.retrieval_rrf_k,
+                    dense_weight=self.settings.retrieval_dense_weight,
+                    keyword_weight=self.settings.retrieval_keyword_weight,
+                )
+
+            with stage_timer("rerank"):
+                reranked = rerank_candidates(
+                    question,
+                    rrf,
+                    self._reranker,
+                    top_k=self.settings.rerank_top_k,
+                )
+
+            with stage_timer("context_build"):
+                return build_rag_context(
+                    reranked,
+                    max_sources=self.settings.rerank_top_k,
+                    max_chars=self.settings.rag_context_max_chars,
+                )
 
     @staticmethod
     def _validate_required_citations(
@@ -206,6 +268,41 @@ class DockerSupportAgent:
             raise ValueError(
                 "Model answer did not cite requested runtime evidence"
             )
+
+
+def _use_keyword_fast_path(
+    question: str,
+    results: list[KeywordSearchResult],
+) -> bool:
+    """Use lexical-only retrieval when the question has strong exact anchors."""
+
+    terms = extract_keyword_terms(question)
+    return len(terms) >= 2 and len(results) >= 2
+
+
+def _keyword_results_to_hybrid(
+    results: list[KeywordSearchResult],
+) -> list[HybridSearchResult]:
+    converted: list[HybridSearchResult] = []
+    for rank, item in enumerate(results, start=1):
+        converted.append(
+            HybridSearchResult(
+                chunk_id=item.chunk_id,
+                document_id=item.document_id,
+                title=item.title,
+                section_path=item.section_path,
+                content=item.content,
+                source_url=item.source_url,
+                file_path=item.file_path,
+                rrf_score=item.rank_score,
+                dense_rank=None,
+                keyword_rank=rank,
+                dense_distance=None,
+                keyword_score=item.rank_score,
+                rerank_score=None,
+            )
+        )
+    return converted
 
 
 def _fast_conversation_turn(

@@ -51,3 +51,28 @@ def test_metrics_endpoint_does_not_count_its_own_scrapes() -> None:
     assert first.status_code == 200
     assert second.status_code == 200
     assert 'route="/metrics"' not in second.text
+
+
+def test_operations_performance_exposes_ttft_and_stage_snapshot() -> None:
+    metrics.reset()
+    metrics.record_ttft(duration_ms=420)
+    metrics.record_stage_duration(
+        stage="answer",
+        duration_ms=1200,
+    )
+    client = TestClient(app)
+
+    response = client.get("/operations/performance")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["ttft_count"] == 1
+    assert payload["ttft_average_ms"] == 420.0
+    answer = next(
+        item
+        for item in payload["stages"]
+        if item["stage"] == "answer"
+    )
+    assert answer["count"] == 1
+    assert answer["average_ms"] == 1200.0
+    assert answer["p95_upper_ms"] >= 1200

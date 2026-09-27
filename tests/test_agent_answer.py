@@ -128,6 +128,28 @@ def test_generate_agent_answer_repairs_invalid_doc_citation_once() -> None:
     assert "failed citation validation" in model.prompts[1]
 
 
+def test_generate_agent_answer_repairs_missing_required_doc_citation() -> None:
+    model = SequenceModel(
+        [
+            "Volume 由 Docker 管理。",
+            "Volume 由 Docker 管理。[1]",
+        ]
+    )
+
+    result = generate_agent_answer(
+        "Docker volume 是什么？",
+        _docs_context(),
+        RuntimeEvidenceContext(text="", sources=(), truncated=False),
+        model,
+        require_doc_citation=True,
+    )
+
+    assert result.answer == "Volume 由 Docker 管理。[1]"
+    assert result.doc_citation_indices == (1,)
+    assert len(model.prompts) == 2
+    assert "must cite at least one provided Docker Docs label" in model.prompts[1]
+
+
 def test_agent_prompt_lists_available_citation_labels() -> None:
     prompt = build_agent_user_prompt(
         "web 现在用了多少内存？",

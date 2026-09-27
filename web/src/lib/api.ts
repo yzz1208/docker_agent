@@ -1,12 +1,14 @@
 import type {
   AgentConfiguration,
   AgentConfigurationCreate,
+  AutoChatProgressEvent,
   AutoChatResponse,
   AgentDescriptor,
   AgentConfigurationMutation,
   AgentRunRecord,
   AgentRunStatus,
   AgentRunSummary,
+  PerformanceSnapshot,
   ChatResponse,
   ConversationDetail,
   ConversationSummary,
@@ -61,6 +63,18 @@ async function request<T>(
 
   if (response.status === 204) {
     return undefined as T;
+  }
+
+  const contentType = response.headers.get("Content-Type") ?? "";
+  if (!contentType.toLowerCase().includes("application/json")) {
+    const preview = (await response.text()).slice(0, 120).trim();
+    throw new ApiError(
+      502,
+      preview.toLowerCase().startsWith("<!doctype") ||
+        preview.toLowerCase().startsWith("<html")
+        ? "前端收到了 HTML 页面而不是 API JSON。请检查开发代理或反向代理是否把该接口转发到后端。"
+        : "服务端返回了非 JSON 响应。",
+    );
   }
 
   return (await response.json()) as T;
@@ -141,6 +155,167 @@ export function sendAutoChat(input: {
       conversation_id: input.conversationId ?? null,
     }),
   });
+}
+
+
+type ParsedSseEvent = {
+  event: string;
+  data: unknown;
+};
+
+function parseSseEvent(block: string): ParsedSseEvent | null {
+  let event = "message";
+  const dataLines: string[] = [];
+
+  for (const line of block.split("\n")) {
+    if (!line || line.startsWith(":")) continue;
+    if (line.startsWith("event:")) {
+      event = line.slice("event:".length).trim();
+      continue;
+    }
+    if (line.startsWith("data:")) {
+      dataLines.push(line.slice("data:".length).trimStart());
+    }
+  }
+
+  if (!dataLines.length) return null;
+
+  try {
+    return {
+      event,
+      data: JSON.parse(dataLines.join("\n")) as unknown,
+    };
+  } catch {
+    throw new ApiError(
+      502,
+      "服务端返回了无法解析的流式事件。",
+    );
+  }
+}
+
+async function streamHttpError(
+  response: Response,
+): Promise<ApiError> {
+  let detail = response.statusText || "Request failed.";
+  try {
+    const payload = (await response.json()) as {
+      detail?: unknown;
+    };
+    if (typeof payload.detail === "string") {
+      detail = payload.detail;
+    }
+  } catch {
+    // Keep the HTTP status text when the backend has no JSON body.
+  }
+  return new ApiError(response.status, detail);
+}
+
+export async function sendAutoChatStream(
+  input: {
+    message: string;
+    conversationId?: string | null;
+  },
+  onProgress?: (event: AutoChatProgressEvent) => void,
+  onDelta?: (delta: string) => void,
+): Promise<AutoChatResponse> {
+  const response = await fetch("/chat/auto/stream", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "text/event-stream",
+    },
+    body: jsonBody({
+      message: input.message,
+      conversation_id: input.conversationId ?? null,
+    }),
+  });
+
+  if (!response.ok) {
+    throw await streamHttpError(response);
+  }
+  const contentType = response.headers.get("Content-Type") ?? "";
+  if (!contentType.toLowerCase().includes("text/event-stream")) {
+    const preview = (await response.text()).slice(0, 120).trim();
+    throw new ApiError(
+      502,
+      preview.toLowerCase().startsWith("<!doctype") ||
+        preview.toLowerCase().startsWith("<html")
+        ? "流式聊天接口收到了前端 HTML 页面。请检查 /chat/auto/stream 的开发代理或反向代理配置。"
+        : "流式聊天接口返回了非 SSE 响应。",
+    );
+  }
+  if (!response.body) {
+    throw new ApiError(
+      502,
+      "浏览器没有收到流式响应内容。",
+    );
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let finalResult: AutoChatResponse | null = null;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    buffer += decoder.decode(value, { stream: !done });
+
+    let boundary = buffer.indexOf("\n\n");
+    while (boundary >= 0) {
+      const block = buffer.slice(0, boundary);
+      buffer = buffer.slice(boundary + 2);
+      const parsed = parseSseEvent(block);
+
+      if (parsed?.event === "progress") {
+        const payload = parsed.data as Partial<AutoChatProgressEvent>;
+        if (
+          typeof payload.stage === "string" &&
+          (payload.status === "started" ||
+            payload.status === "completed")
+        ) {
+          onProgress?.({
+            stage: payload.stage,
+            status: payload.status,
+            duration_ms:
+              typeof payload.duration_ms === "number"
+                ? payload.duration_ms
+                : null,
+          });
+        }
+      } else if (parsed?.event === "delta") {
+        const payload = parsed.data as {
+          text?: unknown;
+        };
+        if (typeof payload.text === "string" && payload.text) {
+          onDelta?.(payload.text);
+        }
+      } else if (parsed?.event === "result") {
+        finalResult = parsed.data as AutoChatResponse;
+      } else if (parsed?.event === "error") {
+        const payload = parsed.data as {
+          message?: unknown;
+        };
+        throw new ApiError(
+          502,
+          typeof payload.message === "string"
+            ? payload.message
+            : "智能编排执行失败，请稍后重试。",
+        );
+      }
+
+      boundary = buffer.indexOf("\n\n");
+    }
+
+    if (done) break;
+  }
+
+  if (!finalResult) {
+    throw new ApiError(
+      502,
+      "流式响应结束，但没有收到最终回答。",
+    );
+  }
+  return finalResult;
 }
 
 export function getAutoApproval(
@@ -275,6 +450,10 @@ export function getAgentRun(
   return request<AgentRunRecord>(
     `/operations/runs/${encodeURIComponent(runId)}`,
   );
+}
+
+export function getOperationsPerformance(): Promise<PerformanceSnapshot> {
+  return request<PerformanceSnapshot>("/operations/performance");
 }
 
 export function getOperationsSummary(

@@ -101,6 +101,10 @@ def route_question(question: str, model: ChatModel) -> AgentRouteDecision:
     if not question:
         raise ValueError("question must not be empty")
 
+    fast_decision = _fast_docs_route(question)
+    if fast_decision is not None:
+        return fast_decision
+
     raw = model.complete(
         system_prompt=ROUTER_SYSTEM_PROMPT,
         user_prompt=f"User question:\n{question}",
@@ -111,6 +115,63 @@ def route_question(question: str, model: ChatModel) -> AgentRouteDecision:
             "Router invented a container_ref that does not appear in the user question"
         )
     return decision
+
+
+def _fast_docs_route(question: str) -> AgentRouteDecision | None:
+    """Skip the router model for obvious documentation-only questions."""
+
+    lowered = question.lower()
+
+    runtime_signals = (
+        "当前",
+        "现在",
+        "运行状态",
+        "是否运行",
+        "还在运行",
+        "最近日志",
+        "查看日志",
+        "看一下日志",
+        "cpu",
+        "内存",
+        "memory usage",
+        "current status",
+        "recent logs",
+        "docker ps",
+        "docker logs",
+        "docker inspect",
+        "docker stats",
+        "oom",
+        "崩溃",
+        "重启",
+    )
+    if any(signal in lowered for signal in runtime_signals):
+        return None
+
+    docs_signals = (
+        "docker volume",
+        "bind mount",
+        "docker compose",
+        "dockerfile",
+        "docker daemon",
+        "docker image",
+        "docker network",
+        "docker registry",
+        "存储卷",
+        "绑定挂载",
+        "镜像",
+        "容器网络",
+    )
+    if not any(signal in lowered for signal in docs_signals):
+        return None
+
+    return AgentRouteDecision(
+        route="docs_only",
+        reason="明确的 Docker 概念或配置问题，直接使用文档证据。",
+        container_ref=None,
+        tools=(),
+        clarification=None,
+        use_docs=True,
+    )
 
 
 def parse_route_decision(raw: str) -> AgentRouteDecision:

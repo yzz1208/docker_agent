@@ -16,7 +16,7 @@ export default defineConfig({
       "/conversations": backendTarget,
       "/agent-configurations": backendTarget,
       "/agents": backendTarget,
-      "^/operations/(runs|summary|evaluations)": backendTarget,
+      "^/operations/(runs|summary|evaluations|performance)": backendTarget,
       "/health": backendTarget,
     },
   },

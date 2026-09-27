@@ -26,7 +26,7 @@ vi.mock("../lib/api", () => ({
   listConversations: vi.fn(),
   renameConversation: vi.fn(),
   resolveAutoApproval: vi.fn(),
-  sendAutoChat: vi.fn(),
+  sendAutoChatStream: vi.fn(),
   sendChat: vi.fn(),
 }));
 
@@ -38,7 +38,7 @@ import {
   listConversations,
   renameConversation,
   resolveAutoApproval,
-  sendAutoChat,
+  sendAutoChatStream,
   sendChat,
 } from "../lib/api";
 import { useConversationWorkspace } from "./useConversationWorkspace";
@@ -135,6 +135,8 @@ function autoTurn(
         needs_clarification: false,
         clarification: null,
         summary: "容器运行正常。",
+        doc_sources: [],
+        runtime_sources: [],
       },
     ],
     ...overrides,
@@ -307,7 +309,7 @@ describe("conversation workspace", () => {
   });
 
   it("uses auto orchestration mode without calling manual chat", async () => {
-    vi.mocked(sendAutoChat).mockResolvedValue(autoTurn());
+    vi.mocked(sendAutoChatStream).mockResolvedValue(autoTurn());
     vi.mocked(getConversation).mockResolvedValueOnce(
       detailFor(
         "auto-conversation",
@@ -321,10 +323,14 @@ describe("conversation workspace", () => {
     workspace.draft.value = "容器正常，但服务仍然 503";
 
     expect(await workspace.submitMessage()).toBe(true);
-    expect(sendAutoChat).toHaveBeenCalledWith({
-      message: "容器正常，但服务仍然 503",
-      conversationId: null,
-    });
+    expect(sendAutoChatStream).toHaveBeenCalledWith(
+      {
+        message: "容器正常，但服务仍然 503",
+        conversationId: null,
+      },
+      expect.any(Function),
+      expect.any(Function),
+    );
     expect(sendChat).not.toHaveBeenCalled();
     expect(workspace.activeMode.value).toBe("auto");
     expect(workspace.latestAutoTurn.value?.current_agent_type).toBe(
@@ -333,6 +339,101 @@ describe("conversation workspace", () => {
     expect(workspace.agentDisplayName("docker_support")).toBe(
       "Docker 支持",
     );
+  });
+
+  it("updates live progress from the auto stream callback", async () => {
+    let release:
+      | ((value: AutoChatResponse) => void)
+      | undefined;
+    vi.mocked(sendAutoChatStream).mockImplementation(
+      async (_input, onProgress, onDelta) => {
+        onProgress?.({
+          stage: "rerank",
+          status: "started",
+          duration_ms: null,
+        });
+        onDelta?.("正在生成");
+        onDelta?.("回答");
+        return await new Promise<AutoChatResponse>((resolve) => {
+          release = resolve;
+        });
+      },
+    );
+
+    const workspace = useConversationWorkspace();
+    workspace.draft.value = "解释一下 Docker volume";
+
+    const sending = workspace.submitMessage();
+    await vi.waitFor(() => {
+      expect(workspace.autoProgress.value?.stage).toBe("rerank");
+    });
+    expect(workspace.autoProgressText.value).toBe(
+      "正在筛选最相关文档",
+    );
+    expect(workspace.streamingAssistantText.value).toBe(
+      "正在生成回答",
+    );
+
+    release?.(autoTurn({ answer: "Volume explanation" }));
+    expect(await sending).toBe(true);
+    expect(workspace.autoProgress.value).toBeNull();
+    expect(workspace.streamingAssistantText.value).toBe("");
+  });
+
+  it("keeps a failed user message visible and allows retry", async () => {
+    vi.mocked(sendAutoChatStream)
+      .mockImplementationOnce(
+        async (_input, onProgress, onDelta) => {
+          onProgress?.({
+            stage: "answer",
+            status: "started",
+            duration_ms: null,
+          });
+          onDelta?.("这是已经生成的一半回答。");
+          throw new Error(
+            "Docker 支持专家执行失败：IndexError: list index out of range",
+          );
+        },
+      )
+      .mockResolvedValueOnce(
+        autoTurn({ answer: "Volume 和 bind mount 的区别。[1]" }),
+      );
+    vi.mocked(getConversation).mockResolvedValue(
+      detailFor(
+        "auto-conversation",
+        "Auto issue",
+        "auto_orchestration",
+      ),
+    );
+
+    const workspace = useConversationWorkspace();
+    workspace.draft.value =
+      "Docker volume 和 bind mount 有什么区别？";
+
+    expect(await workspace.submitMessage()).toBe(false);
+    expect(workspace.failedSubmission.value?.content).toBe(
+      "Docker volume 和 bind mount 有什么区别？",
+    );
+    expect(workspace.failedSubmission.value?.error).toContain(
+      "IndexError",
+    );
+    expect(
+      workspace.failedSubmission.value?.partialAssistantText,
+    ).toBe("这是已经生成的一半回答。");
+    expect(workspace.failedSubmission.value?.stage).toBe("answer");
+    expect(workspace.draft.value).toBe(
+      "Docker volume 和 bind mount 有什么区别？",
+    );
+    expect(workspace.displayMessages.value.at(-1)).toMatchObject({
+      role: "user",
+      content: "Docker volume 和 bind mount 有什么区别？",
+      route: "__client_failed__",
+    });
+    expect(workspace.actionError.value).toBe("");
+
+    expect(await workspace.retryFailedMessage()).toBe(true);
+    expect(workspace.failedSubmission.value).toBeNull();
+    expect(sendAutoChatStream).toHaveBeenCalledTimes(2);
   });
 
   it("defaults new conversations to intelligent orchestration", () => {
@@ -350,7 +451,7 @@ describe("conversation workspace", () => {
       resolveDetail = resolve;
     });
 
-    vi.mocked(sendAutoChat).mockResolvedValue(
+    vi.mocked(sendAutoChatStream).mockResolvedValue(
       autoTurn({
         answer: "即时回答",
       }),
@@ -389,7 +490,7 @@ describe("conversation workspace", () => {
   });
 
   it("keeps the completed reply usable when background sync fails", async () => {
-    vi.mocked(sendAutoChat).mockResolvedValue(
+    vi.mocked(sendAutoChatStream).mockResolvedValue(
       autoTurn({ answer: "已经完成的回答" }),
     );
     vi.mocked(getConversation).mockRejectedValue(
@@ -442,7 +543,7 @@ describe("conversation workspace", () => {
       needs_approval: false,
       approval_request: null,
     });
-    vi.mocked(sendAutoChat).mockResolvedValue(pending);
+    vi.mocked(sendAutoChatStream).mockResolvedValue(pending);
     vi.mocked(resolveAutoApproval).mockResolvedValue(completed);
     vi.mocked(getConversation).mockResolvedValue(
       detailFor(

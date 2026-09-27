@@ -7,7 +7,7 @@ from docker_agent.agent.evidence import RuntimeEvidenceContext, RuntimeEvidenceS
 from docker_agent.core.evidence import EvidenceBundle, EvidenceKind
 from docker_agent.rag.answer import CitationValidationError, select_cited_sources
 from docker_agent.rag.context import CitationSource, RagContext
-from docker_agent.rag.llm import ChatModel
+from docker_agent.rag.llm import ChatModel, complete_public_response
 
 _RUNTIME_CITATION_RE = re.compile(r"\[R(\d+)\]")
 
@@ -236,6 +236,8 @@ def generate_agent_answer_from_evidence(
     *,
     doc_sources: tuple[CitationSource, ...] = (),
     runtime_sources: tuple[RuntimeEvidenceSource, ...] = (),
+    require_doc_citation: bool = False,
+    require_runtime_citation: bool = False,
 ) -> AgentAnswer:
     """Generate an answer from unified evidence while preserving legacy source output."""
 
@@ -244,7 +246,11 @@ def generate_agent_answer_from_evidence(
         docs_evidence,
         runtime_evidence,
     )
-    answer = model.complete(system_prompt=AGENT_SYSTEM_PROMPT, user_prompt=prompt)
+    answer = complete_public_response(
+        model,
+        system_prompt=AGENT_SYSTEM_PROMPT,
+        user_prompt=prompt,
+    )
 
     try:
         doc_indices, cited_docs = select_cited_sources(answer, doc_sources)
@@ -267,6 +273,40 @@ def generate_agent_answer_from_evidence(
             runtime_sources,
         )
 
+    missing_requirements: list[str] = []
+    if require_doc_citation and not doc_indices:
+        missing_requirements.append(
+            "The answer must cite at least one provided Docker Docs label."
+        )
+    if require_runtime_citation and not runtime_indices:
+        missing_requirements.append(
+            "The answer must cite at least one provided Runtime label."
+        )
+
+    if missing_requirements:
+        answer = _repair_invalid_citations(
+            question=question,
+            invalid_answer=answer,
+            validation_error=" ".join(missing_requirements),
+            docs_evidence=docs_evidence,
+            runtime_evidence=runtime_evidence,
+            model=model,
+        )
+        doc_indices, cited_docs = select_cited_sources(answer, doc_sources)
+        runtime_indices, cited_runtime = select_runtime_sources(
+            answer,
+            runtime_sources,
+        )
+
+        if require_doc_citation and not doc_indices:
+            raise CitationValidationError(
+                "Model answer still did not cite Docker documentation evidence"
+            )
+        if require_runtime_citation and not runtime_indices:
+            raise CitationValidationError(
+                "Model answer still did not cite requested runtime evidence"
+            )
+
     return AgentAnswer(
         answer=answer,
         doc_sources=doc_sources,
@@ -285,6 +325,9 @@ def generate_agent_answer(
     docs_context: RagContext,
     runtime_context: RuntimeEvidenceContext,
     model: ChatModel,
+    *,
+    require_doc_citation: bool = False,
+    require_runtime_citation: bool = False,
 ) -> AgentAnswer:
     """Compatibility entrypoint backed by the unified evidence answer path."""
 
@@ -300,4 +343,6 @@ def generate_agent_answer(
         model,
         doc_sources=docs_context.sources,
         runtime_sources=runtime_context.sources,
+        require_doc_citation=require_doc_citation,
+        require_runtime_citation=require_runtime_citation,
     )

@@ -4,6 +4,7 @@ import json
 from dataclasses import dataclass
 from typing import Any, Protocol
 
+from docker_agent.observability import stage_timer
 from docker_agent.orchestration.envelope import SpecialistResultEnvelope
 from docker_agent.orchestration.execution import OrchestrationExecutionResult
 
@@ -200,14 +201,15 @@ class OrchestratedSynthesisService:
                 clarification_questions=clarifications,
             )
 
-        raw = self._model.complete(
-            system_prompt=SYNTHESIS_SYSTEM_PROMPT,
-            user_prompt=_build_synthesis_prompt(
-                original_query=query,
-                user_observations=observations,
-                specialist_results=results,
-            ),
-        )
+        with stage_timer("synthesis"):
+            raw = self._model.complete(
+                system_prompt=SYNTHESIS_SYSTEM_PROMPT,
+                user_prompt=_build_synthesis_prompt(
+                    original_query=query,
+                    user_observations=observations,
+                    specialist_results=results,
+                ),
+            )
         payload = _parse_json_object(raw)
         _validate_fields(payload)
 

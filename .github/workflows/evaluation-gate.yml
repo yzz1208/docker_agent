@@ -11,6 +11,7 @@ on:
           - agent_router
           - infrastructure_router
           - agent_workflow
+          - orchestration
       baseline_run_id:
         description: Persisted baseline evaluation run id
         required: true
@@ -115,6 +116,9 @@ jobs:
           elif [[ "$EVAL_SUITE" == "infrastructure_router" ]]; then
             args+=(--repeats "$ROUTER_REPEATS")
             uv run python scripts/eval_infrastructure_router.py "${args[@]}"
+          elif [[ "$EVAL_SUITE" == "orchestration" ]]; then
+            args+=(--repeats "$ROUTER_REPEATS")
+            uv run python scripts/eval_orchestration.py "${args[@]}"
           else
             if [[ "$ENABLE_JUDGE" == "true" ]]; then
               args+=(--judge)

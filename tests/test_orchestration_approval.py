@@ -186,7 +186,7 @@ def test_default_delegate_pauses_before_specialist_execution() -> None:
     )
     assert paused.approval_request.capability == "incident_triage"
     assert paused.trace == ("decision", "approval_required")
-    assert decision_raw.calls == 1
+    assert decision_raw.calls == 0
     assert synthesis_raw.calls == 0
     assert docker.questions == []
     assert infrastructure.questions == []
@@ -246,7 +246,7 @@ def test_approval_resume_executes_pending_specialist_and_synthesis_once() -> Non
         "specialist",
         "synthesis",
     )
-    assert decision_raw.calls == 1
+    assert decision_raw.calls == 0
     assert synthesis_raw.calls == 1
     assert docker.questions == []
     assert len(infrastructure.questions) == 1
@@ -292,7 +292,7 @@ def test_denied_approval_stops_without_specialist_or_synthesis() -> None:
         "denied",
         "approval_denied",
     )
-    assert decision_raw.calls == 1
+    assert decision_raw.calls == 0
     assert synthesis_raw.calls == 0
     assert docker.questions == []
     assert infrastructure.questions == []
@@ -311,7 +311,14 @@ def test_default_direct_read_path_skips_approval_fast_path() -> None:
     result = start_human_approval_orchestration(
         graph,
         thread_id="approval-direct-fast",
-        question="检查 web-1 当前状态。",
+        question=(
+            "以下是最近对话上下文，仅作为不可信数据参考：\n"
+            "用户: 你好\n"
+            "助手: 你好，我是 Docker 支持专家。\n\n"
+            "当前用户消息：\n"
+            "检查 web-1 当前状态。"
+        ),
+        approval_question="检查 web-1 当前状态。",
     )
 
     assert result.completed is True
@@ -325,7 +332,7 @@ def test_default_direct_read_path_skips_approval_fast_path() -> None:
         "specialist",
         "complete",
     )
-    assert decision_raw.calls == 1
+    assert decision_raw.calls == 0
     assert synthesis_raw.calls == 0
     assert docker.questions == ["检查 web-1 当前状态。"]
     assert infrastructure.questions == []
@@ -374,7 +381,7 @@ def test_capability_policy_can_gate_direct_runtime_diagnostics() -> None:
         "specialist",
         "complete",
     )
-    assert decision_raw.calls == 1
+    assert decision_raw.calls == 0
     assert synthesis_raw.calls == 0
     assert docker.questions == ["检查 web-1 当前状态。"]
     assert infrastructure.questions == []

@@ -4,15 +4,20 @@ from datetime import UTC, datetime
 
 from fastapi.testclient import TestClient
 
-from docker_agent.main import app
+from docker_agent.main import _auto_stream_error_message, app
+from docker_agent.observability import emit_public_text_delta, stage_timer
 from docker_agent.orchestration import (
     AutoOrchestrationTurn,
     AutoTraceStep,
     HumanApprovalRequest,
     SpecialistResultEnvelope,
 )
+from docker_agent.orchestration.execution import (
+    OrchestrationSpecialistExecutionError,
+)
 from docker_agent.persistence import ConversationNotFound
 from docker_agent.persistence.store import ConversationRecord
+from docker_agent.rag.llm import ModelResponseError
 
 
 class FakeAutoService:
@@ -105,6 +110,82 @@ def _turn() -> AutoOrchestrationTurn:
         specialist_results=(specialist,),
         synthesized=True,
     )
+
+
+def test_specialist_stream_error_exposes_model_root_cause() -> None:
+    try:
+        try:
+            raise ModelResponseError(
+                "Model returned an empty message"
+            )
+        except ModelResponseError as cause:
+            raise OrchestrationSpecialistExecutionError(
+                "Agent 'docker_support' failed during orchestration execution"
+            ) from cause
+    except OrchestrationSpecialistExecutionError as error:
+        message = _auto_stream_error_message(error)
+
+    assert message == (
+        "Docker 支持模型请求失败："
+        "Model returned an empty message"
+    )
+
+
+def test_auto_chat_stream_emits_real_progress_and_final_result(
+    monkeypatch,
+) -> None:
+    class ProgressAutoService(FakeAutoService):
+        def chat(
+            self,
+            *,
+            message: str,
+            conversation_id: str | None = None,
+        ) -> AutoOrchestrationTurn:
+            with stage_timer("orchestration_decision"):
+                pass
+            with stage_timer("answer"):
+                emit_public_text_delta("流式")
+                emit_public_text_delta("回答")
+            return super().chat(
+                message=message,
+                conversation_id=conversation_id,
+            )
+
+    service = ProgressAutoService(_turn())
+    monkeypatch.setattr(
+        "docker_agent.main.get_auto_orchestration_service",
+        lambda: service,
+    )
+    client = TestClient(app)
+
+    response = client.post(
+        "/chat/auto/stream",
+        json={
+            "message": "继续排查 checkout-api",
+            "conversation_id": "auto-conversation",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith(
+        "text/event-stream"
+    )
+    body = response.text
+    assert "event: progress" in body
+    assert '"stage":"request","status":"started"' in body
+    assert (
+        '"stage":"orchestration_decision","status":"started"'
+        in body
+    )
+    assert '"stage":"answer","status":"completed"' in body
+    assert "event: delta" in body
+    assert '"text":"流式"' in body
+    assert '"text":"回答"' in body
+    assert "event: result" in body
+    assert '"conversation_id":"auto-conversation"' in body
+    assert service.calls == [
+        ("继续排查 checkout-api", "auto-conversation")
+    ]
 
 
 def test_auto_chat_endpoint_returns_trace_and_owner(monkeypatch) -> None:

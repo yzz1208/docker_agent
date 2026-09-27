@@ -40,7 +40,7 @@ def test_route_graph_runs_docs_only_path() -> None:
 
     result = run_route_graph("Docker volume 是什么？", model)
 
-    assert model.calls == 1
+    assert model.calls == 0
     assert result["decision"] is not None
     assert result["decision"].route == "docs_only"
     assert result["agent_state"].route == "docs_only"
@@ -178,7 +178,7 @@ def test_docs_only_graph_runs_docs_and_answer_nodes() -> None:
         docs_retriever=docs,
     )
 
-    assert router.calls == 1
+    assert router.calls == 0
     assert docs.calls == ["Docker volume 是什么？"]
     assert answer.calls == 1
     assert "[1]" in answer.last_user_prompt
