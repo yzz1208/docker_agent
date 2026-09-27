@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Any, Literal, cast
 
 from docker_agent.agent.answer import AgentAnswer
+from docker_agent.agent.context import extract_specialist_user_context
 from docker_agent.config import Settings, get_settings
 from docker_agent.rag.llm import (
     ChatModel,
@@ -123,10 +124,18 @@ class InfrastructureTroubleshooterAgent:
         if not normalized:
             raise ValueError("question must not be empty")
 
-        decision = route_infrastructure_question(
-            normalized,
-            self.router_model,
+        user_context = extract_specialist_user_context(normalized)
+        user_question = user_context.render()
+        decision = (
+            _structured_incident_route(user_question)
+            if user_context.structured
+            else None
         )
+        if decision is None:
+            decision = route_infrastructure_question(
+                user_question,
+                self.router_model,
+            )
         if decision.route == "clarify":
             return InfrastructureAgentTurnResult(
                 decision=decision,
@@ -143,7 +152,7 @@ class InfrastructureTroubleshooterAgent:
             self.answer_model,
             system_prompt=TRIAGE_ANSWER_SYSTEM_PROMPT,
             user_prompt=_build_triage_prompt(
-                normalized,
+                user_question,
                 max_hypotheses=self.settings.incident_max_hypotheses,
                 max_next_steps=self.settings.incident_max_next_steps,
             ),
@@ -203,6 +212,59 @@ class InfrastructureTroubleshooterAgent:
                 self.settings.model_retry_backoff_seconds
             ),
         )
+
+
+def _structured_incident_route(
+    question: str,
+) -> InfrastructureRouteDecision | None:
+    """Skip a second routing-model call when orchestration already supplied scope."""
+
+    lowered = question.casefold()
+    component_signals = (
+        "api",
+        "service",
+        "服务",
+        "checkout",
+        "database",
+        "数据库",
+        "redis",
+        "cache",
+        "缓存",
+        "dependency",
+        "依赖",
+    )
+    symptom_signals = (
+        " 503",
+        "503 ",
+        " 502",
+        "502 ",
+        " 504",
+        "504 ",
+        "5xx",
+        "超时",
+        "timeout",
+        "不可用",
+        "失败",
+        "错误",
+        "error",
+        "延迟",
+        "latency",
+        "connection refused",
+        "拒绝连接",
+    )
+    padded = f" {lowered} "
+    if not any(signal in lowered for signal in component_signals):
+        return None
+    if not any(signal in padded for signal in symptom_signals):
+        return None
+    return InfrastructureRouteDecision(
+        route="triage",
+        reason=(
+            "智能编排已提供明确的受影响组件与可观察故障信号，"
+            "无需再次调用专家路由模型。"
+        ),
+        clarification=None,
+    )
 
 
 def route_infrastructure_question(
