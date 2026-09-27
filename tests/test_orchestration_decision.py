@@ -135,7 +135,7 @@ def test_existing_specialist_can_choose_validated_delegation() -> None:
     )
 
     decision = orchestrator.decide(
-        "容器本身正常，但整个 checkout 服务仍持续 503。",
+        "问题已经扩大到服务级，请交给基础设施专家继续分析。",
         source_agent_type="Docker-Support",
     )
 
@@ -389,7 +389,7 @@ def test_direct_action_cannot_silently_switch_current_agent() -> None:
         match="direct cannot change the current Agent",
     ):
         orchestrator.decide(
-            "checkout 服务持续 503。",
+            "需要分析一个服务级健康问题。",
             source_agent_type="docker_support",
         )
 
