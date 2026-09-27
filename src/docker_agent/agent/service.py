@@ -8,6 +8,7 @@ from threading import Lock
 from sqlalchemy.engine import Engine
 
 from docker_agent.agent.answer import AgentAnswer, generate_agent_answer
+from docker_agent.agent.context import specialist_user_text
 from docker_agent.agent.evidence import RuntimeEvidenceContext, build_runtime_evidence
 from docker_agent.agent.router import AgentRouteDecision, route_question
 from docker_agent.agent.runtime import execute_runtime_plan
@@ -104,12 +105,13 @@ class DockerSupportAgent:
         question = question.strip()
         if not question:
             raise ValueError("question must not be empty")
+        user_question = specialist_user_text(question)
 
-        fast_turn = _fast_conversation_turn(question)
+        fast_turn = _fast_conversation_turn(user_question)
         if fast_turn is not None:
             return fast_turn
 
-        decision = route_question(question, self.router_model)
+        decision = route_question(user_question, self.router_model)
         if decision.route == "chat":
             return _conversation_turn(question, decision)
         if decision.route == "clarify":
@@ -129,10 +131,10 @@ class DockerSupportAgent:
 
         docs_context = RagContext(text="", sources=(), truncated=False)
         if decision.use_docs:
-            docs_context = self.docs_retriever(question)
+            docs_context = self.docs_retriever(user_question)
 
         answer = generate_agent_answer(
-            question,
+            user_question,
             docs_context,
             runtime_context,
             self.answer_model,
