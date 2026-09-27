@@ -27,6 +27,15 @@ import type {
 
 type ChatMode = "manual" | "auto";
 
+type FailedSubmission = {
+  id: string;
+  content: string;
+  error: string;
+  createdAt: string;
+  conversationId: string | null;
+  stage: string | null;
+};
+
 const AUTO_AGENT_TYPE = "auto_orchestration";
 
 export function useConversationWorkspace() {
@@ -44,6 +53,7 @@ export function useConversationWorkspace() {
   const optimisticConversationId = ref<string | null>(null);
   const syncingConversation = ref(false);
   const autoProgress = ref<AutoChatProgressEvent | null>(null);
+  const failedSubmission = ref<FailedSubmission | null>(null);
 
   const latestTurns = ref<Record<string, ChatResponse>>({});
   const latestAutoTurns = ref<Record<string, AutoChatResponse>>({});
@@ -140,14 +150,34 @@ export function useConversationWorkspace() {
       !pendingApproval.value,
   );
 
-  const displayMessages = computed(() => [
-    ...(detail.value?.messages ?? []),
-    ...(
-      optimisticConversationId.value === activeConversationId.value
-        ? optimisticMessages.value
-        : []
-    ),
-  ]);
+  const displayMessages = computed<ConversationMessage[]>(() => {
+    const messages = [
+      ...(detail.value?.messages ?? []),
+      ...(
+        optimisticConversationId.value === activeConversationId.value
+          ? optimisticMessages.value
+          : []
+      ),
+    ];
+
+    const failed = failedSubmission.value;
+    if (
+      failed &&
+      failed.conversationId === activeConversationId.value
+    ) {
+      messages.push({
+        id: failed.id,
+        role: "user",
+        content: failed.content,
+        route: "__client_failed__",
+        use_docs: null,
+        clarification: null,
+        created_at: failed.createdAt,
+        execution: null,
+      });
+    }
+    return messages;
+  });
 
   function errorText(error: unknown): string {
     if (error instanceof ApiError) {
@@ -488,6 +518,7 @@ export function useConversationWorkspace() {
     activeConversationId.value = id;
     optimisticConversationId.value = null;
     optimisticMessages.value = [];
+    failedSubmission.value = null;
 
     try {
       const loaded = await getConversation(id);
@@ -539,6 +570,7 @@ export function useConversationWorkspace() {
     draft.value = "";
     optimisticMessages.value = [];
     optimisticConversationId.value = null;
+    failedSubmission.value = null;
     selectedMode.value = "auto";
     conversationError.value = "";
     actionError.value = "";
@@ -831,6 +863,7 @@ export function useConversationWorkspace() {
     sending.value = true;
     pendingUserMessage.value = message;
     streamingAssistantText.value = "";
+    failedSubmission.value = null;
     actionError.value = "";
 
     try {
@@ -951,7 +984,15 @@ export function useConversationWorkspace() {
       void refreshConversations();
       return true;
     } catch (error) {
-      actionError.value = errorText(error);
+      failedSubmission.value = {
+        id: `failed-user-${Date.now()}`,
+        content: message,
+        error: errorText(error),
+        createdAt: new Date().toISOString(),
+        conversationId: activeConversationId.value,
+        stage: autoProgress.value?.stage ?? null,
+      };
+      actionError.value = "";
       return false;
     } finally {
       sending.value = false;
@@ -959,6 +1000,15 @@ export function useConversationWorkspace() {
       autoProgress.value = null;
       streamingAssistantText.value = "";
     }
+  }
+
+  async function retryFailedMessage(): Promise<boolean> {
+    const failed = failedSubmission.value;
+    if (!failed || sending.value || approving.value) {
+      return false;
+    }
+    draft.value = failed.content;
+    return submitMessage();
   }
 
   async function resolvePendingApproval(
@@ -1118,6 +1168,7 @@ export function useConversationWorkspace() {
     syncingConversation,
     autoProgress,
     autoProgressText,
+    failedSubmission,
     renaming,
     deleting,
     agentError,
@@ -1145,6 +1196,7 @@ export function useConversationWorkspace() {
     openConversation,
     startNewConversation,
     submitMessage,
+    retryFailedMessage,
     resolvePendingApproval,
     renameActiveConversation,
     deleteActiveConversation,
