@@ -11,10 +11,6 @@ from sqlalchemy.pool import StaticPool
 
 from docker_agent.agent.factory import AgentFactory
 from docker_agent.agent.registry import build_agent_registry
-from docker_agent.orchestration.auto_chat import (
-    _relevant_turn_context,
-)
-from docker_agent.orchestration.envelope import SpecialistResultEnvelope
 from docker_agent.orchestration import (
     DelegationExecutionService,
     LangGraphProductAutoOrchestrationService,
@@ -22,6 +18,10 @@ from docker_agent.orchestration import (
     OrchestrationDecisionError,
     OrchestrationDecisionModel,
 )
+from docker_agent.orchestration.auto_chat import (
+    _relevant_turn_context,
+)
+from docker_agent.orchestration.envelope import SpecialistResultEnvelope
 from docker_agent.persistence import (
     create_conversation,
     init_persistence_store,
