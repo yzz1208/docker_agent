@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
 from dataclasses import dataclass
-import re
 from threading import Lock
 
 from sqlalchemy.engine import Engine
