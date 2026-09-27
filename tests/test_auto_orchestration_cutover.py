@@ -321,7 +321,7 @@ def test_product_delegate_pauses_then_approves_without_duplicate_work() -> None:
         "specialist",
         "synthesis",
     ]
-    assert decision.calls == 2
+    assert decision.calls == 1
     assert synthesis.calls == 1
     assert len(docker.questions) == 1
     assert len(infrastructure.questions) == 1
