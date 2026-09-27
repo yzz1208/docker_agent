@@ -362,6 +362,36 @@ def test_failed_turn_retry_clears_orphaned_approval_checkpoint() -> None:
     ]
 
 
+def test_product_same_specialist_followup_carries_original_incident_context() -> None:
+    build_service, _, _, infrastructure, decision, synthesis = _runtime(
+        decisions=[]
+    )
+    service = build_service()
+
+    first = service.chat(
+        message=(
+            "checkout-api 一直 503，但 Docker 容器正常，"
+            "依赖请求频繁超时。"
+        )
+    )
+    second = service.chat(
+        message="继续，从依赖超时这个方向往下排查。",
+        conversation_id=first.conversation.id,
+    )
+
+    assert first.route == "auto_direct"
+    assert second.route == "auto_direct"
+    assert second.current_agent_type == "infrastructure_troubleshooter"
+    assert len(infrastructure.questions) == 2
+    followup_input = infrastructure.questions[1]
+    assert "Continuation of the same specialist task:" in followup_input
+    assert "checkout-api 一直 503" in followup_input
+    assert "继续，从依赖超时这个方向往下排查。" in followup_input
+    assert "服务持续 503，需要继续检查依赖。" in followup_input
+    assert decision.calls == 0
+    assert synthesis.calls == 0
+
+
 def test_product_delegate_pauses_then_approves_without_duplicate_work() -> None:
     decisions = [
         (
