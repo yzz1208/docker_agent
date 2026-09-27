@@ -4,8 +4,12 @@ from datetime import UTC, datetime
 
 from fastapi.testclient import TestClient
 
-from docker_agent.main import app
+from docker_agent.main import _auto_stream_error_message, app
 from docker_agent.observability import emit_public_text_delta, stage_timer
+from docker_agent.orchestration.execution import (
+    OrchestrationSpecialistExecutionError,
+)
+from docker_agent.rag.llm import ModelResponseError
 from docker_agent.orchestration import (
     AutoOrchestrationTurn,
     AutoTraceStep,
@@ -105,6 +109,25 @@ def _turn() -> AutoOrchestrationTurn:
         ),
         specialist_results=(specialist,),
         synthesized=True,
+    )
+
+
+def test_specialist_stream_error_exposes_model_root_cause() -> None:
+    try:
+        try:
+            raise ModelResponseError(
+                "Model returned an empty message"
+            )
+        except ModelResponseError as cause:
+            raise OrchestrationSpecialistExecutionError(
+                "Agent 'docker_support' failed during orchestration execution"
+            ) from cause
+    except OrchestrationSpecialistExecutionError as error:
+        message = _auto_stream_error_message(error)
+
+    assert message == (
+        "Docker 支持模型请求失败："
+        "Model returned an empty message"
     )
 
 
