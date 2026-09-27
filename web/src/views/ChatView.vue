@@ -6,12 +6,17 @@ import {
   ref,
   watch,
 } from "vue";
+import { useRoute, useRouter } from "vue-router";
 
 import AppDialog from "../components/AppDialog.vue";
 import MessageContent from "../components/MessageContent.vue";
 import { useConversationWorkspace } from "../composables/useConversationWorkspace";
 
 const workspace = useConversationWorkspace();
+const route = useRoute();
+const router = useRouter();
+
+const LAST_CONVERSATION_KEY = "docker-agent:last-conversation";
 
 const messageStream = ref<HTMLElement | null>(null);
 const elapsedSeconds = ref(0);
@@ -75,6 +80,43 @@ async function scrollMessagesToBottom(): Promise<void> {
 }
 
 watch(
+  () => workspace.activeConversationId.value,
+  (conversationId) => {
+    if (conversationId) {
+      window.sessionStorage.setItem(
+        LAST_CONVERSATION_KEY,
+        conversationId,
+      );
+      if (
+        route.name === "chat" &&
+        route.query.conversation !== conversationId
+      ) {
+        void router.replace({
+          name: "chat",
+          query: {
+            ...route.query,
+            conversation: conversationId,
+          },
+        });
+      }
+      return;
+    }
+
+    window.sessionStorage.removeItem(LAST_CONVERSATION_KEY);
+    if (
+      route.name === "chat" &&
+      typeof route.query.conversation === "string"
+    ) {
+      const { conversation: _conversation, ...query } = route.query;
+      void router.replace({
+        name: "chat",
+        query,
+      });
+    }
+  },
+);
+
+watch(
   () => workspace.sending.value || workspace.approving.value,
   (active) => {
     if (elapsedTimer !== null) {
@@ -107,6 +149,20 @@ watch(
 
 onMounted(async () => {
   await workspace.initialize();
+
+  const queryConversation =
+    typeof route.query.conversation === "string"
+      ? route.query.conversation
+      : null;
+  const rememberedConversation =
+    window.sessionStorage.getItem(LAST_CONVERSATION_KEY);
+  const conversationId =
+    queryConversation ?? rememberedConversation;
+
+  if (conversationId) {
+    await workspace.openConversation(conversationId);
+  }
+
   await scrollMessagesToBottom();
 });
 
