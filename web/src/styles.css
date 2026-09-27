@@ -209,12 +209,30 @@ a {
 }
 
 .chat-panel {
-  display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .chat-panel__header {
+  flex: 0 0 auto;
   gap: 12px;
+}
+
+.chat-panel > .alert,
+.chat-panel > .conversation-sync-note,
+.chat-panel > .auto-running,
+.chat-panel > .approval-card {
+  flex: 0 0 auto;
+}
+
+.chat-panel > .message-stream {
+  min-height: 0;
+  flex: 1 1 0;
+}
+
+.chat-panel > .composer {
+  flex: 0 0 auto;
 }
 
 .header-actions {
