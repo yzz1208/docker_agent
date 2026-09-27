@@ -111,7 +111,10 @@ def extract_specialist_user_context(value: str) -> SpecialistUserContext:
 
 
 def specialist_user_text(value: str) -> str:
-    return extract_specialist_user_context(value).render()
+    context = extract_specialist_user_context(value)
+    if not context.structured:
+        return context.current_message
+    return context.render()
 
 
 def _section(
